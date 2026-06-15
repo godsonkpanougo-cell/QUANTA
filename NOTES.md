@@ -1,12 +1,12 @@
-\# NOTES.md — Audit du code legacy QUANTA
+\# NOTES.md ï¿½ Audit du code legacy QUANTA
 
 
 
-> Audit réalisé le Jour 1, avant tout refactor. Verdict global : \\\*\\\*ce code est bien plus solide qu'attendu\\\*\\\*.
+> Audit rï¿½alisï¿½ le Jour 1, avant tout refactor. Verdict global : \\\*\\\*ce code est bien plus solide qu'attendu\\\*\\\*.
 
-> Le document de specs parlait de bugs bloquants et de pipeline cassé — ces bugs sont presque tous
+> Le document de specs parlait de bugs bloquants et de pipeline cassï¿½ ï¿½ ces bugs sont presque tous
 
-> dans `brain.py` (couche LLM), pas dans `compute.py` (couche calcul). `compute.py` est quasi prêt pour la v2.
+> dans `brain.py` (couche LLM), pas dans `compute.py` (couche calcul). `compute.py` est quasi prï¿½t pour la v2.
 
 
 
@@ -14,65 +14,65 @@
 
 
 
-\## compute.py — Verdict : \~85% RÉUTILISABLE TEL QUEL
+\## compute.py ï¿½ Verdict : \~85% Rï¿½UTILISABLE TEL QUEL
 
 
 
-\### Ce qui fonctionne (et est même au-dessus du niveau attendu pour un Jour 1)
+\### Ce qui fonctionne (et est mï¿½me au-dessus du niveau attendu pour un Jour 1)
 
 
 
-\- \*\*`load\\\_and\\\_diagnose()`\*\* : gère CSV (avec détection séparateur , vs ;), Excel, Stata (.dta), SPSS (.sav).
+\- \*\*`load\\\_and\\\_diagnose()`\*\* : gï¿½re CSV (avec dï¿½tection sï¿½parateur , vs ;), Excel, Stata (.dta), SPSS (.sav).
 
-&#x20; Détecte types de colonnes, missing %, doublons, outliers IQR, et même un "dataset\_type" probable
+&#x20; Dï¿½tecte types de colonnes, missing %, doublons, outliers IQR, et mï¿½me un "dataset\_type" probable
 
-&#x20; (série temporelle / enquête / petit échantillon). C'est exactement le contenu attendu pour le Jour 3-4.
-
-
-
-\- \*\*`clean\\\_dataframe()`\*\* : applique déjà les règles de la Section "Cleaning Core" du doc de specs
-
-&#x20; (médiane si <5% missing, imputation si 5-20%, suppression si >20%, winsorisation 1%-99%).
-
-&#x20; Log structuré (`cleaning\\\_log`) — c'est la base de l'audit\_log prévu au Jour 6.
+&#x20; (sï¿½rie temporelle / enquï¿½te / petit ï¿½chantillon). C'est exactement le contenu attendu pour le Jour 3-4.
 
 
 
-\- \*\*`descriptive\\\_stats()`\*\* : stats complètes (mean, std, médiane, skewness, kurtosis, CV, IQR) +
+\- \*\*`clean\\\_dataframe()`\*\* : applique dï¿½jï¿½ les rï¿½gles de la Section "Cleaning Core" du doc de specs
 
-&#x20; fréquences pour catégorielles + graphiques (histogrammes, barres) en dark luxury. Couvre le Jour 39
+&#x20; (mï¿½diane si <5% missing, imputation si 5-20%, suppression si >20%, winsorisation 1%-99%).
 
-&#x20; (tableaux APA) à 80%.
-
-
-
-\- \*\*`normality\\\_tests()`\*\* : Shapiro-Wilk ET D'Agostino-Pearson (déjà la recommandation de ChatGPT sur
-
-&#x20; le seuil n!) + QQ-plots + conclusion consolidée NORMALE/NON-NORMALE + recommandation de famille de
-
-&#x20; tests. Couvre le Jour 4 quasi entièrement.
+&#x20; Log structurï¿½ (`cleaning\\\_log`) ï¿½ c'est la base de l'audit\_log prï¿½vu au Jour 6.
 
 
 
-\- \*\*`correlation\\\_analysis()`\*\* : Pearson ou Spearman selon normalité, p-values pairwise, classement
+\- \*\*`descriptive\\\_stats()`\*\* : stats complï¿½tes (mean, std, mï¿½diane, skewness, kurtosis, CV, IQR) +
+
+&#x20; frï¿½quences pour catï¿½gorielles + graphiques (histogrammes, barres) en dark luxury. Couvre le Jour 39
+
+&#x20; (tableaux APA) ï¿½ 80%.
+
+
+
+\- \*\*`normality\\\_tests()`\*\* : Shapiro-Wilk ET D'Agostino-Pearson (dï¿½jï¿½ la recommandation de ChatGPT sur
+
+&#x20; le seuil n!) + QQ-plots + conclusion consolidï¿½e NORMALE/NON-NORMALE + recommandation de famille de
+
+&#x20; tests. Couvre le Jour 4 quasi entiï¿½rement.
+
+
+
+\- \*\*`correlation\\\_analysis()`\*\* : Pearson ou Spearman selon normalitï¿½, p-values pairwise, classement
 
 &#x20; par force, heatmap. Couvre une bonne partie du Jour 9-10.
 
 
 
-\- \*\*`ols\\\_regression()`\*\* : régression complète avec VIF, Durbin-Watson, Breusch-Pagan, White test,
+\- \*\*`ols\\\_regression()`\*\* : rï¿½gression complï¿½te avec VIF, Durbin-Watson, Breusch-Pagan, White test,
 
-&#x20; graphiques de diagnostic résidus. Très solide — couvre le Jour 10.
+&#x20; graphiques de diagnostic rï¿½sidus. Trï¿½s solide ï¿½ couvre le Jour 10.
 
 
 
-\- \*\*`generate\\\_r\\\_script()` / `generate\\\_stata\\\_script()`\*\* : génèrent des scripts commentés, structurés,
+\- \*\*`generate\\\_r\\\_script()` / `generate\\\_stata\\\_script()`\*\* : gï¿½nï¿½rent des scripts commentï¿½s, structurï¿½s,
 
 &#x20; avec packages/imports corrects. Couvre une grosse partie du Jour 41/44.
 
 
 
-\- \*\*`run\\\_full\\\_compute\\\_pipeline()`\*\* : orchestrateur qui enchaîne tout, retourne un dict propre avec
+\- \*\*`run\\\_full\\\_compute\\\_pipeline()`\*\* : orchestrateur qui enchaï¿½ne tout, retourne un dict propre avec
 
 &#x20; diagnosis/cleaning/descriptive/normality/correlation/regression/charts/scripts. C'est quasi
 
@@ -80,41 +80,41 @@
 
 
 
-\### Ce qui est cassé / fragile / à corriger
+\### Ce qui est cassï¿½ / fragile / ï¿½ corriger
 
 
 
-1\. \*\*AUCUN ARBRE DE DÉCISION DE TESTS (le coeur des Jours 7-8-11 manque entièrement)\*\*
+1\. \*\*AUCUN ARBRE DE Dï¿½CISION DE TESTS (le coeur des Jours 7-8-11 manque entiï¿½rement)\*\*
 
-&#x20;  - `compute.py` calcule TOUJOURS : descriptives + normalité + corrélation + régression OLS,
+&#x20;  - `compute.py` calcule TOUJOURS : descriptives + normalitï¿½ + corrï¿½lation + rï¿½gression OLS,
 
 &#x20;    quel que soit l'objectif de l'utilisateur ou la nature des variables.
 
 &#x20;  - Il n'y a NI comparaison de groupes (t-test, ANOVA, Mann-Whitney...), NI chi-deux/Fisher,
 
-&#x20;    NI régression logistique. C'est-à-dire : toute la moitié "catégorielle" et "comparaison
+&#x20;    NI rï¿½gression logistique. C'est-ï¿½-dire : toute la moitiï¿½ "catï¿½gorielle" et "comparaison
 
 &#x20;    de groupes" de l'Annexe B du doc de specs est absente.
 
-&#x20;  - C'est le trou principal. Le `test\\\_selector.py` du Jour 7-8 est à écrire de zéro.
+&#x20;  - C'est le trou principal. Le `test\\\_selector.py` du Jour 7-8 est ï¿½ ï¿½crire de zï¿½ro.
 
 
 
-2\. \*\*Bug latent — `fillna(..., inplace=True)` sur une colonne issue de `select\\\_dtypes`\*\*
+2\. \*\*Bug latent ï¿½ `fillna(..., inplace=True)` sur une colonne issue de `select\\\_dtypes`\*\*
 
 &#x20;  - Lignes \~175, 179, 191 : `df\\\[col].fillna(median\\\_val, inplace=True)` sur une Series extraite
 
-&#x20;    d'un DataFrame peut déclencher un `SettingWithCopyWarning` voire ne pas modifier `df` selon
+&#x20;    d'un DataFrame peut dï¿½clencher un `SettingWithCopyWarning` voire ne pas modifier `df` selon
 
-&#x20;    la version de pandas (chaining assignment). À corriger en `df\\\[col] = df\\\[col].fillna(...)`.
+&#x20;    la version de pandas (chaining assignment). ï¿½ corriger en `df\\\[col] = df\\\[col].fillna(...)`.
 
 
 
-3\. \*\*Pas de détection "numérique mais en réalité catégoriel"\*\*
+3\. \*\*Pas de dï¿½tection "numï¿½rique mais en rï¿½alitï¿½ catï¿½goriel"\*\*
 
-&#x20;  - Confirme exactement le piège que Gemini a signalé : une colonne région encodée 1/2/3/4/5 ou
+&#x20;  - Confirme exactement le piï¿½ge que Gemini a signalï¿½ : une colonne rï¿½gion encodï¿½e 1/2/3/4/5 ou
 
-&#x20;    une échelle de Likert sera traitée comme `numeric\\\_cols` et entrera dans `descriptive\\\_stats`,
+&#x20;    une ï¿½chelle de Likert sera traitï¿½e comme `numeric\\\_cols` et entrera dans `descriptive\\\_stats`,
 
 &#x20;    `normality\\\_tests`, `correlation\\\_analysis`, `ols\\\_regression` comme une vraie variable continue.
 
@@ -124,61 +124,61 @@
 
 4\. \*\*`ols\\\_regression()` choisit Y arbitrairement (`numeric\\\_cols\\\[0]`)\*\*
 
-&#x20;  - Si `target\\\_col` n'est pas fourni, Y = première colonne numérique du dataset, ce qui peut
+&#x20;  - Si `target\\\_col` n'est pas fourni, Y = premiï¿½re colonne numï¿½rique du dataset, ce qui peut
 
-&#x20;    être un identifiant ou une variable sans aucun sens comme variable dépendante.
+&#x20;    ï¿½tre un identifiant ou une variable sans aucun sens comme variable dï¿½pendante.
 
-&#x20;  - Pas de validation que Y a du sens (ex: si Y est en réalité une variable catégorielle encodée
+&#x20;  - Pas de validation que Y a du sens (ex: si Y est en rï¿½alitï¿½ une variable catï¿½gorielle encodï¿½e
 
-&#x20;    en int — cf point 3, le bug se propage).
-
-
-
-5\. \*\*`run\\\_full\\\_compute\\\_pipeline()` calcule la régression MÊME SI elle n'a pas de sens\*\*
-
-&#x20;  - Si le dataset a 2 variables numériques dont une est un ID, la régression tourne quand même
-
-&#x20;    et produit des résultats qui seront envoyés au LLM pour interprétation — donc un rapport
-
-&#x20;    avec une régression absurde mais "interprétée sérieusement".
+&#x20;    en int ï¿½ cf point 3, le bug se propage).
 
 
 
-6\. \*\*`correlation\\\_analysis()` : matrice de p-values jamais utilisée\*\*
+5\. \*\*`run\\\_full\\\_compute\\\_pipeline()` calcule la rï¿½gression Mï¿½ME SI elle n'a pas de sens\*\*
 
-&#x20;  - `p\\\_matrix` est construite (ligne \~445-476) mais n'est ni retournée ni utilisée dans le
+&#x20;  - Si le dataset a 2 variables numï¿½riques dont une est un ID, la rï¿½gression tourne quand mï¿½me
 
-&#x20;    dict final. Code mort ou oubli — à clarifier (peut-être prévu pour un affichage futur des
+&#x20;    et produit des rï¿½sultats qui seront envoyï¿½s au LLM pour interprï¿½tation ï¿½ donc un rapport
 
-&#x20;    significativités sur la heatmap).
+&#x20;    avec une rï¿½gression absurde mais "interprï¿½tï¿½e sï¿½rieusement".
 
 
 
-7\. \*\*Génération de scripts R/Stata : indices fixes (`numeric\\\_cols\\\[:4]`, `\\\[:6]`, `\\\[:8]`)\*\*
+6\. \*\*`correlation\\\_analysis()` : matrice de p-values jamais utilisï¿½e\*\*
+
+&#x20;  - `p\\\_matrix` est construite (ligne \~445-476) mais n'est ni retournï¿½e ni utilisï¿½e dans le
+
+&#x20;    dict final. Code mort ou oubli ï¿½ ï¿½ clarifier (peut-ï¿½tre prï¿½vu pour un affichage futur des
+
+&#x20;    significativitï¿½s sur la heatmap).
+
+
+
+7\. \*\*Gï¿½nï¿½ration de scripts R/Stata : indices fixes (`numeric\\\_cols\\\[:4]`, `\\\[:6]`, `\\\[:8]`)\*\*
 
 &#x20;  - Fonctionne mais peut planter ou produire du code vide si le dataset a moins de colonnes
 
-&#x20;    que ces indices (ex: dataset avec 2 colonnes numériques ? `numeric\\\_cols\\\[1:4]` est vide,
+&#x20;    que ces indices (ex: dataset avec 2 colonnes numï¿½riques ? `numeric\\\_cols\\\[1:4]` est vide,
 
 &#x20;    `x\\\_cols` vide ? `" + ".join(x\\\_cols\\\[:6])` produit une formule R invalide `y \\\~ ` sans
 
-&#x20;    variable). À sécuriser avec des conditions.
+&#x20;    variable). ï¿½ sï¿½curiser avec des conditions.
 
 
 
 8\. \*\*`PALETTE\\\["bg"] = "#0a0a0a"` vs doc de specs `#0A0A0F`\*\*
 
-&#x20;  - Détail mineur, mais légère incohérence de couleur entre le code et le document de specs
+&#x20;  - Dï¿½tail mineur, mais lï¿½gï¿½re incohï¿½rence de couleur entre le code et le document de specs
 
-&#x20;    (Section 13). À harmoniser si on garde cette palette pour les graphiques matplotlib.
-
-
-
-\### À garder pour v2 (sans modification ou avec modifications mineures)
+&#x20;    (Section 13). ï¿½ harmoniser si on garde cette palette pour les graphiques matplotlib.
 
 
 
-\- `load\\\_and\\\_diagnose()` (+ ajout du garde-fou numérique/catégoriel du point 3)
+\### ï¿½ garder pour v2 (sans modification ou avec modifications mineures)
+
+
+
+\- `load\\\_and\\\_diagnose()` (+ ajout du garde-fou numï¿½rique/catï¿½goriel du point 3)
 
 \- `clean\\\_dataframe()` (+ fix `inplace=True` du point 2)
 
@@ -188,25 +188,25 @@
 
 \- `correlation\\\_analysis()` (clarifier le sort de `p\\\_matrix`)
 
-\- `generate\\\_r\\\_script()` / `generate\\\_stata\\\_script()` (+ sécuriser les indices du point 7)
+\- `generate\\\_r\\\_script()` / `generate\\\_stata\\\_script()` (+ sï¿½curiser les indices du point 7)
 
-\- La structure générale de `run\\\_full\\\_compute\\\_pipeline()` comme squelette d'orchestrateur
-
-
-
-\### À écrire de zéro (Semaine 2 du programme, Jours 7-11)
+\- La structure gï¿½nï¿½rale de `run\\\_full\\\_compute\\\_pipeline()` comme squelette d'orchestrateur
 
 
 
-\- `test\\\_selector.py` — l'arbre de décision complet de l'Annexe B (comparaisons de groupes,
+\### ï¿½ ï¿½crire de zï¿½ro (Semaine 2 du programme, Jours 7-11)
 
-&#x20; chi-deux/Fisher, régression logistique, corrélations avec choix automatique)
 
-\- Intégration du switch automatique avec logging dans l'audit\_log (recommandation Gemini)
 
-\- Rendre la régression OLS conditionnelle (ne s'exécute que si l'objectif/la structure des
+\- `test\\\_selector.py` ï¿½ l'arbre de dï¿½cision complet de l'Annexe B (comparaisons de groupes,
 
-&#x20; données le justifie, pas systématiquement)
+&#x20; chi-deux/Fisher, rï¿½gression logistique, corrï¿½lations avec choix automatique)
+
+\- Intï¿½gration du switch automatique avec logging dans l'audit\_log (recommandation Gemini)
+
+\- Rendre la rï¿½gression OLS conditionnelle (ne s'exï¿½cute que si l'objectif/la structure des
+
+&#x20; donnï¿½es le justifie, pas systï¿½matiquement)
 
 
 
@@ -214,51 +214,51 @@
 
 
 
-\## brain.py — Logique des phases (6 appels LLM séquentiels, pas 8 "étapes égales")
+\## brain.py ï¿½ Logique des phases (6 appels LLM sï¿½quentiels, pas 8 "ï¿½tapes ï¿½gales")
 
 
 
-\### Architecture générale
+\### Architecture gï¿½nï¿½rale
 
 
 
 Le fichier comporte une fonction `call\\\_llm()` (fallback Groq ? OpenRouter ? Gemini, avec retries
 
-8/16/24s) et un pipeline `analyze\\\_with\\\_brain()` qui enchaîne 6 appels LLM séquentiels (le doc de
+8/16/24s) et un pipeline `analyze\\\_with\\\_brain()` qui enchaï¿½ne 6 appels LLM sï¿½quentiels (le doc de
 
-specs en mentionne 8, mais ici il y a 6 phases distinctes — 3 d'entre elles étant les "3A/3B/3C"
+specs en mentionne 8, mais ici il y a 6 phases distinctes ï¿½ 3 d'entre elles ï¿½tant les "3A/3B/3C"
 
 du document).
 
 
 
-\### Détail des phases
+\### Dï¿½tail des phases
 
 
 
-| # | Phase | Input (résumé) | Output attendu | Tokens max | Pause après |
+| # | Phase | Input (rï¿½sumï¿½) | Output attendu | Tokens max | Pause aprï¿½s |
 
 |---|-------|-----------------|-----------------|-----------|-------------|
 
 | 1 | `\\\_phase\\\_diagnosis` | n\_rows/cols, types, missing, outliers, doublons, cleaning\_log | Diagnostic structurel 3 niveaux | 1500 | 5s |
 
-| 2 | `\\\_phase\\\_descriptive` | Stats numériques (top 6) + catégorielles (top 4) | Interprétation descriptive 3 niveaux | 1800 | 5s |
+| 2 | `\\\_phase\\\_descriptive` | Stats numï¿½riques (top 6) + catï¿½gorielles (top 4) | Interprï¿½tation descriptive 3 niveaux | 1800 | 5s |
 
-| 3A | `\\\_phase\\\_normality` | Résultats Shapiro-Wilk (top 6 colonnes) | H0/H1, décision, implications | 1500 | 5s |
+| 3A | `\\\_phase\\\_normality` | Rï¿½sultats Shapiro-Wilk (top 6 colonnes) | H0/H1, dï¿½cision, implications | 1500 | 5s |
 
-| 3B | `\\\_phase\\\_correlation` | Top 8 corrélations significatives | Interprétation corrélations, multicolinéarité | 1500 | 5s |
+| 3B | `\\\_phase\\\_correlation` | Top 8 corrï¿½lations significatives | Interprï¿½tation corrï¿½lations, multicolinï¿½aritï¿½ | 1500 | 5s |
 
-| 3C | `\\\_phase\\\_regression` | Résultats OLS complets (R², coefs significatifs, VIF, DW, BP) | Interprétation régression 3 niveaux | 2000 | 10s |
+| 3C | `\\\_phase\\\_regression` | Rï¿½sultats OLS complets (Rï¿½, coefs significatifs, VIF, DW, BP) | Interprï¿½tation rï¿½gression 3 niveaux | 2000 | 10s |
 
-| 8 | `\\\_phase\\\_report\\\_forge` | Synthèse globale (n\_rows, dataset\_type, R², n\_charts) | Rapport final complet (résumé exécutif, méthodo, résultats, conclusions, limites, score) | 3000 | — |
+| 8 | `\\\_phase\\\_report\\\_forge` | Synthï¿½se globale (n\_rows, dataset\_type, Rï¿½, n\_charts) | Rapport final complet (rï¿½sumï¿½ exï¿½cutif, mï¿½thodo, rï¿½sultats, conclusions, limites, score) | 3000 | ï¿½ |
 
 
 
-\*\*Donc : 6 appels LLM séquentiels\*\*, avec des pauses cumulées de 5+5+5+5+10 = 30 secondes avant
+\*\*Donc : 6 appels LLM sï¿½quentiels\*\*, avec des pauses cumulï¿½es de 5+5+5+5+10 = 30 secondes avant
 
-le dernier appel (le plus gros, 3000 tokens). Le doc de specs parlait de "Phase 3 découpée en
+le dernier appel (le plus gros, 3000 tokens). Le doc de specs parlait de "Phase 3 dï¿½coupï¿½e en
 
-3A/3B/3C" — c'est exactement ce qu'on voit ici.
+3A/3B/3C" ï¿½ c'est exactement ce qu'on voit ici.
 
 
 
@@ -266,9 +266,9 @@ le dernier appel (le plus gros, 3000 tokens). Le doc de specs parlait de "Phase 
 
 
 
-\- \*\*`SYSTEM\\\_PROMPT`\*\* est bien écrit : interdit explicitement au LLM d'inventer des chiffres,
+\- \*\*`SYSTEM\\\_PROMPT`\*\* est bien ï¿½crit : interdit explicitement au LLM d'inventer des chiffres,
 
-&#x20; impose les 3 niveaux (technique/analytique/décisionnel), impose H0/H1 explicite. Bonne base
+&#x20; impose les 3 niveaux (technique/analytique/dï¿½cisionnel), impose H0/H1 explicite. Bonne base
 
 &#x20; pour le prompt unique du Jour 14-16.
 
@@ -276,29 +276,29 @@ le dernier appel (le plus gros, 3000 tokens). Le doc de specs parlait de "Phase 
 
 \- \*\*Le fallback multi-provider\*\* (`call\\\_llm`) fonctionne dans sa logique (Groq ? OpenRouter ?
 
-&#x20; Gemini, retries), mais c'est précisément l'architecture que le programme 90 jours a décidé
+&#x20; Gemini, retries), mais c'est prï¿½cisï¿½ment l'architecture que le programme 90 jours a dï¿½cidï¿½
 
 &#x20; d'ABANDONNER au Jour 13 (un seul provider payant).
 
 
 
-\- \*\*`\\\_phase\\\_report\\\_forge`\*\* contient déjà la bonne structure de sections (résumé exécutif,
+\- \*\*`\\\_phase\\\_report\\\_forge`\*\* contient dï¿½jï¿½ la bonne structure de sections (rï¿½sumï¿½ exï¿½cutif,
 
-&#x20; méthodologie, résultats, conclusions, limites + score) — réutilisable comme trame du prompt unique.
-
-
-
-\### Ce qui est cassé / fragile (et explique les 429 documentés dans le doc de specs)
+&#x20; mï¿½thodologie, rï¿½sultats, conclusions, limites + score) ï¿½ rï¿½utilisable comme trame du prompt unique.
 
 
 
-1\. \*\*6 appels LLM séquentiels = 6 points de défaillance + 30s de pauses fixes\*\*
+\### Ce qui est cassï¿½ / fragile (et explique les 429 documentï¿½s dans le doc de specs)
 
-&#x20;  - Sur free tier, chaque appel peut échouer indépendamment. Le pipeline entier prend au
 
-&#x20;    minimum \~30s de pauses + temps de 6 générations. C'est la cause directe des erreurs 429
 
-&#x20;    en cascade décrites dans le document de specs (Section 9).
+1\. \*\*6 appels LLM sï¿½quentiels = 6 points de dï¿½faillance + 30s de pauses fixes\*\*
+
+&#x20;  - Sur free tier, chaque appel peut ï¿½chouer indï¿½pendamment. Le pipeline entier prend au
+
+&#x20;    minimum \~30s de pauses + temps de 6 gï¿½nï¿½rations. C'est la cause directe des erreurs 429
+
+&#x20;    en cascade dï¿½crites dans le document de specs (Section 9).
 
 
 
@@ -314,45 +314,45 @@ le dernier appel (le plus gros, 3000 tokens). Le doc de specs parlait de "Phase 
 
 &#x20;  ```
 
-&#x20;  - Cherche un nombre entre 50 et 100 suivi de "/100" ou "sur 100" dans le texte généré.
+&#x20;  - Cherche un nombre entre 50 et 100 suivi de "/100" ou "sur 100" dans le texte gï¿½nï¿½rï¿½.
 
-&#x20;  - Très fragile : formulation différente, nombre d'année (2024), pourcentage non lié au score,
+&#x20;  - Trï¿½s fragile : formulation diffï¿½rente, nombre d'annï¿½e (2024), pourcentage non liï¿½ au score,
 
-&#x20;    ou réponse en langue différente peut casser ou fausser ce parsing.
+&#x20;    ou rï¿½ponse en langue diffï¿½rente peut casser ou fausser ce parsing.
 
-&#x20;  - Exactement le problème que le Jour 12 corrige : score calculé mathématiquement par
+&#x20;  - Exactement le problï¿½me que le Jour 12 corrige : score calculï¿½ mathï¿½matiquement par
 
 &#x20;    `confidence\\\_score.py`, jamais extrait du texte LLM.
 
 
 
-3\. \*\*`raise RuntimeError("Tous les LLM sont épuisés.")`\*\*
+3\. \*\*`raise RuntimeError("Tous les LLM sont ï¿½puisï¿½s.")`\*\*
 
-&#x20;  - Si les 3 providers échouent, `analyze\\\_with\\\_brain` lève une exception non gérée. Pas de
+&#x20;  - Si les 3 providers ï¿½chouent, `analyze\\\_with\\\_brain` lï¿½ve une exception non gï¿½rï¿½e. Pas de
 
-&#x20;    fallback "retourner les résultats bruts sans interprétation" — pourtant la règle d'or que
+&#x20;    fallback "retourner les rï¿½sultats bruts sans interprï¿½tation" ï¿½ pourtant la rï¿½gle d'or que
 
 &#x20;    le programme impose (Jour 18).
 
 
 
-4\. \*\*Aucune validation que les chiffres cités par le LLM correspondent aux chiffres fournis\*\*
+4\. \*\*Aucune validation que les chiffres citï¿½s par le LLM correspondent aux chiffres fournis\*\*
 
-&#x20;  - Le `SYSTEM\\\_PROMPT` interdit d'inventer des chiffres, mais rien ne vérifie que le texte
+&#x20;  - Le `SYSTEM\\\_PROMPT` interdit d'inventer des chiffres, mais rien ne vï¿½rifie que le texte
 
-&#x20;    généré respecte cette consigne (recommandation ChatGPT/point ?).
+&#x20;    gï¿½nï¿½rï¿½ respecte cette consigne (recommandation ChatGPT/point ?).
 
 
 
 5\. \*\*Pauses fixes non adaptatives\*\*
 
-&#x20;  - `PAUSE = 5` secondes codé en dur, qu'on soit sur un free tier saturé ou un provider rapide.
+&#x20;  - `PAUSE = 5` secondes codï¿½ en dur, qu'on soit sur un free tier saturï¿½ ou un provider rapide.
 
 
 
-6\. \*\*Les phases 3A/3B/3C ne reçoivent que des extraits tronqués ("top 6", "top 8")\*\*
+6\. \*\*Les phases 3A/3B/3C ne reï¿½oivent que des extraits tronquï¿½s ("top 6", "top 8")\*\*
 
-&#x20;  - Si le dataset a 15 variables numériques, seules 6 sont interprétées dans `\\\_phase\\\_descriptive`
+&#x20;  - Si le dataset a 15 variables numï¿½riques, seules 6 sont interprï¿½tï¿½es dans `\\\_phase\\\_descriptive`
 
 &#x20;    et `\\\_phase\\\_normality`. Le rapport final pourrait ignorer des variables importantes sans le dire.
 
@@ -362,23 +362,23 @@ le dernier appel (le plus gros, 3000 tokens). Le doc de specs parlait de "Phase 
 
 
 
-\- \*\*Tout ce qui doit disparaître\*\* : `call\\\_llm()` avec fallback 3 providers, les 6 fonctions
+\- \*\*Tout ce qui doit disparaï¿½tre\*\* : `call\\\_llm()` avec fallback 3 providers, les 6 fonctions
 
-&#x20; `\\\_phase\\\_\\\*` séparées, les pauses entre phases, le parsing fragile du score.
+&#x20; `\\\_phase\\\_\\\*` sï¿½parï¿½es, les pauses entre phases, le parsing fragile du score.
 
-\- \*\*Tout ce qui doit être fusionné en UN seul prompt\*\* : le contenu informationnel des phases
+\- \*\*Tout ce qui doit ï¿½tre fusionnï¿½ en UN seul prompt\*\* : le contenu informationnel des phases
 
-&#x20; 1, 2, 3A, 3B, 3C, 8 (diagnostic + descriptives + normalité + corrélations + régression +
+&#x20; 1, 2, 3A, 3B, 3C, 8 (diagnostic + descriptives + normalitï¿½ + corrï¿½lations + rï¿½gression +
 
-&#x20; structure du rapport final) — devient les sections d'un unique JSON envoyé en un seul appel.
+&#x20; structure du rapport final) ï¿½ devient les sections d'un unique JSON envoyï¿½ en un seul appel.
 
-\- \*\*`SYSTEM\\\_PROMPT`\*\* est récupérable presque tel quel comme base du prompt système unique
+\- \*\*`SYSTEM\\\_PROMPT`\*\* est rï¿½cupï¿½rable presque tel quel comme base du prompt systï¿½me unique
 
-&#x20; (à adapter pour décrire le format JSON structuré attendu en sortie).
+&#x20; (ï¿½ adapter pour dï¿½crire le format JSON structurï¿½ attendu en sortie).
 
-\- \*\*Le score de confiance\*\* ne vient plus jamais du LLM — il vient de `confidence\\\_score.py`
+\- \*\*Le score de confiance\*\* ne vient plus jamais du LLM ï¿½ il vient de `confidence\\\_score.py`
 
-&#x20; (Jour 12), calculé sur les critères de l'Annexe A, et seulement \*expliqué\* par le LLM si besoin.
+&#x20; (Jour 12), calculï¿½ sur les critï¿½res de l'Annexe A, et seulement \*expliquï¿½\* par le LLM si besoin.
 
 
 
@@ -386,39 +386,170 @@ le dernier appel (le plus gros, 3000 tokens). Le doc de specs parlait de "Phase 
 
 
 
-\## SYNTHÈSE — Ce que ça change concrètement pour le programme 90 jours
+\## SYNTHï¿½SE ï¿½ Ce que ï¿½a change concrï¿½tement pour le programme 90 jours
 
 
 
-\- \*\*Bonne nouvelle\*\* : les Jours 3, 4, 9, 10, 39, 41, 44 sont largement accélérés — base solide
+\- \*\*Bonne nouvelle\*\* : les Jours 3, 4, 9, 10, 39, 41, 44 sont largement accï¿½lï¿½rï¿½s ï¿½ base solide
 
-&#x20; existante à corriger/adapter plutôt qu'à écrire de zéro. Gain de temps potentiel important en
+&#x20; existante ï¿½ corriger/adapter plutï¿½t qu'ï¿½ ï¿½crire de zï¿½ro. Gain de temps potentiel important en
 
-&#x20; semaine 1 et semaine 2 (partie "exécution des tests continus/régression/corrélation").
-
-
-
-\- \*\*Le vrai chantier reste intact\*\* : l'arbre de décision complet (Jours 7-8, `test\\\_selector.py`)
-
-&#x20; et l'orchestrateur avec switch automatique (Jour 11) sont presque entièrement à écrire — c'est
-
-&#x20; LE trou du projet actuel, exactement comme suspecté dans le programme 90 jours.
+&#x20; semaine 1 et semaine 2 (partie "exï¿½cution des tests continus/rï¿½gression/corrï¿½lation").
 
 
 
-\- \*\*brain.py est à réécrire à \~90%\*\*, mais sa logique informationnelle (quoi dire, dans quel
+\- \*\*Le vrai chantier reste intact\*\* : l'arbre de dï¿½cision complet (Jours 7-8, `test\\\_selector.py`)
 
-&#x20; ordre, avec quelles contraintes) est récupérable comme base de prompt pour le Jour 14-16.
+&#x20; et l'orchestrateur avec switch automatique (Jour 11) sont presque entiï¿½rement ï¿½ ï¿½crire ï¿½ c'est
 
-&#x20; Le `SYSTEM\\\_PROMPT` actuel est un bon point de départ.
+&#x20; LE trou du projet actuel, exactement comme suspectï¿½ dans le programme 90 jours.
 
 
 
-\- \*\*Risque à corriger en priorité dès le Jour 3-4\*\* : le garde-fou numérique vs catégoriel
+\- \*\*brain.py est ï¿½ rï¿½ï¿½crire ï¿½ \~90%\*\*, mais sa logique informationnelle (quoi dire, dans quel
 
-&#x20; (point 3) doit être ajouté tôt, car `compute.py` actuel laisserait une variable Likert/code-région
+&#x20; ordre, avec quelles contraintes) est rï¿½cupï¿½rable comme base de prompt pour le Jour 14-16.
 
-&#x20; se faire moyenner, normaliser, corréler et régresser sans broncher — exactement le piège
+&#x20; Le `SYSTEM\\\_PROMPT` actuel est un bon point de dï¿½part.
 
-&#x20; signalé par Gemini.
 
+
+\- \*\*Risque ï¿½ corriger en prioritï¿½ dï¿½s le Jour 3-4\*\* : le garde-fou numï¿½rique vs catï¿½goriel
+
+&#x20; (point 3) doit ï¿½tre ajoutï¿½ tï¿½t, car `compute.py` actuel laisserait une variable Likert/code-rï¿½gion
+
+&#x20; se faire moyenner, normaliser, corrï¿½ler et rï¿½gresser sans broncher ï¿½ exactement le piï¿½ge
+
+&#x20; signalï¿½ par Gemini.
+  
+note - deus : scikit-posthocs pour la prise en charge du test de dunn au jour 9
+
+
+note - deus : 1. .cursorrules â€” La Constitution
+
+Câ€™est le cerveau juridique du projet.
+
+Il ne dit pas comment coder une fonction.
+
+Il dit :
+
+comment QUANTA pense.
+
+Son rÃ´le :
+
+imposer la philosophie globale ;
+empÃªcher Cursor de faire du refactoring sauvage ;
+protÃ©ger lâ€™architecture ;
+rappeler que QUANTA est un logiciel scientifique avant dâ€™Ãªtre une app.
+
+Sans lui :
+
+Cursor devient un dÃ©veloppeur rapide.
+
+Avec lui :
+
+Cursor agit comme un architecte.
+
+2. compute.mdc â€” Le Tribunal MathÃ©matique
+
+Câ€™est le gardien du moteur.
+
+Son rÃ´le :
+
+empÃªcher toute approximation statistique ;
+imposer le dÃ©terminisme ;
+forcer la validation des hypothÃ¨ses ;
+protÃ©ger les calculs contre NaN, Likert, divisions nulles, biais.
+
+Il rÃ©pond Ã  :
+
+Â« est-ce que ce chiffre est rÃ©ellement dÃ©fendable ? Â»
+
+Sans lui :
+
+QUANTA devient un chatbot.
+
+3. api.mdc â€” Le ContrÃ´le Frontalier
+
+Câ€™est la frontiÃ¨re du systÃ¨me.
+
+Son rÃ´le :
+
+contrÃ´ler tout ce qui entre ;
+contrÃ´ler tout ce qui sort ;
+empÃªcher les structures incohÃ©rentes.
+
+Il rÃ©pond Ã  :
+
+Â« est-ce que lâ€™extÃ©rieur peut casser QUANTA ? Â»
+
+Sans lui :
+
+tu te retrouves avec des dict partout et des bugs fantÃ´mes.
+
+4. llm.mdc â€” La MuseliÃ¨re du LLM
+
+Le plus dangereux.
+
+Son rÃ´le :
+
+empÃªcher le LLM de devenir statisticien ;
+lâ€™obliger Ã  rester interprÃ¨te.
+
+Il rÃ©pond Ã  :
+
+Â« est-ce que lâ€™IA raconte des choses quâ€™elle nâ€™a jamais calculÃ©es ? Â»
+
+Sans lui :
+
+tu obtiens des beaux rapports faux.
+
+5. report.mdc â€” Le Contrat de Confiance
+
+Le rapport est ton produit.
+
+Son rÃ´le :
+
+rendre les rÃ©sultats lisibles ;
+permettre reproduction ;
+permettre contestation.
+
+Il rÃ©pond Ã  :
+
+Â« est-ce quâ€™un humain peut signer ce document ? Â»
+
+Sans lui :
+
+QUANTA est juste une API.
+
+6. tests.mdc â€” Le SystÃ¨me Immunitaire
+
+Celui qui protÃ¨ge le futur.
+
+Son rÃ´le :
+
+dÃ©tecter les rÃ©gressions ;
+geler les rÃ©sultats ;
+empÃªcher une correction de casser autre chose.
+
+Il rÃ©pond Ã  :
+
+Â« est-ce que QUANTA est encore vrai aprÃ¨s 200 commits ? Â»
+
+Sans lui :
+
+plus QUANTA grandit, plus il devient fragile.
+
+Ensemble :
+
+.cursorrules
+â†“
+compute
+â†“
+api
+â†“
+llm
+â†“
+report
+â†“
+tests
