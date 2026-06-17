@@ -1,0 +1,272 @@
+# FILE: .cursor/rules/report.mdc
+
+---
+
+description:
+QUANTA report generation rules
+globs:
+
+* app/report/**
+  alwaysApply: true
+
+---
+
+# ==================================================
+
+# QUANTA REPORT FORGE
+
+# ==================================================
+
+ROLE:
+
+Generate professional statistical reports.
+
+The report must be:
+
+reviewable
+
+reproducible
+
+signable
+
+━━━━━━━━━━━━━━━━━━━━━━
+REPORT PHILOSOPHY
+━━━━━━━━━━━━━━━━━━━━━━
+
+The PDF is the product.
+
+User must feel:
+
+"I can send this."
+
+Never optimize for beauty first.
+
+Optimize for trust.
+
+━━━━━━━━━━━━━━━━━━━━━━
+REPORT STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━
+
+Order:
+
+1 Cover
+
+2 Executive Summary
+
+3 Dataset Description
+
+4 Cleaning Decisions
+
+5 Methodology
+
+6 Results
+
+7 Interpretation
+
+8 Recommendations
+
+9 Reproducibility
+
+10 Appendix
+
+━━━━━━━━━━━━━━━━━━━━━━
+COVER PAGE
+━━━━━━━━━━━━━━━━━━━━━━
+
+Include:
+
+analysis_id
+
+date
+
+title
+
+dataset info
+
+confidence score
+
+version
+
+Never include:
+
+marketing text
+
+━━━━━━━━━━━━━━━━━━━━━━
+EXECUTIVE SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━
+
+Source:
+
+LEVEL_3 only
+
+Max:
+
+1 page
+
+No jargon.
+
+No hidden assumptions.
+
+━━━━━━━━━━━━━━━━━━━━━━
+METHODOLOGY
+━━━━━━━━━━━━━━━━━━━━━━
+
+Must include:
+
+sample size
+
+cleaning
+
+tests selected
+
+test rationale
+
+assumption validation
+
+Never omit substitutions.
+
+If test changed:
+
+show why.
+
+━━━━━━━━━━━━━━━━━━━━━━
+RESULTS SECTION
+━━━━━━━━━━━━━━━━━━━━━━
+
+Always display:
+
+test
+
+statistic
+
+p-value
+
+effect size
+
+CI
+
+interpretation
+
+warnings
+
+Tables preferred.
+
+━━━━━━━━━━━━━━━━━━━━━━
+GRAPH RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Graphs must:
+
+have labels
+
+have units
+
+be readable
+
+use deterministic rendering
+
+Never manipulate axes.
+
+Never exaggerate effects.
+
+━━━━━━━━━━━━━━━━━━━━━━
+REPRODUCIBILITY
+━━━━━━━━━━━━━━━━━━━━━━
+
+Mandatory appendix.
+
+Generate:
+
+Python reproduction
+
+R reproduction
+
+Stata reproduction
+
+Goal:
+
+same result
+same data
+
+Rules:
+
+no pseudocode
+
+real executable structure
+
+comment every block
+
+━━━━━━━━━━━━━━━━━━━━━━
+R EXPORT RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Prefer:
+
+base
+
+stats
+
+dplyr
+
+Never use unsupported packages.
+
+━━━━━━━━━━━━━━━━━━━━━━
+STATA RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Prefer:
+
+official commands.
+
+Readable syntax.
+
+No advanced macros.
+
+━━━━━━━━━━━━━━━━━━━━━━
+AUDIT TRAIL
+━━━━━━━━━━━━━━━━━━━━━━
+
+Every automatic action:
+
+show:
+
+decision
+
+reason
+
+timestamp
+
+Never hide transformations.
+
+━━━━━━━━━━━━━━━━━━━━━━
+VISUAL RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Print first.
+
+Screen second.
+
+Readable in grayscale.
+
+Avoid dark backgrounds.
+
+━━━━━━━━━━━━━━━━━━━━━━
+FAILURE RULE
+━━━━━━━━━━━━━━━━━━━━━━
+
+If section impossible:
+
+display:
+
+NOT AVAILABLE
+
+Never fabricate.
+
+━━━━━━━━━━━━━━━━━━━━━━
+FINAL QUESTION
+━━━━━━━━━━━━━━━━━━━━━━
+
+Would a professor reject this report?
+
+If yes:
+continue improving.

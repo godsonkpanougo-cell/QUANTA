@@ -1,0 +1,379 @@
+# FILE: .cursor/rules/tests.mdc
+
+---
+
+description:
+QUANTA testing and validation rules
+globs:
+
+* tests/**
+* app/**
+  alwaysApply: true
+
+---
+
+# ==================================================
+
+# QUANTA VALIDATION ENGINE
+
+# ==================================================
+
+ROLE:
+
+You are validating statistical software.
+
+You do not trust code.
+
+You verify it.
+
+Every implementation must prove itself.
+
+━━━━━━━━━━━━━━━━━━━━━━
+TEST PHILOSOPHY
+━━━━━━━━━━━━━━━━━━━━━━
+
+QUANTA is scientific software.
+
+Scientific software is guilty until proven correct.
+
+Tests are mandatory.
+
+No feature is complete without validation.
+
+━━━━━━━━━━━━━━━━━━━━━━
+MINIMUM TEST POLICY
+━━━━━━━━━━━━━━━━━━━━━━
+
+Every implementation requires:
+
+1 Happy Path
+
+1 Edge Case
+
+1 Failure Case
+
+Minimum.
+
+No exceptions.
+
+Example:
+
+normal_dataset
+
+extreme_dataset
+
+invalid_dataset
+
+━━━━━━━━━━━━━━━━━━━━━━
+TEST STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━
+
+Organize:
+
+tests/
+
+compute/
+
+api/
+
+llm/
+
+report/
+
+fixtures/
+
+golden/
+
+Use same structure as app.
+
+Never create giant test files.
+
+━━━━━━━━━━━━━━━━━━━━━━
+COMPUTE TEST RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Every statistical function:
+
+validate:
+
+expected result
+
+shape
+
+confidence
+
+warnings
+
+Compare:
+
+expected
+
+actual
+
+Never:
+
+assert only non-null.
+
+━━━━━━━━━━━━━━━━━━━━━━
+NUMERIC VALIDATION
+━━━━━━━━━━━━━━━━━━━━━━
+
+Floating comparisons:
+
+Never:
+
+==
+
+Use:
+
+approx
+
+absolute tolerance
+
+relative tolerance
+
+Document tolerance.
+
+━━━━━━━━━━━━━━━━━━━━━━
+GOLDEN DATASETS
+━━━━━━━━━━━━━━━━━━━━━━
+
+Create:
+
+tests/golden/
+
+Goal:
+
+freeze known outputs.
+
+Each dataset must contain:
+
+dataset
+
+expected_output
+
+metadata
+
+Version them.
+
+Never overwrite silently.
+
+If output changes:
+
+justify.
+
+━━━━━━━━━━━━━━━━━━━━━━
+MANDATORY GOLDEN CASES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Include:
+
+perfect dataset
+
+missing values
+
+Likert
+
+constant variables
+
+small sample
+
+large sample
+
+outliers
+
+heteroscedasticity
+
+mixed types
+
+duplicate rows
+
+empty file
+
+invalid encoding
+
+━━━━━━━━━━━━━━━━━━━━━━
+LIKERT VALIDATION
+━━━━━━━━━━━━━━━━━━━━━━
+
+Verify:
+
+ordinal handling
+
+test selection
+
+warnings
+
+Never allow accidental mean logic.
+
+━━━━━━━━━━━━━━━━━━━━━━
+API TEST RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Validate:
+
+request
+
+response
+
+status
+
+validation
+
+error schema
+
+Test:
+
+invalid uploads
+
+bad payload
+
+timeouts
+
+━━━━━━━━━━━━━━━━━━━━━━
+LLM TEST RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+LLM tests are:
+
+structure tests.
+
+Never:
+
+judge quality.
+
+Validate:
+
+json schema
+
+numeric preservation
+
+hallucination detection
+
+If output changes values:
+
+FAIL.
+
+━━━━━━━━━━━━━━━━━━━━━━
+REPORT TEST RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Validate:
+
+PDF generation
+
+tables
+
+page overflow
+
+graphs
+
+appendix
+
+reproducibility
+
+Ensure:
+
+frontend
+
+pdf
+
+raw
+
+show same numbers.
+
+━━━━━━━━━━━━━━━━━━━━━━
+REGRESSION RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Every bug:
+
+must create:
+
+1 regression test.
+
+# Bug fixed
+
+test added.
+
+No exception.
+
+━━━━━━━━━━━━━━━━━━━━━━
+PERFORMANCE TESTS
+━━━━━━━━━━━━━━━━━━━━━━
+
+Benchmark:
+
+1k rows
+
+10k rows
+
+50k rows
+
+Measure:
+
+runtime
+
+memory
+
+Failures logged.
+
+━━━━━━━━━━━━━━━━━━━━━━
+CI RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Before merge:
+
+pytest
+
+coverage
+
+lint
+
+type checks
+
+Fail build if tests fail.
+
+━━━━━━━━━━━━━━━━━━━━━━
+COVERAGE
+━━━━━━━━━━━━━━━━━━━━━━
+
+Target:
+
+80%
+
+Compute:
+
+90%
+
+Critical paths:
+
+95%
+
+Coverage alone is insufficient.
+
+━━━━━━━━━━━━━━━━━━━━━━
+DOCUMENTATION
+━━━━━━━━━━━━━━━━━━━━━━
+
+Every test:
+
+must explain:
+
+why
+
+expected result
+
+scientific rationale
+
+━━━━━━━━━━━━━━━━━━━━━━
+FINAL CHECK
+━━━━━━━━━━━━━━━━━━━━━━
+
+Ask:
+
+Would I trust this result
+for publication?
+
+If no:
+add tests.

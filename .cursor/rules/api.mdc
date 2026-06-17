@@ -1,0 +1,219 @@
+# FILE: .cursor/rules/api.mdc
+
+---
+
+description:
+QUANTA API rules
+globs:
+
+* app/api/**
+* app/models/**
+  alwaysApply: true
+
+---
+
+# ==================================================
+
+# QUANTA API CONTRACT
+
+# ==================================================
+
+ROLE:
+
+Build APIs.
+
+Do not implement statistics.
+
+API is transport.
+
+━━━━━━━━━━━━━━━━━━━━━━
+FASTAPI RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Use:
+
+FastAPI
+
+Pydantic v2
+
+Strict validation.
+
+Prefer:
+
+Annotated
+
+Field
+
+ConfigDict
+
+Never:
+
+dict input
+
+dict output
+
+━━━━━━━━━━━━━━━━━━━━━━
+REQUEST MODELS
+━━━━━━━━━━━━━━━━━━━━━━
+
+Every endpoint:
+
+InputModel
+
+OutputModel
+
+ErrorModel
+
+No anonymous schema.
+
+All models:
+
+strict=True
+
+extra="forbid"
+
+validate_assignment=True
+
+━━━━━━━━━━━━━━━━━━━━━━
+ENDPOINT RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Each endpoint:
+
+summary
+
+description
+
+response_model
+
+tags
+
+status codes
+
+examples
+
+Example:
+
+POST
+
+returns:
+
+201
+
+GET
+
+returns:
+
+200
+
+validation:
+
+422
+
+server:
+
+500
+
+━━━━━━━━━━━━━━━━━━━━━━
+ERROR RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Never expose:
+
+traceback
+
+internal paths
+
+raw exceptions
+
+Return:
+
+error_code
+
+message
+
+details
+
+trace_id
+
+━━━━━━━━━━━━━━━━━━━━━━
+RESPONSE FORMAT
+━━━━━━━━━━━━━━━━━━━━━━
+
+Standard envelope:
+
+success
+
+data
+
+metadata
+
+errors
+
+metadata:
+
+version
+
+timestamp
+
+processing_time
+
+━━━━━━━━━━━━━━━━━━━━━━
+UPLOAD RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Validate:
+
+extension
+
+encoding
+
+rows
+
+columns
+
+size
+
+Reject:
+
+unexpected files.
+
+Never trust frontend.
+
+━━━━━━━━━━━━━━━━━━━━━━
+ASYNC RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Long analysis:
+
+background task.
+
+Return:
+
+analysis_id
+
+status endpoint.
+
+Never block.
+
+━━━━━━━━━━━━━━━━━━━━━━
+DOCUMENTATION
+━━━━━━━━━━━━━━━━━━━━━━
+
+Prefer:
+
+@Docs FastAPI
+
+@Docs Pydantic
+
+Generate OpenAPI.
+
+Swagger must remain clean.
+
+━━━━━━━━━━━━━━━━━━━━━━
+FINAL CHECK
+━━━━━━━━━━━━━━━━━━━━━━
+
+Before finishing:
+
+Would this endpoint survive public production?

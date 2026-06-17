@@ -1,0 +1,243 @@
+# FILE: .cursor/rules/compute.mdc
+
+---
+
+description:
+QUANTA deterministic compute rules
+globs:
+
+* app/compute/**
+  alwaysApply: true
+
+---
+
+# ==================================================
+
+# QUANTA COMPUTE ENGINE
+
+# ==================================================
+
+ROLE:
+
+You are implementing deterministic statistical computation.
+
+You NEVER interpret.
+
+You NEVER explain.
+
+You NEVER generate conclusions.
+
+You only compute.
+
+━━━━━━━━━━━━━━━━━━━━━━
+COMPUTE PRINCIPLES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Compute must be:
+
+deterministic
+pure
+reproducible
+traceable
+
+# Same input
+
+same output
+
+No randomness unless explicit.
+
+━━━━━━━━━━━━━━━━━━━━━━
+INPUT RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+All inputs validated.
+
+Reject:
+
+* empty dataset
+* duplicated columns
+* unsupported dtype
+* corrupted rows
+
+Normalize:
+
+* NaN
+* inf
+* categories
+* encoding
+
+Never mutate original dataframe.
+
+Always:
+
+df_clean = df.copy()
+
+━━━━━━━━━━━━━━━━━━━━━━
+STATISTICAL SAFETY
+━━━━━━━━━━━━━━━━━━━━━━
+
+Before every test:
+
+validate assumptions.
+
+Examples:
+
+t-test:
+
+* normality
+* independence
+* variance
+
+anova:
+
+* homogeneity
+
+correlation:
+
+* distribution
+* outliers
+
+If assumptions fail:
+
+DO NOT CONTINUE.
+
+Return:
+
+alternative_test
+reason
+
+━━━━━━━━━━━━━━━━━━━━━━
+LIKERT RULES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Likert handling:
+
+1–5
+1–7
+
+Treat as ordinal.
+
+Forbidden:
+
+automatic mean comparison.
+
+Allowed:
+
+Mann Whitney
+
+Kruskal
+
+Dunn
+(scikit-posthocs)
+
+Ordinal regression.
+
+If treated continuous:
+
+must justify.
+
+━━━━━━━━━━━━━━━━━━━━━━
+MISSING VALUES
+━━━━━━━━━━━━━━━━━━━━━━
+
+Never silently remove.
+
+Missing strategy:
+
+<5%
+warn
+
+5–20%
+explicit strategy
+
+> 20%
+> low confidence
+
+Log:
+
+reason
+method
+
+━━━━━━━━━━━━━━━━━━━━━━
+NUMERICAL SAFETY
+━━━━━━━━━━━━━━━━━━━━━━
+
+Every compute function:
+
+protect against:
+
+NaN
+
+inf
+
+overflow
+
+underflow
+
+empty arrays
+
+constant vectors
+
+division by zero
+
+insufficient n
+
+Always:
+
+raise domain exception.
+
+Never:
+
+return None
+
+━━━━━━━━━━━━━━━━━━━━━━
+COMMENTS RULE
+━━━━━━━━━━━━━━━━━━━━━━
+
+Never remove:
+
+* formulas
+* derivations
+* mathematical notes
+
+Preserve research intent.
+
+━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT RULE
+━━━━━━━━━━━━━━━━━━━━━━
+
+Outputs:
+
+strict models.
+
+Never raw dict.
+
+Include:
+
+inputs
+
+method
+
+statistics
+
+assumptions
+
+warnings
+
+audit
+
+confidence
+
+━━━━━━━━━━━━━━━━━━━━━━
+DOCUMENTATION
+━━━━━━━━━━━━━━━━━━━━━━
+
+Prefer:
+
+@Docs Pandas
+
+@Docs Scipy
+
+@Docs Statsmodels
+
+@Docs scikit-posthocs
