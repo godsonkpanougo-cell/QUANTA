@@ -681,3 +681,754 @@ python -m tests.test_orchestrator_corrupt_file
 ```
 
 
+
+---
+
+
+
+# Résultats des tests manuels — couche LLM `brain.py`
+
+
+
+Date : 2026-06-17  
+
+Emplacement : `app/llm/brain.py`  
+
+Commande : `python -m tests.test_brain_<cas>` depuis la racine du repo  
+
+Configuration : `.env` (template `.env.example`) — clés non commitées
+
+
+
+## Statut : VALIDÉ — DÉFINITIVEMENT CLOS (live Groq + repli sans clé)
+
+
+
+Les 6 scripts passent sans exception. Tests live exécutés avec `PRIMARY_MODEL=llama-3.3-70b-versatile` (Groq). JSON exploitable en pratique sur `text_to_intent` et `generate_interpretation`. Repli sans clé toujours fonctionnel.
+
+
+
+---
+
+
+
+## Synthèse (6 scénarios)
+
+
+
+| Scénario | Script | Clé API ? | Résultat clé | Crash ? | JSON OK ? |
+
+|----------|--------|-----------|--------------|---------|-----------|
+
+| text_to_intent live | `test_brain_text_to_intent_live` | Oui (Groq) | `compare_groups`, `income` × `code_region` | Non | Oui |
+
+| text_to_intent sans clé | `test_brain_text_to_intent_no_key` | Non | `descriptive_only` | Non | Oui |
+
+| generate_interpretation live | `test_brain_generate_interpretation_live` | Oui (Groq) | 3 niveaux OK, régressions déterministes OK | Non | Oui |
+
+| generate_interpretation sans clé | `test_brain_generate_interpretation_no_key` | Non | `llm_available=false`, `raw_analysis.status=ok` | Non | Oui |
+
+| analyze_with_brain E2E | `test_brain_analyze_e2e` | Oui (Groq) | ANOVA multi-régions + `formats_anormaux_detectes` (régression 025,02) | Non | Oui |
+
+| json.dumps tous chemins | `test_brain_json_serializable` | Non | 3 payloads sérialisables | Non | Oui |
+
+
+
+---
+
+
+
+## Détail par scénario
+
+
+
+### 1 — text_to_intent live (`region_likert.csv`)
+
+
+
+```
+
+Query   : "comparer le revenu entre régions"
+
+action  = compare_groups
+
+target  = income
+
+group   = code_region
+
+```
+
+
+
+Qualité : **excellente**. Mapping sémantique correct (revenu → `income`, régions → `code_region`), pas d'hallucination de colonne. JSON strict exploitable du premier coup.
+
+
+
+### 2 — text_to_intent sans clé
+
+
+
+```
+
+action = descriptive_only
+
+target_col = None, group_col = None
+
+```
+
+
+
+Comportement attendu : échec LLM silencieux, jamais de crash.
+
+
+
+### 3 — generate_interpretation live (`ts_2groups_normal.csv`)
+
+
+
+```
+
+llm_available = True
+
+test sous-jacent = t-test de Student (variances égales)
+
+niveau_technique / analytique / decisionnel = tous non vides
+
+nombres_suspects_detectes = [] ou vraie hallucination live (ex. t=-7,3337 vs -5,2792 réel)
+
+formats_anormaux_detectes = [] (sur cette exécution)
+
+```
+
+
+
+Correctifs anti-hallucination cumulés :
+
+- **v2** : notation scientifique + tolérance float ±1% — faux positifs `-06,` résolus
+- **v3** : champ séparé `formats_anormaux_detectes` pour zéro de tête suspect (`025,02`) — distinct des `nombres_suspects_detectes`
+
+Régressions déterministes validées : `1e-06` non flaggé ; `-5,2792` (stat réelle, virgule FR) non suspect ; `-7,3337` reste suspect car absent des sources (vraie incohérence LLM possible en live, pas un faux positif de regex).
+
+
+
+### 4 — generate_interpretation sans clé
+
+
+
+```
+
+llm_available = False
+
+raw_analysis.status = ok
+
+confidence_score présent dans raw_analysis
+
+```
+
+
+
+Règle d'or respectée : le pipeline statistique reste accessible sans interprétation textuelle.
+
+
+
+### 5 — analyze_with_brain E2E (`region_likert.csv`)
+
+
+
+```
+
+intent.action_executed (orchestrator) = compare_groups_multi
+
+test = ANOVA à un facteur (variances égales)
+
+interpretation.llm_available = True
+
+nombres_suspects_detectes = [] (sortie live variable)
+
+formats_anormaux_detectes = [] (sortie live variable)
+
+Régression unitaire : `025,02` → `formats_anormaux_detectes` (pas `nombres_suspects_detectes`)
+
+```
+
+
+
+Investigation `025,02` : **pas un faux positif regex** — valeur 25,02 absente des sources ANOVA (`eta_squared` réel ≈ 0.0814). Le zéro de tête signale une corruption de format (fusion probable). Classé désormais en `formats_anormaux_detectes` avec avertissement prioritaire « format anormal / fusion accidentelle ».
+
+
+
+### 6 — Sérialisation JSON
+
+
+
+`json.dumps()` OK sur intent, interpretation (repli), et résultat complet `analyze_with_brain`.
+
+
+
+---
+
+
+
+## Observations (non corrigées)
+
+
+
+| Point | Note |
+
+|-------|------|
+
+| Qualité `text_to_intent` (Groq) | Très bonne sur le cas testé — JSON strict, colonnes validées, mapping sémantique correct |
+
+| Qualité `generate_interpretation` (Groq) | Contenu statistiquement raisonnable sur t-test et ANOVA ; reformulations lisibles aux 3 niveaux |
+
+| Faux positifs regex (t-test) | **Résolus** — `-06,` (notation scientifique) ne remonte plus |
+
+| `-7,3337` en live | **Vraie hallucination LLM** possible (stat réelle = -5,2792) — correctement signalée dans `nombres_suspects_detectes`, pas un faux positif |
+
+| `025,02` (ANOVA) | **Résolu** — classé en `formats_anormaux_detectes` (zéro de tête), avertissement dédié ; régression unitaire dans `test_brain_analyze_e2e` |
+
+| Structure `anti_hallucination_check` | Deux listes : `nombres_suspects_detectes` + `formats_anormaux_detectes` |
+
+| `satisfaction` reclassée catégorielle | Sur `region_likert.csv`, compute place `satisfaction` en `cat_cols` (Likert) — le LLM a correctement ignoré cette colonne pour « revenu entre régions » |
+
+| Repli sans clé | Toujours fonctionnel (`descriptive_only` / `llm_available=false`) — règle d'or respectée |
+
+
+
+---
+
+
+
+## Relancer les tests brain
+
+
+
+```bash
+
+cd QUANTA
+
+# Renseigner PRIMARY_API_KEY dans .env avant les tests live
+
+python -m tests.test_brain_text_to_intent_live
+
+python -m tests.test_brain_text_to_intent_no_key
+
+python -m tests.test_brain_generate_interpretation_live
+
+python -m tests.test_brain_generate_interpretation_no_key
+
+python -m tests.test_brain_analyze_e2e
+
+python -m tests.test_brain_json_serializable
+
+```
+
+
+
+---
+
+
+
+# Résultats des tests manuels — API FastAPI `main.py`
+
+
+
+Date : 2026-06-18  
+
+Emplacement : `main.py` (racine du repo — `uvicorn main:app`)  
+
+Commande : `python -m tests.test_api_<cas>` depuis la racine du repo  
+
+Client de test : `fastapi.testclient.TestClient` (pas de serveur réseau requis)
+
+
+
+## Statut : VALIDÉ
+
+
+
+Les 9 scripts passent sans exception. Serveur local vérifié : `/docs` (Swagger) et `/openapi.json` exposent les 5 endpoints attendus.
+
+
+
+---
+
+
+
+## Synthèse (9 scénarios)
+
+
+
+| Scénario | Script | Résultat clé | Crash ? |
+
+|----------|--------|--------------|---------|
+
+| Health check | `test_api_health` | `status=ok`, `service=quanta-api` | Non |
+
+| Flux upload → analyze → status | `test_api_upload_analyze_flow` | `status=done`, pipeline OK | Non |
+
+| Upload invalide | `test_api_upload_invalid` | HTTP 400, message lisible | Non |
+
+| Analyze file_id absent | `test_api_analyze_file_not_found` | HTTP 404 | Non |
+
+| Analyze query vide | `test_api_analyze_empty_query` | HTTP 422 (`""` et `"   "`) | Non |
+
+| Status analysis_id absent | `test_api_status_not_found` | HTTP 404 | Non |
+
+| Upload > 10 Mo | `test_api_upload_too_large` | HTTP 413 | Non |
+
+| Flux complet live (Groq) | `test_api_full_flow_live` | intent + interprétation via API | Non |
+
+| OpenAPI + /docs | `test_api_openapi_docs` | 5 endpoints documentés | Non |
+
+
+
+---
+
+
+
+## Détail
+
+
+
+### Endpoints exposés
+
+
+
+```
+
+GET  /health
+
+POST /upload
+
+POST /analyze
+
+GET  /status/{analysis_id}
+
+GET  /history
+
+```
+
+
+
+### Flux standard (`clean.csv`)
+
+
+
+```
+
+POST /upload        -> file_id + colonnes
+
+POST /analyze       -> analysis_id (pending)
+
+GET  /status/{id}   -> done + result (intent, analysis, interpretation)
+
+GET  /history       -> count >= 1
+
+```
+
+
+
+BackgroundTasks : exécutées de façon synchrone par `TestClient` — pas de polling nécessaire dans les tests.
+
+
+
+### Flux live Groq (`region_likert.csv`)
+
+
+
+```
+
+query = "comparer le revenu entre régions"
+
+intent.action = compare_groups
+
+analysis.status = ok
+
+interpretation.llm_available = true
+
+3 niveaux d'interprétation non vides
+
+```
+
+
+
+### Erreurs HTTP
+
+
+
+| Cas | Code | Détail |
+
+|-----|------|--------|
+
+| Extension `.xyz` | 400 | `Impossible de lire le fichier : Format non supporté : xyz` |
+
+| `file_id` inconnu | 404 | message explicite |
+
+| `query` vide / blanc | 422 | validation Pydantic |
+
+| `analysis_id` inconnu | 404 | message explicite |
+
+| Fichier > 10 Mo | 413 | `Fichier trop volumineux` |
+
+
+
+### Swagger / OpenAPI
+
+
+
+```
+
+uvicorn main:app --reload
+
+# http://127.0.0.1:8000/docs
+
+```
+
+
+
+Vérifié : `/docs` → 200, `/openapi.json` liste les 5 paths.
+
+
+
+---
+
+
+
+## Observations (non bloquantes)
+
+
+
+| Point | Note |
+
+|-------|------|
+
+| Emplacement `main.py` | Racine du repo pour compatibilité Render/Railway (`uvicorn main:app`) |
+
+| Stockage | SQLite (`quanta.db`) + fichiers temp (`quanta_uploads/`) — métadonnées et analyses survivent au redémarrage (J21) |
+
+| Starlette deprecation | Warning `httpx` vs `httpx2` dans TestClient — sans impact fonctionnel |
+
+| CORS | `CORS_ALLOWED_ORIGINS` (défaut `http://localhost:3000`) |
+
+
+
+---
+
+
+
+## Relancer les tests API
+
+
+
+```bash
+
+cd QUANTA
+
+python -m tests.test_api_health
+
+python -m tests.test_api_upload_analyze_flow
+
+python -m tests.test_api_upload_invalid
+
+python -m tests.test_api_analyze_file_not_found
+
+python -m tests.test_api_analyze_empty_query
+
+python -m tests.test_api_status_not_found
+
+python -m tests.test_api_upload_too_large
+
+python -m tests.test_api_full_flow_live
+
+python -m tests.test_api_openapi_docs
+
+```
+
+
+
+---
+
+
+
+# BILAN J24 — Non-régression massif API HTTP (Mois 1)
+
+
+
+Date : 2026-06-18  
+
+Script : `tests/test_regression_j24.py`  
+
+Client : `requests` (HTTP réel, pas `TestClient`)  
+
+Prérequis serveur : `uvicorn main:app --reload --port 8000`  
+
+Commande : `python -m tests.test_regression_j24`
+
+
+
+## Statut : VALIDÉ — MOIS 1 CLOS
+
+
+
+**12/12 datasets passent** sans erreur bloquante. Pipeline complet accessible via l'API : upload → analyze → poll status → résultat JSON sérialisable.
+
+
+
+Configuration exécution : clé Groq configurée (`llm_available=True` sur les 12 cas). Durée totale ~2 min.
+
+
+
+---
+
+
+
+## Synthèse (12 datasets)
+
+
+
+| Dataset | Status | Action exécutée | Score confiance | LLM dispo | JSON OK |
+
+|---------|--------|-----------------|-----------------|-----------|---------|
+
+| `clean.csv` | done | descriptive_only | 98.0 | True | Oui |
+
+| `missing_15pct.csv` | done | descriptive_only | 90.5 | True | Oui |
+
+| `outliers_extreme.csv` | done | descriptive_only | 100.0 | True | Oui |
+
+| `region_likert.csv` | done | compare_groups_multi | 100.0 | True | Oui |
+
+| `small_sample.csv` | done | descriptive_only | 94.0 | True | Oui |
+
+| `large_sample.csv` | done | regression_ols | 100.0 | True | Oui |
+
+| `with_duplicates.csv` | done | descriptive_only | 92.8 | True | Oui |
+
+| `mixed_categorical.csv` | done | compare_groups_multi | 98.0 | True | Oui |
+
+| `ts_2groups_normal.csv` | done | compare_groups_2 | 100.0 | True | Oui |
+
+| `ts_2groups_nonnormal.csv` | done | compare_groups_2 | 96.8 | True | Oui |
+
+| `ts_logistic_binary.csv` | done | regression_logistic | 100.0 | True | Oui |
+
+| `ts_assoc_fisher.csv` | done | descriptive_only | 94.0 | True | Oui |
+
+
+
+---
+
+
+
+## Critères vérifiés (par dataset)
+
+
+
+- `GET /status` → `status == "done"` (pas `"error"`)
+
+- `result.analysis.status == "ok"`
+
+- `result.analysis.inference.action_executed != None`
+
+- `result.analysis.confidence_score.score_global > 0`
+
+- `result.interpretation.llm_available` booléen (True ou False acceptables)
+
+- `json.dumps(result)` sans exception
+
+
+
+---
+
+
+
+## Observations (non bloquantes)
+
+
+
+| Point | Note |
+
+|-------|------|
+
+| Intent LLM variable | Sur `clean.csv`, `ts_assoc_fisher.csv` et quelques requêtes descriptives, le LLM retombe sur `descriptive_only` au lieu de `correlation` / `association` — le pipeline reste `status=ok` avec stats brutes accessibles |
+
+| `ts_assoc_fisher.csv` | Requête « association exposition-maladie » → `descriptive_only` en live (intent non mappé) ; pas d'échec car critères J24 = robustesse API, pas action exacte |
+
+| Port 8000 occupé | Si un ancien processus écoute sur 8000 avec erreurs 500, relancer `uvicorn` ou utiliser `QUANTA_API_URL=http://127.0.0.1:8001` |
+
+| Encodage Windows | Le script force `stdout` en UTF-8 pour afficher le message final avec emoji |
+
+
+
+---
+
+
+
+## Relancer le bilan J24
+
+
+
+```bash
+
+cd QUANTA
+
+# Terminal 1 — serveur
+
+uvicorn main:app --reload --port 8000
+
+
+
+# Terminal 2 — régression
+
+python -m tests.test_regression_j24
+
+```
+
+
+
+Variable optionnelle : `QUANTA_API_URL` (défaut `http://127.0.0.1:8000`).
+
+
+
+---
+
+
+
+# Migration SQLite (J21) — persistance API
+
+
+
+Date : 2026-06-20  
+
+Emplacement : `db.py` (racine) + `main.py` (dicts remplacés par appels SQLite)  
+
+Commande tests API : `python -m tests.test_api_<cas>` (9 scripts, inchangés)  
+
+Commande test critique : `python -m tests.test_persistence`
+
+
+
+## Statut : VALIDÉ
+
+
+
+La migration remplace le stockage en mémoire (`uploads` / `analyses`) par SQLite (`quanta.db`, configurable via `QUANTA_DB_PATH`). Les 9 scripts API passent sans régression. Le test `test_persistence.py` arrête et relance un vrai process `uvicorn` : `GET /status/{analysis_id}` et `GET /history` retrouvent l'analyse après redémarrage.
+
+
+
+---
+
+
+
+## Synthèse
+
+
+
+| Vérification | Script / mécanisme | Résultat |
+
+|--------------|-------------------|----------|
+
+| Non-régression API (9 cas) | `test_api_*` via `TestClient` | 9/9 OK |
+
+| Persistance après redémarrage process | `test_persistence` (uvicorn kill + relance) | OK |
+
+| Fichier généré ignoré par git | `quanta.db` dans `.gitignore` | OK |
+
+
+
+---
+
+
+
+## Détail — test_persistence
+
+
+
+```
+
+[1] uvicorn process 1 (QUANTA_DB_PATH = fichier temp)
+
+[2] POST /upload (clean.csv) -> POST /analyze -> poll GET /status -> done
+
+[3] kill process 1
+
+[4] uvicorn process 2 (même QUANTA_DB_PATH)
+
+    GET /status/{analysis_id} -> 200, status=done, result présent
+
+    GET /history -> analysis_id listé, count >= 1
+
+```
+
+
+
+Port dédié : `8765` (override : `QUANTA_PERSISTENCE_PORT`). Pas de `TestClient` — validation du vrai problème (perte d'état au redémarrage serveur).
+
+
+
+---
+
+
+
+## Observations
+
+
+
+| Point | Note |
+
+|-------|------|
+
+| Thread-safety | Verrou global + `check_same_thread=False` pour BackgroundTasks |
+
+| Fichiers uploadés | Toujours sur disque (`quanta_uploads/`) ; seules métadonnées + analyses en base |
+
+| Cleanup shutdown | Retiré (contradictoire avec persistance) |
+
+| Tests in-process | `reset_api_state()` vide les tables SQLite via `db.clear_all()` |
+
+
+
+---
+
+
+
+## Relancer
+
+
+
+```bash
+
+cd QUANTA
+
+
+
+# 9 tests API (TestClient)
+
+python -m tests.test_api_health
+
+python -m tests.test_api_upload_analyze_flow
+
+python -m tests.test_api_upload_invalid
+
+python -m tests.test_api_analyze_file_not_found
+
+python -m tests.test_api_analyze_empty_query
+
+python -m tests.test_api_status_not_found
+
+python -m tests.test_api_upload_too_large
+
+python -m tests.test_api_full_flow_live
+
+python -m tests.test_api_openapi_docs
+
+
+
+# Test critique persistance (process uvicorn réel)
+
+python -m tests.test_persistence
+
+```
+
+

@@ -4,5 +4,6 @@ __pycache__/
 .env
 data/samples/*.csv
 data/samples/*.xlsx
+quanta.db
 .DS_Store
 node_modules/
