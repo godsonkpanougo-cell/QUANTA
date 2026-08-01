@@ -2,7 +2,7 @@
 
 
 
-Date : 2026-06-15 (validation finale)  
+Date : 2026-06-15 (validation finale) — **mise à jour 2026-06-30** : robustesse CSV français (Latin-1, `;`, virgule décimale)
 
 Commande : `python -m tests.test_<cas>` depuis la racine du repo  
 
@@ -1428,6 +1428,142 @@ python -m tests.test_api_openapi_docs
 # Test critique persistance (process uvicorn réel)
 
 python -m tests.test_persistence
+
+```
+
+
+
+---
+
+
+
+# Robustesse CSV français — encodage / séparateur / virgule décimale
+
+
+
+Date : 2026-06-30  
+
+Fichier testé : `app/compute/compute.py` (v2 + fallbacks CSV réels)  
+
+Dataset : `data/samples/french_excel_export.csv` (Latin-1, `;`, virgule décimale)
+
+
+
+## Statut : VALIDÉ
+
+
+
+Les exports Excel français réels ne bloquent plus `/upload` ni le pipeline statistique.
+
+
+
+### Correctifs `compute.py`
+
+
+
+| Fonction | Rôle | Détail |
+
+|----------|------|--------|
+
+| `_detect_csv_encoding()` | Encodage | Cascade UTF-8 → UTF-8-sig → cp1252 → Latin-1 (jamais d'erreur) |
+
+| `_detect_csv_separator()` | Séparateur | Cohérence du nombre de colonnes par ligne (pas comptage brut) |
+
+| `_try_convert_french_decimal()` | Nombres | `"20090,00"` / `"25"` → `float64` si ≥ 90 % des valeurs convertibles |
+
+
+
+### Dataset `french_excel_export.csv`
+
+
+
+- **Encodage** : Latin-1 (octets accentués invalides en UTF-8 strict)
+
+- **Séparateur** : `;` (virgules dans texte `"Paris, France"` et décimales `"8,5"`)
+
+- **Colonnes** : `id`, `ville`, `region`, `satisfaction`, `age`, `revenu_annuel`, `score`
+
+- **Génération** : `python scripts/gen_french_csv.py` (reproductible)
+
+
+
+### Résultats tests
+
+
+
+| Test | Script | Résultat |
+
+|------|--------|----------|
+
+| Non-régression Mois 1 (12 datasets UTF-8) | `test_regression_j24` | **12/12 OK** — inchangés |
+
+| Compute unitaires (8 datasets) | `test_clean` … `test_mixed_categorical` | **8/8 OK** |
+
+| API complète CSV français | `test_french_excel_export` | **OK** — upload + analyze + status |
+
+
+
+**`test_french_excel_export` vérifie :**
+
+
+
+- `POST /upload` → `numeric_cols` contient `age`, `revenu_annuel`, `score`
+
+- `POST /analyze` → `status=done`, `analysis.status=ok`
+
+- `diagnosis.numeric_cols` inclut les colonnes converties depuis virgule décimale
+
+- Stats descriptives présentes pour `revenu_annuel` (ex. `mean ≈ 56210`)
+
+
+
+### Exemple diagnostic direct
+
+
+
+```
+
+n_rows=25
+
+numeric_cols=['age', 'revenu_annuel', 'score']
+
+cat_cols=['ville', 'region', 'satisfaction']
+
+id_cols=['id']
+
+dtypes revenu_annuel=float64, score=float64
+
+```
+
+
+
+### Relancer
+
+
+
+```bash
+
+cd QUANTA
+
+
+
+# Dataset de référence (si régénération nécessaire)
+
+python scripts/gen_french_csv.py
+
+
+
+# Test API complet (TestClient, pas de serveur externe)
+
+python -m tests.test_french_excel_export
+
+
+
+# Non-régression 12 datasets (serveur requis)
+
+uvicorn main:app --port 8000
+
+python -m tests.test_regression_j24
 
 ```
 

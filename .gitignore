@@ -1,9 +1,47 @@
+# Environnement Python
 venv/
+.venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+
+# Variables d'environnement — JAMAIS sur GitHub
 .env
+.env.local
+.env.production
+
+# Base de données générée automatiquement
+quanta.db
+*.db
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Fichiers Node/npm parasites à la racine
+18.17
+machineid
+package-lock.json
+node_modules/
+
+# Frontend Next.js
+quanta-frontend/.next/
+quanta-frontend/node_modules/
+quanta-frontend/.env.local
+quanta-frontend/.env.production
+
+# Données utilisateur (jamais de vraies données sur GitHub)
 data/samples/*.csv
 data/samples/*.xlsx
-quanta.db
-.DS_Store
-node_modules/
+data/uploads/
+/tmp/quanta_uploads/
+
+# Logs
+*.log
+uvicorn.log
+
+# WeasyPrint cache
+.weasyprint/

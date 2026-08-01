@@ -16,6 +16,7 @@ base) ; seul leur chemin et leurs métadonnées sont en base.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 import uuid
@@ -26,6 +27,7 @@ from typing import Any
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 
 import db
@@ -33,6 +35,7 @@ from app.compute import compute
 from app.compute import test_selector as ts
 from app.llm import brain
 from app.orchestrator import run_full_analysis
+from app.report_generator import generate_pdf_report
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -72,13 +75,14 @@ def _now() -> str:
 
 class AnalyzeRequest(BaseModel):
     file_id: str
-    query: str
+    query: str = ""
 
     @field_validator("query")
     @classmethod
-    def query_not_blank(cls, value: str) -> str:
-        if not value or not value.strip():
-            raise ValueError("Le champ 'query' ne peut pas être vide.")
+    def query_optional(cls, value: str | None) -> str:
+        """Requête libre optionnelle : vide => mode autonome (auto_intent)."""
+        if value is None:
+            return ""
         return value
 
 
@@ -160,6 +164,7 @@ def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None
     """
     try:
         db.update_analysis(analysis_id, status="running", updated_at=_now())
+        audit_trail: list[dict[str, str]] = []
 
         upload_info = db.get_upload(file_id)
         if upload_info is None:
@@ -173,15 +178,91 @@ def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None
         with open(upload_info["path"], "rb") as f:
             file_bytes = f.read()
 
+        file_hash = hashlib.sha256(file_bytes).hexdigest()
+        filename = upload_info["filename"]
+        n_rows = upload_info["n_rows"]
+        n_cols = upload_info["n_cols"]
+        numeric_cols = upload_info["numeric_cols"]
+        cat_cols = upload_info["cat_cols"]
+
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext == "csv":
+            encoding = compute._detect_csv_encoding(file_bytes)
+        elif ext in {"xls", "xlsx", "dta", "sav"}:
+            encoding = f"n/a ({ext})"
+        else:
+            encoding = "inconnu"
+
+        audit_trail.append({
+            "timestamp": _now(),
+            "etape": "Chargement du fichier",
+            "detail": (
+                f"{n_rows} lignes, {n_cols} colonnes, encodage {encoding}"
+            ),
+        })
+        audit_trail.append({
+            "timestamp": _now(),
+            "etape": "Diagnostic structurel",
+            "detail": (
+                f"{len(numeric_cols)} variables numériques, "
+                f"{len(cat_cols)} catégorielles"
+            ),
+        })
+
         def run_analysis_fn(intent: ts.AnalysisIntent) -> dict[str, Any]:
-            return run_full_analysis(file_bytes, upload_info["filename"], intent)
+            analysis = run_full_analysis(file_bytes, filename, intent)
+            # Journaliser chaque test lancé (appelé 1× en mode query, N× en auto).
+            inference = analysis.get("inference") if isinstance(analysis, dict) else None
+            if isinstance(inference, dict):
+                test_result = inference.get("result")
+                test_name = None
+                if isinstance(test_result, dict):
+                    test_name = test_result.get("test") or test_result.get("method")
+                action = inference.get("action_executed")
+                p_value = (
+                    test_result.get("p_value")
+                    if isinstance(test_result, dict)
+                    else None
+                )
+                label = test_name or action or intent.action or "test"
+                detail_parts = [f"action={action or intent.action}"]
+                if intent.target_col:
+                    detail_parts.append(f"target={intent.target_col}")
+                if intent.group_col:
+                    detail_parts.append(f"group={intent.group_col}")
+                if p_value is not None:
+                    detail_parts.append(f"p={p_value}")
+                audit_trail.append({
+                    "timestamp": _now(),
+                    "etape": f"Test : {label}",
+                    "detail": ", ".join(detail_parts),
+                })
+            return analysis
+
+        diagnosis = {
+            "numeric_cols": numeric_cols,
+            "cat_cols": cat_cols,
+            "n_rows": n_rows,
+            "n_cols": n_cols,
+            "dataset_type": upload_info.get("dataset_type"),
+            "id_cols": upload_info.get("id_cols", []),
+        }
 
         result = brain.analyze_with_brain(
             user_query=query,
-            available_numeric_cols=upload_info["numeric_cols"],
-            available_cat_cols=upload_info["cat_cols"],
+            available_numeric_cols=numeric_cols,
+            available_cat_cols=cat_cols,
             run_analysis_fn=run_analysis_fn,
+            diagnosis=diagnosis,
         )
+        result["file_hash"] = file_hash
+
+        audit_trail.append({
+            "timestamp": _now(),
+            "etape": "Génération du rapport",
+            "detail": "PDF généré avec succès",
+        })
+        result["audit_trail"] = audit_trail
 
         db.update_analysis(analysis_id, status="done", result=result, updated_at=_now())
 
@@ -249,6 +330,60 @@ def get_history() -> dict[str, Any]:
     """
     items = db.list_analyses(limit=100)
     return {"count": len(items), "analyses": items}
+
+
+@app.get("/report/{analysis_id}")
+def get_report(
+    analysis_id: str,
+    theme: str = "dark",
+) -> Response:
+    """
+    Télécharge le rapport PDF d'une analyse terminée.
+    Query param optionnel : theme=dark|light (défaut dark).
+    Exemple : /report/{id}?theme=light
+    """
+    analysis = db.get_analysis(analysis_id)
+    if analysis is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"analysis_id '{analysis_id}' introuvable.",
+        )
+
+    if analysis["status"] != "done":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"L'analyse n'est pas terminée (statut actuel : "
+                f"'{analysis['status']}'). Attendez le statut 'done' "
+                f"avant de demander le rapport PDF."
+            ),
+        )
+
+    result = analysis.get("result")
+    if not isinstance(result, dict):
+        raise HTTPException(
+            status_code=500,
+            detail="Résultat d'analyse invalide ou absent — génération du PDF impossible.",
+        )
+
+    theme_norm = (theme or "dark").strip().lower()
+    if theme_norm not in {"dark", "light"}:
+        theme_norm = "dark"
+
+    pdf_bytes = generate_pdf_report(result, theme=theme_norm)
+    if pdf_bytes is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Échec de la génération du rapport PDF.",
+        )
+
+    suffix = "academique" if theme_norm == "light" else "dark"
+    filename = f"rapport_quanta_{suffix}_{analysis_id[:8]}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 # Note : pas de nettoyage automatique des fichiers à l'arrêt du serveur --

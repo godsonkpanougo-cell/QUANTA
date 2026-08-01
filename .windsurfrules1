@@ -1,0 +1,323 @@
+# ============================================================
+# QUANTA ENGINEERING CONSTITUTION
+# Version: 2.0
+# ============================================================
+
+You are working on QUANTA.
+
+QUANTA is not a chatbot.
+
+QUANTA is not an AI assistant.
+
+QUANTA is a Scientific Trust Engine.
+
+Its purpose is to generate statistical analyses that can be defended before:
+
+• a senior statistician
+• a thesis committee
+• a scientific reviewer
+
+Every engineering decision must preserve this mission.
+
+============================================================
+I — CORE PHILOSOPHY
+============================================================
+
+Truth is more important than speed.
+
+Correctness is more important than elegance.
+
+Reproducibility is more important than automation.
+
+Scientific validity is more important than user comfort.
+
+Never optimize UX at the expense of statistical rigor.
+
+============================================================
+II — PRIORITY HIERARCHY
+============================================================
+
+Whenever two decisions conflict, always follow this order.
+
+1. Scientific Truth
+
+↓
+
+2. Statistical Validity
+
+↓
+
+3. Reproducibility
+
+↓
+
+4. Software Reliability
+
+↓
+
+5. Security
+
+↓
+
+6. Maintainability
+
+↓
+
+7. Performance
+
+↓
+
+8. User Experience
+
+============================================================
+III — BEFORE WRITING CODE
+============================================================
+
+Never immediately generate code.
+
+Always:
+
+1.
+Read the architecture.
+
+2.
+Understand the current implementation.
+
+3.
+Locate dependencies.
+
+4.
+Understand why the code exists.
+
+5.
+Only then implement.
+
+If architecture is unclear:
+
+STOP.
+
+Never guess.
+
+============================================================
+IV — PROJECT MEMORY
+============================================================
+
+Always read first:
+
+ARCHITECTURE.md
+
+↓
+
+QUANTA_PHILOSOPHY.md
+
+↓
+
+QUANTA_STATE.md
+
+↓
+
+Relevant *.mdc rules
+
+↓
+
+Current task
+
+Never modify code before understanding the project state.
+
+============================================================
+V — SCIENTIFIC PRINCIPLE
+============================================================
+
+Statistics are deterministic.
+
+Language Models are probabilistic.
+
+Therefore:
+
+Statistics generate evidence.
+
+LLMs explain evidence.
+
+Evidence NEVER comes from LLMs.
+
+============================================================
+VI — ABSOLUTE COMPUTE RULE
+============================================================
+
+The Compute Engine is the only source of statistical truth.
+
+No LLM may:
+
+• calculate
+
+• estimate
+
+• interpolate
+
+• simulate
+
+• infer p-values
+
+• invent coefficients
+
+• invent confidence intervals
+
+• invent significance
+
+• invent assumptions
+
+If numerical information is missing:
+
+Return:
+
+"Unavailable"
+
+Never hallucinate.
+
+============================================================
+VII — LAYER SEPARATION
+============================================================
+
+Frontend
+
+↓
+
+API
+
+↓
+
+Orchestrator
+
+↓
+
+Compute
+
+↓
+
+Validation
+
+↓
+
+LLM
+
+↓
+
+Report
+
+↓
+
+Export
+
+No layer may bypass another.
+
+============================================================
+VIII — LEGACY PROTECTION
+============================================================
+
+Folder:
+
+/legacy/
+
+is read-only.
+
+Allowed:
+
+Read
+
+Reference
+
+Compare
+
+Forbidden:
+
+Modify
+
+Delete
+
+Refactor
+
+============================================================
+IX — ENGINEERING PRINCIPLES
+============================================================
+
+Prefer:
+
+small functions
+
+pure functions
+
+strong typing
+
+explicit code
+
+dependency injection
+
+immutable data
+
+Avoid:
+
+magic values
+
+global mutable state
+
+silent failures
+
+duplicate logic
+
+deep nesting
+
+============================================================
+X — SELF REVIEW
+============================================================
+
+Before considering a task complete, ask:
+
+Can this introduce regression?
+
+Did I preserve architecture?
+
+Did I preserve reproducibility?
+
+Would a statistician approve this?
+
+Would a reviewer reproduce this?
+
+Would this survive peer review?
+
+If any answer is uncertain:
+
+Continue improving.
+
+============================================================
+XI — DOCUMENTATION
+============================================================
+
+Always prefer official documentation.
+
+Never invent APIs.
+
+Use indexed documentation whenever available.
+
+If uncertainty exists:
+
+Verify before implementing.
+
+============================================================
+XII — OUTPUT STYLE
+============================================================
+
+When completing an implementation:
+
+Explain reasoning.
+
+Explain impact.
+
+Explain risks.
+
+Suggest tests.
+
+Never output code without understanding its consequences.
+
+============================================================
+END OF CONSTITUTION
+============================================================

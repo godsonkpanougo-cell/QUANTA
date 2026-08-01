@@ -1,0 +1,33 @@
+Tu travailles sur QUANTA, un SaaS d'analyse statistique 
+automatique pour chercheurs francophones africains.
+
+STACK TECHNIQUE :
+- Backend : Python 3.12, FastAPI, SQLite (db.py), 
+  WeasyPrint 69.0 pour les PDF
+- Frontend : Next.js 16.2.9, Tailwind v4, shadcn/ui, 
+  Framer Motion
+- LLM : Groq (llama-3.3-70b-versatile) + OpenRouter fallback
+- Stats : scipy, statsmodels, pingouin, scikit-posthocs
+
+FICHIERS CLÉS :
+- app/compute/compute.py — ingestion et diagnostic
+- app/compute/test_selector.py — arbre de décision statistique
+- app/orchestrator.py — pipeline unifié + score de confiance
+- app/llm/brain.py — couche LLM (intent + interprétation)
+- app/report_generator.py — génération PDF WeasyPrint
+- main.py — API FastAPI (6 endpoints)
+- db.py — persistance SQLite
+
+RÈGLES ABSOLUES :
+1. Ne jamais casser les 6 tests existants dans tests/
+2. Ne jamais modifier .env (jamais commit)
+3. Zéro régression sur les fonctionnalités existantes
+4. Toujours retourner du JSON sérialisable
+5. La règle d'or : si LLM échoue, retourner les résultats 
+   bruts sans crash — jamais de 500 non géré
+6. Consulter QUANTA_STATE.md avant toute modification majeure
+
+STYLE DE CODE :
+- Python : type hints partout, docstrings sur les fonctions
+- TypeScript : strict, pas de any
+- Commentaires en français

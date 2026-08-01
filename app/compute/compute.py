@@ -17,6 +17,7 @@ Changelog v2 (audit Jour 1) :
 
 import io
 import base64
+import math
 import warnings
 import numpy as np
 import pandas as pd
@@ -59,23 +60,70 @@ WINSORIZATION_MIN_N = 30
 # séparateur _/-) considérés comme des identifiants potentiels
 ID_COLUMN_NAME_HINTS = ("id", "identifiant", "code", "uuid", "guid", "matricule")
 
-def _fig_style(fig, ax_list=None):
-    """Applique le style dark luxury QUANTA sur toutes les figures."""
-    fig.patch.set_facecolor(PALETTE["bg"])
-    for ax in (ax_list if ax_list is not None else fig.axes):
-        ax.set_facecolor(PALETTE["panel"])
-        ax.tick_params(colors=PALETTE["text"], labelsize=9)
-        ax.xaxis.label.set_color(PALETTE["text"])
-        ax.yaxis.label.set_color(PALETTE["text"])
-        ax.title.set_color(PALETTE["gold"])
-        for spine in ax.spines.values():
-            spine.set_edgecolor(PALETTE["muted"])
+def _apply_mpl_theme(theme: str = "dark") -> None:
+    """
+    Configure matplotlib / seaborn avant génération des graphiques.
 
-def _fig_to_b64(fig, dpi: int = 100) -> str:
-    """Convertit une figure matplotlib en base64 PNG (dpi réduit pour le poids)."""
+    theme == "light" : style académique clair (default + whitegrid).
+    theme == "dark"  : inchangé — _fig_style applique la palette QUANTA.
+    """
+    if theme != "light":
+        return
+    plt.style.use("default")
+    sns.set_theme(
+        style="whitegrid",
+        rc={
+            "axes.facecolor": "white",
+            "figure.facecolor": "white",
+            "text.color": "#1A1A1A",
+            "axes.labelcolor": "#1A1A1A",
+            "xtick.color": "#1A1A1A",
+            "ytick.color": "#1A1A1A",
+            "grid.color": "#666666",
+            "axes.edgecolor": "#666666",
+        },
+    )
+
+
+def _fig_style(fig, ax_list=None, theme: str = "dark"):
+    """
+    Applique le style QUANTA sur toutes les figures.
+    
+    theme : "dark" (défaut) ou "light" (rapport académique clair).
+    """
+    if theme == "light":
+        # Style académique clair
+        fig.patch.set_facecolor("white")
+        for ax in (ax_list if ax_list is not None else fig.axes):
+            ax.set_facecolor("white")
+            ax.tick_params(colors="#1A1A1A", labelsize=9)
+            ax.xaxis.label.set_color("#1A1A1A")
+            ax.yaxis.label.set_color("#1A1A1A")
+            ax.title.set_color("#1A1A1A")
+            for spine in ax.spines.values():
+                spine.set_edgecolor("#666666")
+    else:
+        # Style dark luxury QUANTA
+        fig.patch.set_facecolor(PALETTE["bg"])
+        for ax in (ax_list if ax_list is not None else fig.axes):
+            ax.set_facecolor(PALETTE["panel"])
+            ax.tick_params(colors=PALETTE["text"], labelsize=9)
+            ax.xaxis.label.set_color(PALETTE["text"])
+            ax.yaxis.label.set_color(PALETTE["text"])
+            ax.title.set_color(PALETTE["gold"])
+            for spine in ax.spines.values():
+                spine.set_edgecolor(PALETTE["muted"])
+
+def _fig_to_b64(fig, dpi: int = 100, theme: str = "dark") -> str:
+    """
+    Convertit une figure matplotlib en base64 PNG (dpi réduit pour le poids).
+    
+    theme : "dark" (défaut) ou "light" (rapport académique clair).
+    """
+    facecolor = "white" if theme == "light" else PALETTE["bg"]
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
-                 facecolor=PALETTE["bg"])
+                 facecolor=facecolor)
     plt.close(fig)
     buf.seek(0)
     return base64.b64encode(buf.read()).decode()
@@ -85,12 +133,19 @@ def _is_likely_id_column(series: pd.Series, col_name: str) -> bool:
     Détecte si une colonne numérique est probablement un identifiant
     (et non une variable à analyser).
 
-    Hints FORTS (id, identifiant, uuid, guid, matricule) : le nom seul
-    suffit — pas de condition d'unicité (un dataset avec doublons a une
-    colonne id dont les valeurs répétées ne sont que les lignes dupliquées).
+    Une colonne est considérée comme identifiant si :
+      - son nom (en minuscules) correspond exactement à un des indices
+        ID_COLUMN_NAME_HINTS, ou se termine par "_<hint>" / "-<hint>"
+        (ex: "client_id", "code-postal" -> "postal" ne matche pas "code",
+        mais "id_client" -> "id" matche en préfixe), ET
+      - ses valeurs (hors NA) sont toutes uniques (100% -> chaque ligne a
+        une valeur distincte, comme un identifiant séquentiel).
 
-    Hints AMBIGUS (code) : exige >= 95 % de valeurs uniques pour distinguer
-    code_client (identifiant) de code_region (catégoriel).
+    Le nom seul ne suffit pas (une colonne "code_region" avec valeurs
+    répétées 1-5 n'est PAS un identifiant -> traitée par le garde-fou
+    catégoriel standard). L'unicité seule ne suffit pas non plus (une
+    mesure continue peut avoir 100% de valeurs uniques sans être un ID).
+    Les deux conditions combinées ciblent spécifiquement le cas "id".
     """
     name = col_name.lower().strip()
     name_parts = set(name.replace("-", "_").split("_")) | {name}
@@ -117,6 +172,180 @@ def _is_likely_id_column(series: pd.Series, col_name: str) -> bool:
 
     return False
 
+
+def _detect_csv_encoding(file_bytes: bytes) -> str:
+    """
+    Détecte l'encodage d'un fichier CSV par essai en cascade. Les fichiers
+    produits par Excel/Windows en contexte francophone sont très souvent en
+    Latin-1 ou Windows-1252 (cp1252) plutôt qu'en UTF-8 -- un caractère
+    accentué (é, è, ê...) dans ces encodages casse le décodage UTF-8 strict
+    avec une erreur "invalid continuation byte", ce qui faisait planter
+    /upload sur des bases réelles de chercheurs francophones.
+
+    Ordre d'essai : UTF-8 (standard moderne) -> UTF-8 avec BOM (Excel
+    Windows) -> Windows-1252 (encodage Excel français le plus courant) ->
+    Latin-1 (ISO-8859-1, accepte techniquement tout octet donc toujours en
+    dernier recours -- jamais d'erreur, mais peut mal interpréter certains
+    caractères si l'encodage réel était différent).
+    """
+    for encoding in ("utf-8", "utf-8-sig", "cp1252", "latin-1"):
+        try:
+            file_bytes.decode(encoding)
+            return encoding
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    return "latin-1"  # ne lève jamais d'erreur -- filet de sécurité ultime
+
+
+def _detect_csv_separator(sample_text: str) -> str:
+    """
+    Détecte le séparateur CSV (virgule, point-virgule, tabulation, pipe)
+    en choisissant celui qui produit le nombre de colonnes le plus
+    cohérent (et le plus élevé) à travers les premières lignes.
+
+    Un simple comptage brut d'occurrences est trompeur : sur un fichier
+    avec peu de lignes, les virgules décimales (ex: "8,5") et les virgules
+    à l'intérieur de champs texte (ex: "Paris, France") peuvent dépasser
+    en nombre les vrais séparateurs de colonnes. La cohérence du nombre
+    de champs obtenus par ligne (toutes les lignes doivent se découper en
+    le même nombre de colonnes) est un signal bien plus fiable que le
+    comptage brut.
+    """
+    sample_lines = [l for l in sample_text.splitlines()[:5] if l.strip()]
+    if not sample_lines:
+        return ","
+
+    candidates = [";", "\t", ",", "|"]
+    best_sep = ","
+    best_score = (0, 0)  # (n_colonnes_coherent, n_colonnes)
+
+    for sep in candidates:
+        field_counts = [line.count(sep) + 1 for line in sample_lines]
+        n_cols = field_counts[0]
+        if n_cols <= 1:
+            continue  # ce séparateur ne découpe rien -- candidat invalide
+        is_consistent = all(c == n_cols for c in field_counts)
+        score = (1 if is_consistent else 0, n_cols)
+        if score > best_score:
+            best_score = score
+            best_sep = sep
+
+    return best_sep
+
+
+def _try_convert_french_decimal(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convertit les colonnes texte contenant des nombres à virgule décimale
+    française (ex: "20090,00", "1,20") en vrais floats. Très courant dans
+    les fichiers Excel français/européens exportés en CSV -- sans cette
+    conversion, ces colonnes restent en object/string et sont totalement
+    invisibles au pipeline statistique (aucun calcul, aucun test, aucune
+    corrélation possible dessus).
+
+    Heuristique de détection volontairement stricte : une colonne n'est
+    convertie que si, après remplacement virgule->point, au moins 90% des
+    valeurs non-nulles deviennent des floats valides. Ça évite de casser
+    une vraie colonne catégorielle qui contiendrait occasionnellement une
+    virgule (ex: "Paris, France").
+    """
+    df = df.copy()
+    for col in df.select_dtypes(include=["object"]).columns:
+        series = df[col].dropna().astype(str)
+        if len(series) == 0:
+            continue
+
+        # Ne tente la conversion que si les valeurs ressemblent à des
+        # nombres avec virgule décimale OU à des entiers purs (ex: "25"
+        # sans décimale, qui doivent aussi être reconnus comme numériques
+        # -- un dataset mixte entiers/décimaux virgule comme "25" et
+        # "173,4" dans la même colonne est courant).
+        looks_numeric = series.str.match(r"^\s*-?\d+(,\d+)?\s*$").mean()
+        if looks_numeric < 0.9:
+            continue
+
+        converted = pd.to_numeric(
+            series.str.replace(",", ".", regex=False).str.strip(),
+            errors="coerce",
+        )
+        success_rate = converted.notna().mean()
+        if success_rate >= 0.9:
+            df[col] = pd.to_numeric(
+                df[col].astype(str).str.replace(",", ".", regex=False).str.strip(),
+                errors="coerce",
+            )
+    return df
+
+
+def _build_diagnosis_descriptive_stats(
+    df: pd.DataFrame,
+    numeric_cols: list[str],
+    cat_cols: list[str],
+    n_rows: int,
+) -> dict[str, Any]:
+    """
+    Statistiques descriptives pour le diagnostic (JSON-safe).
+
+    Numériques : moyenne, médiane, écart-type, min, max, skewness, kurtosis,
+    % manquants.
+    Catégorielles : fréquences, pourcentages, mode, % manquants.
+    """
+    numeric_out: dict[str, Any] = {}
+    for col in numeric_cols:
+        if col not in df.columns:
+            continue
+        series = df[col]
+        missing_pct = round(float(series.isna().mean() * 100), 2) if n_rows else 0.0
+        valid = series.dropna()
+        if valid.empty:
+            numeric_out[col] = {
+                "mean": None,
+                "median": None,
+                "std": None,
+                "min": None,
+                "max": None,
+                "skewness": None,
+                "kurtosis": None,
+                "missing_pct": missing_pct,
+            }
+            continue
+        numeric_out[col] = {
+            "mean": round(float(valid.mean()), 4),
+            "median": round(float(valid.median()), 4),
+            "std": round(float(valid.std()), 4),
+            "min": round(float(valid.min()), 4),
+            "max": round(float(valid.max()), 4),
+            "skewness": round(float(valid.skew()), 4),
+            "kurtosis": round(float(valid.kurt()), 4),
+            "missing_pct": missing_pct,
+        }
+
+    categorical_out: dict[str, Any] = {}
+    for col in cat_cols:
+        if col not in df.columns:
+            continue
+        series = df[col]
+        missing_pct = round(float(series.isna().mean() * 100), 2) if n_rows else 0.0
+        vc = series.value_counts(dropna=True)
+        denom = int(series.notna().sum())
+        frequencies = {str(k): int(v) for k, v in vc.to_dict().items()}
+        percentages = {
+            str(k): round(float(v) / denom * 100, 2) if denom else 0.0
+            for k, v in vc.to_dict().items()
+        }
+        mode_val = str(vc.index[0]) if len(vc) else None
+        categorical_out[col] = {
+            "frequencies": frequencies,
+            "percentages": percentages,
+            "mode": mode_val,
+            "missing_pct": missing_pct,
+        }
+
+    return {
+        "numeric": numeric_out,
+        "categorical": categorical_out,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. CHARGEMENT & DIAGNOSTIC
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -131,10 +360,12 @@ def load_and_diagnose(file_bytes: bytes, filename: str) -> dict[str, Any]:
     ext = filename.rsplit(".", 1)[-1].lower()
     try:
         if ext == "csv":
-            sample = file_bytes[:4096].decode("utf-8", errors="ignore")
-            sep = ";" if sample.count(";") > sample.count(",") else ","
+            encoding = _detect_csv_encoding(file_bytes)
+            sample = file_bytes[:4096].decode(encoding, errors="replace")
+            sep = _detect_csv_separator(sample)
             df = pd.read_csv(io.BytesIO(file_bytes), sep=sep,
-                             encoding="utf-8", low_memory=False)
+                             encoding=encoding, low_memory=False)
+            df = _try_convert_french_decimal(df)
         elif ext in ("xls", "xlsx"):
             df = pd.read_excel(io.BytesIO(file_bytes))
         elif ext == "dta":
@@ -210,6 +441,7 @@ def load_and_diagnose(file_bytes: bytes, filename: str) -> dict[str, Any]:
         if outliers > 0:
             outlier_counts[col] = int(outliers)
 
+    # Doublons exacts : détection uniquement (aucune suppression ici).
     n_dupes = int(df.duplicated().sum())
 
     # Type probable de dataset (Fix #2 : matching par mot entier, pas sous-chaîne
@@ -229,6 +461,10 @@ def load_and_diagnose(file_bytes: bytes, filename: str) -> dict[str, Any]:
     else:
         dataset_type = "Dataset transversal standard"
 
+    descriptive_stats_diag = _build_diagnosis_descriptive_stats(
+        df, numeric_cols, cat_cols, n_rows
+    )
+
     return {
         "dataframe":      df,
         "n_rows":         n_rows,
@@ -240,8 +476,11 @@ def load_and_diagnose(file_bytes: bytes, filename: str) -> dict[str, Any]:
         "reclassified_as_categorical": reclassified_as_categorical,
         "missing":        missing[missing > 0].to_dict(),
         "missing_pct":    missing_pct[missing_pct > 0].to_dict(),
+        "n_missing":      int(missing.sum()),
         "outlier_counts": outlier_counts,
         "n_duplicates":   n_dupes,
+        "duplicates_removed": False,
+        "descriptive_stats": descriptive_stats_diag,
         "dataset_type":   dataset_type,
         "columns":        df.columns.tolist(),
         "dtypes":         df.dtypes.astype(str).to_dict(),
@@ -264,17 +503,27 @@ def clean_dataframe(df: pd.DataFrame, diag: dict) -> dict[str, Any]:
     df = df.copy()
     audit_log: list[dict[str, Any]] = []
 
-    # 1. Suppression des doublons
-    n_before = len(df)
-    df = df.drop_duplicates()
-    n_removed = n_before - len(df)
-    if n_removed:
+    # 1. Doublons — détection et log, sans suppression automatique
+    #    (les données utilisateur ne sont pas modifiées sans accord explicite).
+    n_dupes_clean = int(df.duplicated().sum())
+    if n_dupes_clean:
         audit_log.append({
             "etape": "doublons",
             "colonne": None,
-            "decision": "suppression",
-            "valeur": n_removed,
-            "justification": f"{n_removed} ligne(s) dupliquée(s) exactement supprimée(s).",
+            "decision": "detection_sans_suppression",
+            "valeur": n_dupes_clean,
+            "justification": (
+                f"{n_dupes_clean} ligne(s) dupliquée(s) exactement détectée(s) — "
+                f"conservées intactes (aucune suppression automatique)."
+            ),
+        })
+    else:
+        audit_log.append({
+            "etape": "doublons",
+            "colonne": None,
+            "decision": "aucun_doublon",
+            "valeur": 0,
+            "justification": "Aucun doublon exact détecté.",
         })
 
     numeric_cols = diag.get("numeric_cols", [])
@@ -410,15 +659,35 @@ def clean_dataframe(df: pd.DataFrame, diag: dict) -> dict[str, Any]:
 # 3. STATISTIQUES DESCRIPTIVES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def descriptive_stats(df: pd.DataFrame, numeric_cols: list[str], cat_cols: list[str]) -> dict[str, Any]:
+def descriptive_stats(df: pd.DataFrame, numeric_cols: list[str], cat_cols: list[str], theme: str = "dark") -> dict[str, Any]:
     """
     Calcule les statistiques descriptives complètes pour les colonnes
     explicitement classifiées comme numériques continues / catégorielles
     (passées par l'appelant, issues du diagnostic -- évite de re-deviner
     les types ici).
+    
+    theme : "dark" (défaut) ou "light" (rapport académique clair).
     """
     numeric_cols = [c for c in numeric_cols if c in df.columns]
     cat_cols     = [c for c in cat_cols if c in df.columns]
+
+    _apply_mpl_theme(theme)
+
+    # Palette selon le thème
+    if theme == "light":
+        bar_color = "#2C5F8A"  # bleu académique
+        mean_color = "#E63946"  # rouge pour moyenne
+        median_color = "#457B9D"  # bleu foncé pour médiane
+        title_color = "#1A1A1A"
+        legend_facecolor = "white"
+        legend_textcolor = "#1A1A1A"
+    else:
+        bar_color = PALETTE["gold"]
+        mean_color = PALETTE["accent"]
+        median_color = PALETTE["gold2"]
+        title_color = PALETTE["gold"]
+        legend_facecolor = PALETTE["panel"]
+        legend_textcolor = PALETTE["text"]
 
     desc_num = {}
     for col in numeric_cols:
@@ -467,24 +736,25 @@ def descriptive_stats(df: pd.DataFrame, numeric_cols: list[str], cat_cols: list[
         for i, col in enumerate(cols_to_plot):
             ax = axes[i]
             s = df[col].dropna()
-            ax.hist(s, bins=30, color=PALETTE["gold"], alpha=0.85, edgecolor=PALETTE["bg"])
-            ax.axvline(s.mean(), color=PALETTE["accent"], linewidth=1.5, linestyle="--",
+            edgecolor = "white" if theme == "light" else PALETTE["bg"]
+            ax.hist(s, bins=30, color=bar_color, alpha=0.85, edgecolor=edgecolor)
+            ax.axvline(s.mean(), color=mean_color, linewidth=1.5, linestyle="--",
                        label=f"Moy={s.mean():.2f}")
-            ax.axvline(s.median(), color=PALETTE["gold2"], linewidth=1.2, linestyle=":",
+            ax.axvline(s.median(), color=median_color, linewidth=1.2, linestyle=":",
                        label=f"Méd={s.median():.2f}")
             ax.set_title(col, fontsize=10, fontweight="bold")
             ax.set_xlabel(col, fontsize=8)
             ax.set_ylabel("Fréquence", fontsize=8)
-            ax.legend(fontsize=7, facecolor=PALETTE["panel"], labelcolor=PALETTE["text"])
+            ax.legend(fontsize=7, facecolor=legend_facecolor, labelcolor=legend_textcolor)
 
         for j in range(len(cols_to_plot), len(axes)):
             axes[j].set_visible(False)
 
         fig.suptitle("QUANTA — Distributions des variables numériques",
-                      color=PALETTE["gold"], fontsize=12, fontweight="bold", y=1.02)
-        _fig_style(fig, axes[:n])
+                      color=title_color, fontsize=12, fontweight="bold", y=1.02)
+        _fig_style(fig, axes[:n], theme=theme)
         plt.tight_layout()
-        charts["distributions"] = _fig_to_b64(fig)
+        charts["distributions"] = _fig_to_b64(fig, theme=theme)
 
     # Barres pour les variables catégorielles (max 3)
     cat_to_plot = cat_cols[:3]
@@ -496,19 +766,21 @@ def descriptive_stats(df: pd.DataFrame, numeric_cols: list[str], cat_cols: list[
         for i, col in enumerate(cat_to_plot):
             ax = axes[i]
             vc = df[col].value_counts().head(10)
+            edgecolor = "white" if theme == "light" else PALETTE["bg"]
+            text_color = "#1A1A1A" if theme == "light" else PALETTE["text"]
             bars = ax.barh(vc.index.astype(str), vc.values,
-                            color=PALETTE["gold"], edgecolor=PALETTE["bg"])
+                            color=bar_color, edgecolor=edgecolor)
             ax.set_title(col, fontsize=10, fontweight="bold")
             ax.set_xlabel("Effectif", fontsize=8)
             for bar, v in zip(bars, vc.values):
                 ax.text(bar.get_width() + 0.1, bar.get_y() + bar.get_height() / 2,
-                        f"{v}", va="center", fontsize=7, color=PALETTE["text"])
+                        f"{v}", va="center", fontsize=7, color=text_color)
 
         fig.suptitle("QUANTA — Répartition des variables catégorielles",
-                      color=PALETTE["gold"], fontsize=12, fontweight="bold")
-        _fig_style(fig, axes)
+                      color=title_color, fontsize=12, fontweight="bold")
+        _fig_style(fig, axes, theme=theme)
         plt.tight_layout()
-        charts["categories"] = _fig_to_b64(fig)
+        charts["categories"] = _fig_to_b64(fig, theme=theme)
 
     return {
         "descriptive_numeric":     desc_num,
@@ -520,7 +792,7 @@ def descriptive_stats(df: pd.DataFrame, numeric_cols: list[str], cat_cols: list[
 # 4. TESTS DE NORMALITÉ (H0/H1 formels)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def normality_tests(df: pd.DataFrame, numeric_cols: list[str]) -> dict[str, Any]:
+def normality_tests(df: pd.DataFrame, numeric_cols: list[str], theme: str = "dark") -> dict[str, Any]:
     """
     Pour chaque variable numérique continue :
       - Shapiro-Wilk (le plus puissant pour n < 50, utilisable jusqu'à 5000)
@@ -533,10 +805,24 @@ def normality_tests(df: pd.DataFrame, numeric_cols: list[str]) -> dict[str, Any]
       - Si n >= 20 : NORMALE seulement si les deux tests disponibles concordent
         (p > 0.05 pour chacun). En cas de désaccord, conclusion = "AMBIGÜE"
         et on recommande la prudence (tests non-paramétriques par défaut).
+    
+    theme : "dark" (défaut) ou "light" (rapport académique clair).
     """
     numeric_cols = [c for c in numeric_cols if c in df.columns]
     results = {}
     charts  = {}
+
+    _apply_mpl_theme(theme)
+
+    # Palette selon le thème
+    if theme == "light":
+        marker_color = "#2C5F8A"  # bleu académique
+        line_color = "#666666"
+        title_color = "#1A1A1A"
+    else:
+        marker_color = PALETTE["gold"]
+        line_color = PALETTE["accent"]
+        title_color = PALETTE["gold"]
 
     cols_to_plot = numeric_cols[:4]
     fig = axes = None
@@ -628,10 +914,10 @@ def normality_tests(df: pd.DataFrame, numeric_cols: list[str]) -> dict[str, Any]
             s = df[col].dropna()
             ax = axes[i]
             sm.qqplot(s, line="s", ax=ax, alpha=0.6,
-                      markerfacecolor=PALETTE["gold"], markersize=3,
-                      markeredgecolor=PALETTE["gold"])
-            ax.get_lines()[0].set_color(PALETTE["gold"])
-            ax.get_lines()[1].set_color(PALETTE["accent"])
+                      markerfacecolor=marker_color, markersize=3,
+                      markeredgecolor=marker_color)
+            ax.get_lines()[0].set_color(marker_color)
+            ax.get_lines()[1].set_color(line_color)
             conclusion = results.get(col, {}).get("conclusion", "")
             ax.set_title(f"QQ-Plot — {col}\n({conclusion})", fontsize=9)
 
@@ -639,10 +925,10 @@ def normality_tests(df: pd.DataFrame, numeric_cols: list[str]) -> dict[str, Any]
             axes[j].set_visible(False)
 
         fig.suptitle("QUANTA — Tests de normalité (QQ-Plots)",
-                      color=PALETTE["gold"], fontsize=12, fontweight="bold")
-        _fig_style(fig, axes[:len(cols_to_plot)])
+                      color=title_color, fontsize=12, fontweight="bold")
+        _fig_style(fig, axes[:len(cols_to_plot)], theme=theme)
         plt.tight_layout()
-        charts["qqplots"] = _fig_to_b64(fig)
+        charts["qqplots"] = _fig_to_b64(fig, theme=theme)
 
     return {"normality": results, "charts": charts}
 
@@ -650,15 +936,19 @@ def normality_tests(df: pd.DataFrame, numeric_cols: list[str]) -> dict[str, Any]
 # 5. CORRÉLATIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_results: dict) -> dict[str, Any]:
+def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_results: dict, theme: str = "dark") -> dict[str, Any]:
     """
     Pearson si toutes les variables sont normales, Spearman sinon.
     Retourne la matrice de corrélation, la matrice de p-values associée
     (désormais utilisée), les paires significatives classées, et la heatmap.
+    
+    theme : "dark" (défaut) ou "light" (rapport académique clair).
     """
     numeric_cols = [c for c in numeric_cols if c in df.columns]
     if len(numeric_cols) < 2:
         return {"error": "Moins de 2 variables numériques pour la corrélation."}
+
+    _apply_mpl_theme(theme)
 
     all_normal = all(
         normality_results.get(col, {}).get("conclusion") == "NORMALE"
@@ -711,18 +1001,23 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
 
     mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
     cmap = sns.diverging_palette(220, 40, as_cmap=True)
+    
+    # Palette selon le thème
+    annot_color = "#1A1A1A" if theme == "light" else PALETTE["text"]
+    line_color = "#666666" if theme == "light" else PALETTE["muted"]
+    
     sns.heatmap(
         corr_matrix, mask=mask, ax=ax, cmap=cmap,
         vmin=-1, vmax=1, center=0, square=True,
-        annot=True, fmt=".2f", annot_kws={"size": 8, "color": PALETTE["text"]},
-        linewidths=0.5, linecolor=PALETTE["muted"],
+        annot=True, fmt=".2f", annot_kws={"size": 8, "color": annot_color},
+        linewidths=0.5, linecolor=line_color,
         cbar_kws={"shrink": 0.8},
     )
     ax.set_title(f"Matrice de corrélation ({method.capitalize()})",
                   fontsize=11, fontweight="bold")
-    _fig_style(fig, [ax])
+    _fig_style(fig, [ax], theme=theme)
     plt.tight_layout()
-    charts["correlation_heatmap"] = _fig_to_b64(fig)
+    charts["correlation_heatmap"] = _fig_to_b64(fig, theme=theme)
 
     return {
         "method":     method,
@@ -737,7 +1032,12 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
 # 6. RÉGRESSION OLS (désormais CONDITIONNELLE)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def ols_regression(df: pd.DataFrame, numeric_cols: list[str], target_col: str | None = None) -> dict[str, Any]:
+def ols_regression(
+    df: pd.DataFrame,
+    numeric_cols: list[str],
+    target_col: str | None = None,
+    theme: str = "dark",
+) -> dict[str, Any]:
     """
     Régression OLS. NE S'EXÉCUTE QUE SI :
       - target_col est explicitement fourni par l'orchestrateur (basé sur
@@ -825,25 +1125,37 @@ def ols_regression(df: pd.DataFrame, numeric_cols: list[str], target_col: str | 
         pass
 
     # Graphique résidus
+    _apply_mpl_theme(theme)
+    if theme == "light":
+        bar_color = "#2C5F8A"
+        ref_line_color = "#666666"
+        edgecolor = "white"
+        title_color = "#1A1A1A"
+    else:
+        bar_color = PALETTE["gold"]
+        ref_line_color = PALETTE["accent"]
+        edgecolor = PALETTE["bg"]
+        title_color = PALETTE["gold"]
+
     charts = {}
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.2))
 
-    axes[0].scatter(model.fittedvalues, residuals, color=PALETTE["gold"], alpha=0.6, s=20)
-    axes[0].axhline(0, color=PALETTE["accent"], linewidth=1.5, linestyle="--")
+    axes[0].scatter(model.fittedvalues, residuals, color=bar_color, alpha=0.6, s=20)
+    axes[0].axhline(0, color=ref_line_color, linewidth=1.5, linestyle="--")
     axes[0].set_xlabel("Valeurs ajustées", fontsize=9)
     axes[0].set_ylabel("Résidus", fontsize=9)
     axes[0].set_title("Résidus vs Valeurs ajustées", fontsize=10)
 
-    axes[1].hist(residuals, bins=25, color=PALETTE["gold"], alpha=0.85, edgecolor=PALETTE["bg"])
+    axes[1].hist(residuals, bins=25, color=bar_color, alpha=0.85, edgecolor=edgecolor)
     axes[1].set_title("Distribution des résidus", fontsize=10)
     axes[1].set_xlabel("Résidus", fontsize=9)
     axes[1].set_ylabel("Fréquence", fontsize=9)
 
     fig.suptitle(f"QUANTA — Diagnostic Régression OLS (Y = {y_col})",
-                  color=PALETTE["gold"], fontsize=12, fontweight="bold")
-    _fig_style(fig, axes)
+                  color=title_color, fontsize=12, fontweight="bold")
+    _fig_style(fig, axes, theme=theme)
     plt.tight_layout()
-    charts["regression_diagnostics"] = _fig_to_b64(fig)
+    charts["regression_diagnostics"] = _fig_to_b64(fig, theme=theme)
 
     coef_summary = {}
     for var in model.params.index:
@@ -888,7 +1200,8 @@ def ols_regression(df: pd.DataFrame, numeric_cols: list[str], target_col: str | 
 
 def generate_r_script(df: pd.DataFrame, filename: str,
                        numeric_cols: list[str],
-                       regression_result: dict | None = None) -> str:
+                       regression_result: dict | None = None,
+                       n_missing: int = 0) -> str:
     """
     Génère un script R commenté et reproductible.
     Sécurisé : si aucune régression n'a été exécutée (status != "ok"), la
@@ -930,10 +1243,13 @@ def generate_r_script(df: pd.DataFrame, filename: str,
     lines.append("# ── 3. Nettoyage ──────────────────────────────────────")
     lines.append("df <- df[!duplicated(df), ]")
     lines.append("")
-    if impute_cols:
+    if n_missing > 0 and impute_cols:
         lines.append("# Imputation des valeurs manquantes (médiane pour numériques)")
         for col in impute_cols:
             lines.append(f'df${col}[is.na(df${col})] <- median(df${col}, na.rm = TRUE)')
+        lines.append("")
+    else:
+        lines.append("# Aucune valeur manquante détectée — pas d'imputation nécessaire")
         lines.append("")
 
     if desc_cols:
@@ -1007,7 +1323,8 @@ def generate_r_script(df: pd.DataFrame, filename: str,
 def generate_stata_script(df: pd.DataFrame, filename: str,
                            numeric_cols: list[str],
                            cat_cols: list[str],
-                           regression_result: dict | None = None) -> str:
+                           regression_result: dict | None = None,
+                           n_missing: int = 0) -> str:
     """
     Génère un script Stata (.do) commenté et reproductible.
     Sécurisé de la même façon que generate_r_script.
@@ -1043,10 +1360,16 @@ def generate_stata_script(df: pd.DataFrame, filename: str,
     lines.append("duplicates report")
     lines.append("")
     lines.append("misstable summarize")
-    if impute_cols:
+    if n_missing > 0 and impute_cols:
+        lines.append("* Imputation des valeurs manquantes (médiane pour numériques)")
         for col in impute_cols:
-            lines.append(f"* egen {col}_median = median({col})")
-    lines.append("")
+            lines.append(f"egen {col}_median = median({col})")
+            lines.append(f"replace {col} = {col}_median if missing({col})")
+            lines.append(f"drop {col}_median")
+        lines.append("")
+    else:
+        lines.append("* Aucune valeur manquante détectée — pas d'imputation nécessaire")
+        lines.append("")
 
     if desc_cols:
         cols_str = " ".join(desc_cols)
@@ -1116,11 +1439,252 @@ def generate_stata_script(df: pd.DataFrame, filename: str,
     return "\n".join(lines)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 8. FONCTION PRINCIPALE — PIPELINE DE BASE (sans arbre de décision)
+# 8. ANALYSE DE PUISSANCE STATISTIQUE (post-test, déterministe)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def interpret_statistical_power(power: float) -> tuple[str, str]:
+    """
+    Qualification de la puissance observée (1-β).
+
+    Retourne (libellé, couleur hex) :
+      < 0.5       → insuffisante (rouge)
+      0.5 – < 0.8 → modérée (orange)
+      ≥ 0.8       → adéquate (vert)
+    """
+    p = float(power)
+    if p < 0.5:
+        return (
+            "insuffisante — risque élevé d'erreur de type II",
+            "#E74C3C",
+        )
+    if p < 0.8:
+        return "modérée", "#E67E22"
+    return "adéquate", "#2ECC71"
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    if num != num or math.isinf(num):
+        return None
+    return num
+
+
+def _power_cohen_f_from_eta2(eta2: float) -> float | None:
+    """f de Cohen à partir de η² / ε² : f = sqrt(η² / (1 - η²))."""
+    if eta2 <= 0 or eta2 >= 1:
+        return None
+    return float(math.sqrt(eta2 / (1.0 - eta2)))
+
+
+def compute_statistical_power(result: dict[str, Any]) -> dict[str, Any]:
+    """
+    Enrichit un résultat de test d'inférence avec :
+      - power              : float arrondi à 3 décimales
+      - power_interpretation : libellé (insuffisante / modérée / adéquate)
+      - n_required         : N total pour atteindre 1-β = 0.80 avec effet moyen
+                             (Cohen d/f/w = 0.3), uniquement si power < 0.8
+
+    Familles couvertes (statsmodels) :
+      - t-test / Mann-Whitney → TTestIndPower (effect = |Cohen's d| ou |r|)
+      - ANOVA / Kruskal       → FTestAnovaPower (f dérivé de η²/ε²)
+      - Chi-deux / Fisher     → GofChisquarePower (w ≈ V de Cramér)
+
+    Ne lève jamais d'exception : en cas d'échec, retourne le dict inchangé.
+    """
+    if not isinstance(result, dict):
+        return result
+    if result.get("status") in {"error", "skipped"}:
+        return result
+    if result.get("power") is not None:
+        return result
+
+    test_name = str(result.get("test") or result.get("method") or "").lower()
+    out = dict(result)
+
+    try:
+        from statsmodels.stats.power import (
+            FTestAnovaPower,
+            GofChisquarePower,
+            TTestIndPower,
+        )
+
+        power: float | None = None
+        n_required: int | None = None
+        analysis_for_n: Any = None
+        n_solve_kwargs: dict[str, Any] = {}
+
+        is_two_group = any(
+            token in test_name
+            for token in (
+                "student",
+                "welch",
+                "t-test",
+                "t test",
+                "mann-whitney",
+                "mann whitney",
+            )
+        ) or (
+            result.get("n_group1") is not None
+            and result.get("n_group2") is not None
+            and result.get("effect_size") is not None
+            and not any(t in test_name for t in ("anova", "kruskal", "chi"))
+        )
+
+        is_multi_group = any(
+            token in test_name for token in ("anova", "kruskal")
+        ) or (
+            result.get("n_groups") is not None
+            and (
+                result.get("eta_squared") is not None
+                or result.get("epsilon_squared") is not None
+            )
+        )
+
+        is_chi2 = any(
+            token in test_name for token in ("chi-deux", "chi2", "chi-square", "fisher")
+        ) or result.get("cramers_v") is not None
+
+        if is_two_group and not is_multi_group:
+            effect = _safe_float(result.get("effect_size"))
+            n1 = _safe_float(result.get("n_group1"))
+            n2 = _safe_float(result.get("n_group2"))
+            if effect is not None and n1 is not None and n2 is not None and n1 > 0:
+                effect_abs = abs(effect)
+                ratio = float(n2 / n1) if n1 > 0 else 1.0
+                analysis = TTestIndPower()
+                raw = analysis.solve_power(
+                    effect_size=effect_abs if effect_abs > 0 else 1e-6,
+                    nobs1=n1,
+                    alpha=0.05,
+                    ratio=ratio,
+                    alternative="two-sided",
+                )
+                power = float(np.asarray(raw).ravel()[0])
+                analysis_for_n = analysis
+                n_solve_kwargs = {
+                    "effect_size": 0.3,
+                    "power": 0.8,
+                    "alpha": 0.05,
+                    "ratio": 1.0,
+                    "alternative": "two-sided",
+                }
+
+        elif is_multi_group:
+            eta2 = _safe_float(result.get("eta_squared"))
+            if eta2 is None:
+                eta2 = _safe_float(result.get("epsilon_squared"))
+            effect_f = _power_cohen_f_from_eta2(eta2) if eta2 is not None else None
+            k = result.get("n_groups")
+            if k is None:
+                levels = result.get("group_levels")
+                if isinstance(levels, list):
+                    k = len(levels)
+            sizes = result.get("group_sizes")
+            n_total: float | None = None
+            if isinstance(sizes, list) and sizes:
+                n_total = float(sum(int(s) for s in sizes))
+            if n_total is None:
+                n_total = _safe_float(result.get("n_observations"))
+            k_f = _safe_float(k)
+            if (
+                effect_f is not None
+                and n_total is not None
+                and k_f is not None
+                and k_f >= 2
+                and n_total > k_f
+            ):
+                analysis = FTestAnovaPower()
+                raw = analysis.solve_power(
+                    effect_size=effect_f,
+                    nobs=n_total,
+                    alpha=0.05,
+                    k_groups=int(k_f),
+                )
+                power = float(np.asarray(raw).ravel()[0])
+                analysis_for_n = analysis
+                # f ≈ 0.25 pour effet moyen ANOVA ; 0.3 demandé par contrat produit.
+                n_solve_kwargs = {
+                    "effect_size": 0.3,
+                    "power": 0.8,
+                    "alpha": 0.05,
+                    "k_groups": int(k_f),
+                }
+
+        elif is_chi2:
+            cramers_v = _safe_float(result.get("cramers_v"))
+            n_obs = _safe_float(
+                result.get("n_observations") or result.get("n") or result.get("N")
+            )
+            df_val = result.get("df", result.get("dof"))
+            if df_val is None and isinstance(result.get("chi2_indicatif"), dict):
+                df_val = result["chi2_indicatif"].get("df") or result["chi2_indicatif"].get(
+                    "dof"
+                )
+            df_f = _safe_float(df_val)
+            if (
+                cramers_v is not None
+                and n_obs is not None
+                and df_f is not None
+                and df_f >= 0
+                and n_obs > 0
+            ):
+                n_bins = int(df_f) + 1
+                analysis = GofChisquarePower()
+                effect_w = abs(cramers_v) if abs(cramers_v) > 0 else 1e-6
+                raw = analysis.solve_power(
+                    effect_size=effect_w,
+                    nobs=n_obs,
+                    alpha=0.05,
+                    n_bins=max(n_bins, 2),
+                )
+                power = float(np.asarray(raw).ravel()[0])
+                analysis_for_n = analysis
+                n_solve_kwargs = {
+                    "effect_size": 0.3,
+                    "power": 0.8,
+                    "alpha": 0.05,
+                    "n_bins": max(n_bins, 2),
+                }
+
+        if power is None or power != power:
+            return out
+
+        # Borner dans [0, 1] (solve_power peut déborder numériquement).
+        power = max(0.0, min(1.0, float(power)))
+        out["power"] = round(power, 3)
+        label, _color = interpret_statistical_power(power)
+        out["power_interpretation"] = label
+
+        if power < 0.8 and analysis_for_n is not None and n_solve_kwargs:
+            try:
+                raw_n = analysis_for_n.solve_power(**n_solve_kwargs)
+                n_raw = float(np.asarray(raw_n).ravel()[0])
+                if n_raw == n_raw and n_raw > 0:
+                    # TTestIndPower renvoie nobs1 (par groupe) → N total ≈ 2 × nobs1.
+                    if isinstance(analysis_for_n, TTestIndPower):
+                        n_required = int(math.ceil(n_raw * 2))
+                    else:
+                        n_required = int(math.ceil(n_raw))
+                    out["n_required"] = n_required
+            except Exception:
+                pass
+
+    except Exception:
+        return result
+
+    return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 9. FONCTION PRINCIPALE — PIPELINE DE BASE (sans arbre de décision)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def run_base_compute_pipeline(file_bytes: bytes, filename: str,
-                               target_col: str | None = None) -> dict[str, Any]:
+                               target_col: str | None = None,
+                               theme: str = "dark") -> dict[str, Any]:
     """
     Point d'entrée du module compute pour la couche "de base" (diagnostic,
     nettoyage, descriptives, normalité, corrélations, et régression OLS
@@ -1131,6 +1695,9 @@ def run_base_compute_pipeline(file_bytes: bytes, filename: str,
     les fonctions de ce module individuellement avec les bons arguments
     (numeric_cols, cat_cols issus du diagnostic) après avoir déterminé,
     selon l'objectif utilisateur, quels tests exécuter.
+
+    theme : "dark" (défaut) ou "light" (rapport académique clair).
+            Si "both", génère les graphiques pour les deux thèmes.
 
     Sortie : dict prêt à être enrichi par l'orchestrateur avec les résultats
     des tests d'inférence (clé "inference_tests", ajoutée en aval).
@@ -1151,19 +1718,51 @@ def run_base_compute_pipeline(file_bytes: bytes, filename: str,
     numeric_cols = [c for c in numeric_cols if c in df.columns]
     cat_cols     = [c for c in cat_cols if c in df.columns]
 
-    desc = descriptive_stats(df, numeric_cols, cat_cols)
-    norm = normality_tests(df, numeric_cols)
-    corr = correlation_analysis(df, numeric_cols, norm.get("normality", {}))
-    reg  = ols_regression(df, numeric_cols, target_col)
+    # Génère les graphiques pour le thème demandé (ou les deux)
+    if theme == "both":
+        desc_dark = descriptive_stats(df, numeric_cols, cat_cols, theme="dark")
+        norm_dark = normality_tests(df, numeric_cols, theme="dark")
+        corr_dark = correlation_analysis(df, numeric_cols, norm_dark.get("normality", {}), theme="dark")
+        
+        desc_light = descriptive_stats(df, numeric_cols, cat_cols, theme="light")
+        norm_light = normality_tests(df, numeric_cols, theme="light")
+        corr_light = correlation_analysis(df, numeric_cols, norm_light.get("normality", {}), theme="light")
+        
+        desc = {k: v for k, v in desc_dark.items() if k != "charts"}
+        norm = norm_dark.get("normality", {})
+        corr = {k: v for k, v in corr_dark.items() if k != "charts"}
+        reg  = ols_regression(df, numeric_cols, target_col, theme="dark")
+        reg_light = ols_regression(df, numeric_cols, target_col, theme="light")
 
-    r_script = generate_r_script(df, filename, numeric_cols, reg)
-    stata_script = generate_stata_script(df, filename, numeric_cols, cat_cols, reg)
+        all_charts = {}
+        all_charts.update(desc_dark.get("charts", {}))
+        all_charts.update(norm_dark.get("charts", {}))
+        all_charts.update(corr_dark.get("charts", {}))
+        all_charts.update(reg.get("charts", {}))
 
-    all_charts = {}
-    all_charts.update(desc.get("charts", {}))
-    all_charts.update(norm.get("charts", {}))
-    all_charts.update(corr.get("charts", {}))
-    all_charts.update(reg.get("charts", {}))
+        all_charts_light = {}
+        all_charts_light.update(desc_light.get("charts", {}))
+        all_charts_light.update(norm_light.get("charts", {}))
+        all_charts_light.update(corr_light.get("charts", {}))
+        all_charts_light.update(reg_light.get("charts", {}))
+    else:
+        desc = descriptive_stats(df, numeric_cols, cat_cols, theme=theme)
+        norm = normality_tests(df, numeric_cols, theme=theme)
+        corr = correlation_analysis(df, numeric_cols, norm.get("normality", {}), theme=theme)
+        reg  = ols_regression(df, numeric_cols, target_col, theme=theme)
+
+        all_charts = {}
+        all_charts.update(desc.get("charts", {}))
+        all_charts.update(norm.get("charts", {}))
+        all_charts.update(corr.get("charts", {}))
+        all_charts.update(reg.get("charts", {}))
+        
+        all_charts_light = None
+
+    r_script = generate_r_script(df, filename, numeric_cols, reg, diag.get("n_missing", 0))
+    stata_script = generate_stata_script(
+        df, filename, numeric_cols, cat_cols, reg, diag.get("n_missing", 0)
+    )
 
     return {
         "diagnosis":   diag,
@@ -1173,6 +1772,7 @@ def run_base_compute_pipeline(file_bytes: bytes, filename: str,
         "correlation": {k: v for k, v in corr.items() if k != "charts"},
         "regression":  {k: v for k, v in reg.items() if k != "charts"},
         "charts":      all_charts,
+        "charts_light": all_charts_light,
         "r_script":     r_script,
         "stata_script": stata_script,
         "n_charts":    len(all_charts),

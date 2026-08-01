@@ -7,9 +7,10 @@ les audit_log en une timeline unique, et calcule le score de confiance
 (Annexe A du document de specs QUANTA).
 
 Ce module NE FAIT AUCUN CALCUL STATISTIQUE LUI-MÊME -- il appelle
-exclusivement compute.py et test_selector.py et orchestre leurs résultats.
-C'est la seule fonction que main.py (FastAPI) doit connaître pour exposer
-l'endpoint /analyze.
+exclusivement compute.py et test_selector.py et orchestre leurs résultats
+(y compris l'enrichissement post-test : puissance via
+compute.compute_statistical_power). C'est la seule fonction que main.py
+(FastAPI) doit connaître pour exposer l'endpoint /analyze.
 """
 
 from __future__ import annotations
@@ -338,7 +339,17 @@ def compute_confidence_score(
         + s_stabilite * CONFIDENCE_WEIGHTS["stabilite"]
     )
 
+    score_calcule = global_score
+    global_score = min(global_score, 95.0)
+
     all_notes = n_qualite + n_conditions + n_coherence + n_taille + n_stabilite
+    score_cap_note = (
+        "Score plafonné à 95/100 — QUANTA évalue les propriétés statistiques "
+        "des données mais ne peut pas mesurer la qualité du design d'étude, "
+        "les biais de collecte, ni la validité externe."
+    )
+    if score_calcule > 95.0 and score_cap_note not in all_notes:
+        all_notes.append(score_cap_note)
 
     # Plafonnement du niveau affiché selon la taille d'échantillon.
     # Le score numérique reste inchangé pour préserver la transparence.
@@ -395,6 +406,61 @@ def compute_confidence_score(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# MODE AUTONOME — SÉLECTION AUTOMATIQUE D'INTENTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def auto_intent(diagnosis: dict[str, Any]) -> list[ts.AnalysisIntent]:
+    """
+    Examine le diagnostic du dataset et propose une liste d'intentions
+    d'analyse à exécuter lorsque l'utilisateur n'a fourni aucune requête.
+    """
+    numeric_cols = list(diagnosis.get("numeric_cols", []) or [])
+    cat_cols = list(diagnosis.get("cat_cols", []) or [])
+    intents: list[ts.AnalysisIntent] = []
+
+    # Règle 1: une catégorielle + une ou plusieurs numériques
+    # → comparaison de groupes pour chaque numérique
+    if len(cat_cols) >= 1 and len(numeric_cols) >= 1:
+        group_col = cat_cols[0]
+        for target in numeric_cols[:3]:
+            intents.append(
+                ts.AnalysisIntent(
+                    action="compare_groups",
+                    target_col=target,
+                    group_col=group_col,
+                    raw_query="[auto]",
+                )
+            )
+
+    # Règle 2: 2+ numériques → corrélation entre toutes
+    if len(numeric_cols) >= 2:
+        intents.append(
+            ts.AnalysisIntent(
+                action="correlation",
+                target_col=numeric_cols[0],
+                group_col=numeric_cols[1],
+                raw_query="[auto]",
+            )
+        )
+
+    # Règle 3: 2 catégorielles → association Chi-deux
+    if len(cat_cols) >= 2:
+        intents.append(
+            ts.AnalysisIntent(
+                action="association",
+                target_col=cat_cols[0],
+                group_col=cat_cols[1],
+                raw_query="[auto]",
+            )
+        )
+
+    # Toujours ajouter un descriptif global en dernier
+    intents.append(ts.AnalysisIntent(action="descriptive_only", raw_query="[auto]"))
+
+    return intents if intents else [ts.AnalysisIntent(action="descriptive_only", raw_query="[auto]")]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # ORCHESTRATEUR PRINCIPAL — POINT D'ENTRÉE UNIQUE
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -402,6 +468,7 @@ def run_full_analysis(
     file_bytes: bytes,
     filename: str,
     intent: ts.AnalysisIntent,
+    theme: str = "both",
 ) -> dict[str, Any]:
     """
     Point d'entrée unique du pipeline QUANTA. À appeler depuis main.py
@@ -422,12 +489,15 @@ def run_full_analysis(
       5. Calcul du score de confiance.
       6. Assemblage de la réponse finale, garantie JSON-native.
 
+    theme : "both" (défaut, génère les graphiques pour les deux thèmes),
+            "dark" ou "light" (génère uniquement pour ce thème).
+
     Retourne TOUJOURS un dict -- en cas d'erreur de chargement du fichier,
     retourne {"error": ...} sans lever d'exception.
     """
     # Étape 1 : calcul de base
     base_target = intent.target_col if intent.action == "regression" else None
-    pipeline = compute.run_base_compute_pipeline(file_bytes, filename, target_col=base_target)
+    pipeline = compute.run_base_compute_pipeline(file_bytes, filename, target_col=base_target, theme=theme)
 
     if "error" in pipeline:
         return {"error": pipeline["error"], "status": "failed"}
@@ -450,6 +520,12 @@ def run_full_analysis(
         pipeline["regression"], pipeline["correlation"],
         fused_audit_log,
     )
+
+    # Étape 3b : puissance statistique (compute déterministe, post-test)
+    if isinstance(final_inference_result, dict):
+        final_inference_result = compute.compute_statistical_power(
+            final_inference_result
+        )
 
     # Étape 4 : fusion des audit_log (ordre chronologique logique : nettoyage
     # d'abord, puis validation de l'intention, puis sélection du test, puis
@@ -496,6 +572,7 @@ def run_full_analysis(
         "audit_log": fused_audit_log,
         "confidence_score": confidence,
         "charts": pipeline["charts"],
+        "charts_light": pipeline.get("charts_light"),
         "r_script": pipeline["r_script"],
         "stata_script": pipeline["stata_script"],
         "n_charts": pipeline["n_charts"],

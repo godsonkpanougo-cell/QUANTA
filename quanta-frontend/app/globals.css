@@ -1,0 +1,101 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* ── Polices ─────────────────────────────────────── */
+  --font-sans:    var(--font-geist);
+  --font-display: var(--font-display);
+  --font-mono:    var(--font-mono);
+
+  /* ── Palette QUANTA ──────────────────────────────── */
+  --color-quanta-void:      #0A0A0F;
+  --color-quanta-surface:   #13131A;
+  --color-quanta-elevated:  #1C1C26;
+  --color-quanta-gold:      #C9A84C;
+  --color-quanta-gold-2:    #E8D5A3;
+  --color-quanta-cyan:      #00D4FF;
+  --color-quanta-cyan-2:    #00A8CC;
+  --color-quanta-primary:   #E8E8E8;
+  --color-quanta-secondary: #9A9AA8;
+  --color-quanta-muted:     #555563;
+
+  /* ── Bordures ────────────────────────────────────── */
+  --color-quanta-border-subtle: rgba(255,255,255,0.06);
+  --color-quanta-border-active: rgba(201,168,76,0.3);
+  --color-quanta-border-cyan:   rgba(0,212,255,0.2);
+
+  /* ── États ───────────────────────────────────────── */
+  --color-quanta-success: #2ECC71;
+  --color-quanta-warning: #F39C12;
+  --color-quanta-error:   #E74C3C;
+
+  /* ── Radius QUANTA ───────────────────────────────── */
+  --radius-quanta: 8px;
+  --radius-card:   12px;
+  --radius-hero:   16px;
+
+  /* ── Shadcn (on garde ses variables pour ses composants) */
+  --color-background:        var(--background);
+  --color-foreground:        var(--foreground);
+  --color-card:              var(--card);
+  --color-card-foreground:   var(--card-foreground);
+  --color-primary:           var(--primary);
+  --color-primary-foreground:var(--primary-foreground);
+  --color-secondary:         var(--secondary);
+  --color-secondary-foreground:var(--secondary-foreground);
+  --color-muted:             var(--muted);
+  --color-muted-foreground:  var(--muted-foreground);
+  --color-accent:            var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive:       var(--destructive);
+  --color-border:            var(--border);
+  --color-input:             var(--input);
+  --color-ring:              var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+/* ── QUANTA dark mode (toujours dark) ─────────────── */
+:root {
+  --background: #0A0A0F;
+  --foreground: #E8E8E8;
+  --card:       #13131A;
+  --card-foreground: #E8E8E8;
+  --popover:    #13131A;
+  --popover-foreground: #E8E8E8;
+  --primary:    #C9A84C;
+  --primary-foreground: #0A0A0F;
+  --secondary:  #1C1C26;
+  --secondary-foreground: #E8E8E8;
+  --muted:      #1C1C26;
+  --muted-foreground: #9A9AA8;
+  --accent:     #00D4FF;
+  --accent-foreground: #0A0A0F;
+  --destructive: #E74C3C;
+  --border:     rgba(255,255,255,0.06);
+  --input:      rgba(255,255,255,0.08);
+  --ring:       #C9A84C;
+  --radius:     0.5rem;
+  --sidebar:    #13131A;
+  --sidebar-foreground: #E8E8E8;
+  --sidebar-primary: #C9A84C;
+  --sidebar-primary-foreground: #0A0A0F;
+  --sidebar-accent: #1C1C26;
+  --sidebar-accent-foreground: #E8E8E8;
+  --sidebar-border: rgba(255,255,255,0.06);
+  --sidebar-ring: #C9A84C;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

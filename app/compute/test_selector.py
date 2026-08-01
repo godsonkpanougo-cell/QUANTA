@@ -34,6 +34,13 @@ try:
 except ImportError:
     HAS_POSTHOCS = False
 
+try:
+    import pingouin as pg
+    HAS_PINGOUIN = True
+except ImportError:
+    HAS_PINGOUIN = False
+    pg = None  # type: ignore[assignment]
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STRUCTURE D'INTENTION (ce que brain.py doit produire)
@@ -132,6 +139,48 @@ def _levene_equal_variance(groups: list[np.ndarray]) -> tuple[bool, float, float
     return bool(p > 0.05), float(stat), float(p)
 
 
+def _welch_anova(
+    sub: pd.DataFrame,
+    target_col: str,
+    group_col: str,
+    groups: list[np.ndarray],
+) -> tuple[float, float, float, float]:
+    """
+    Welch ANOVA stricte (variances inégales).
+
+    Préfère pingouin.welch_anova ; sinon statsmodels.stats.oneway.anova_oneway
+    avec use_var='unequal'.
+
+    Retourne (F, p_value, df_between/numérateur, df_within/dénominateur).
+    Le dénominateur est typiquement non-entier (Satterthwaite-Welch).
+    """
+    if HAS_PINGOUIN:
+        assert pg is not None
+        # Format long standardisé pour pingouin (dv='value', between='group')
+        df_combined = pd.DataFrame({
+            "value": sub[target_col].to_numpy(),
+            "group": sub[group_col].to_numpy(),
+        })
+        table = pg.welch_anova(data=df_combined, dv="value", between="group")
+        row = table.iloc[0]
+        return (
+            float(row["F"]),
+            float(row["p_unc"]),
+            float(row["ddof1"]),
+            float(row["ddof2"]),
+        )
+
+    from statsmodels.stats.oneway import anova_oneway
+
+    res = anova_oneway(groups, use_var="unequal")
+    return (
+        float(res.statistic),
+        float(res.pvalue),
+        float(res.df_num),
+        float(res.df_denom),
+    )
+
+
 def run_two_group_comparison(
     df: pd.DataFrame, target_col: str, group_col: str,
     normality_results: dict, paired: bool, audit_log: list[dict],
@@ -155,8 +204,12 @@ def run_two_group_comparison(
     if paired:
         if len(g1) != len(g2):
             return {"status": "error", "reason": "Comparaison appariée demandée mais effectifs des groupes différents."}
+        df_val: float | None = None
         if is_normal:
-            stat, p = stats.ttest_rel(g1, g2)
+            t_res = stats.ttest_rel(g1, g2)
+            stat, p = float(t_res.statistic), float(t_res.pvalue)
+            # ddl pairé = n - 1 (scipy TtestResult.df)
+            df_val = float(t_res.df) if hasattr(t_res, "df") else float(len(g1) - 1)
             test_name = "t-test pairé (Student)"
         else:
             stat, p = stats.wilcoxon(g1, g2)
@@ -171,23 +224,45 @@ def run_two_group_comparison(
                 f"-> {test_name}."
             ),
         })
-        effect_size = _cohens_d(g1, g2) if is_normal else _rank_biserial(g1, g2)
-        return _format_two_group_result(test_name, stat, p, g1, g2, levels, effect_size, paired=True)
+        if is_normal:
+            effect_size = _cohens_d(g1, g2)
+            effect_size_name = "Cohen's d"
+        else:
+            effect_size = _rank_biserial(g1, g2)
+            effect_size_name = "r (rang bisériel)"
+        return _format_two_group_result(
+            test_name, stat, p, g1, g2, levels, effect_size, paired=True, df=df_val,
+            effect_size_name=effect_size_name,
+        )
 
     equal_var, levene_stat, levene_p = _levene_equal_variance([g1, g2])
 
+    df_val = None
     if is_normal:
         if equal_var:
-            stat, p = stats.ttest_ind(g1, g2, equal_var=True)
+            t_res = stats.ttest_ind(g1, g2, equal_var=True)
+            stat, p = float(t_res.statistic), float(t_res.pvalue)
+            # Student : ddl = n1 + n2 - 2
+            df_val = float(len(g1) + len(g2) - 2)
             test_name = "t-test de Student (variances égales)"
         else:
-            stat, p = stats.ttest_ind(g1, g2, equal_var=False)
+            t_res = stats.ttest_ind(g1, g2, equal_var=False)
+            stat, p = float(t_res.statistic), float(t_res.pvalue)
+            # Welch : ddl de Satterthwaite fourni par scipy
+            df_val = float(t_res.df) if hasattr(t_res, "df") else None
             test_name = "t-test de Welch (variances inégales)"
         effect_size = _cohens_d(g1, g2)
+        effect_size_name = "Cohen's d"
     else:
-        stat, p = stats.mannwhitneyu(g1, g2, alternative="two-sided")
+        u_stat, p = stats.mannwhitneyu(g1, g2, alternative="two-sided")
+        stat, p = float(u_stat), float(p)
         test_name = "Mann-Whitney U (non-paramétrique)"
-        effect_size = _rank_biserial(g1, g2)
+        n1, n2 = len(g1), len(g2)
+        denom = n1 * n2
+        effect_size = (
+            round(float(1 - (2 * u_stat) / denom), 4) if denom > 0 else float("nan")
+        )
+        effect_size_name = "r (rang bisériel)"
 
     audit_log.append({
         "etape": "selection_test", "colonne": target_col,
@@ -201,10 +276,13 @@ def run_two_group_comparison(
         ),
     })
 
-    return _format_two_group_result(test_name, stat, p, g1, g2, levels, effect_size, paired=False,
-                                      levene={"statistic": round(levene_stat, 4) if not np.isnan(levene_stat) else None,
-                                              "p_value": round(levene_p, 5) if not np.isnan(levene_p) else None,
-                                              "equal_variance": equal_var})
+    return _format_two_group_result(
+        test_name, stat, p, g1, g2, levels, effect_size, paired=False, df=df_val,
+        effect_size_name=effect_size_name,
+        levene={"statistic": round(levene_stat, 4) if not np.isnan(levene_stat) else None,
+                "p_value": round(levene_p, 5) if not np.isnan(levene_p) else None,
+                "equal_variance": equal_var},
+    )
 
 
 def run_multi_group_comparison(
@@ -244,11 +322,19 @@ def run_multi_group_comparison(
         },
     }
 
+    # ddl ANOVA classique (f_oneway ne les expose pas) : entre = k-1, résiduel = N-k
+    k_groups = len(groups)
+    n_total = sum(len(g) for g in groups)
+    df_between = k_groups - 1
+    df_within = n_total - k_groups
+
     if is_normal and equal_var:
         f_stat, p = stats.f_oneway(*groups)
         test_name = "ANOVA à un facteur (variances égales)"
         result.update({
             "test": test_name, "statistic": round(float(f_stat), 4), "p_value": round(float(p), 6),
+            "df_between": int(df_between),
+            "df_within": int(df_within),
             "eta_squared": _eta_squared(groups, f_stat),
         })
         if p < 0.05:
@@ -259,26 +345,35 @@ def run_multi_group_comparison(
             posthoc_name = "non applicable (ANOVA non significative)"
 
     elif is_normal and not equal_var:
-        f_stat, p = stats.f_oneway(*groups)  # approximation; Welch ANOVA via statsmodels si besoin
-        test_name = "Welch ANOVA (variances inégales, approximation)"
+        f_stat, p, df_num, df_den = _welch_anova(sub, target_col, group_col, groups)
+        test_name = "Welch ANOVA (correction Brown-Forsythe)"
         result.update({
-            "test": test_name, "statistic": round(float(f_stat), 4), "p_value": round(float(p), 6),
+            "test": test_name,
+            "statistic": round(float(f_stat), 4),
+            "p_value": round(float(p), 6),
+            "df_between": int(df_num) if float(df_num).is_integer() else round(float(df_num), 4),
+            "df_within": round(float(df_den), 4),
             "eta_squared": _eta_squared(groups, f_stat),
-            "note": "Variances jugées inégales (Levene) -- interpréter le F avec prudence ; "
-                    "Games-Howell recommandé en post-hoc plutôt que Tukey.",
+            "note": (
+                "Degrés de liberté dénominateur non-entier — "
+                "correction de Welch pour variances inégales"
+            ),
         })
-        if p < 0.05 and HAS_POSTHOCS:
+        if p < 0.05:
+            # Games-Howell si scikit-posthocs dispo ; sinon repli Tukey documenté.
             result["posthoc"] = _games_howell_or_fallback(sub, target_col, group_col)
             posthoc_name = "Games-Howell (ou repli Tukey si indisponible)"
         else:
             result["posthoc"] = None
-            posthoc_name = "non applicable"
+            posthoc_name = "non applicable (Welch ANOVA non significative)"
 
     else:
         h_stat, p = stats.kruskal(*groups)
         test_name = "Kruskal-Wallis (non-paramétrique)"
         result.update({
             "test": test_name, "statistic": round(float(h_stat), 4), "p_value": round(float(p), 6),
+            # Kruskal-Wallis : H ~ chi2 sous H0 avec ddl = k - 1
+            "df": int(k_groups - 1),
             "epsilon_squared": _epsilon_squared(h_stat, sum(len(g) for g in groups)),
         })
         if p < 0.05:
@@ -337,52 +432,121 @@ def _epsilon_squared(h_stat: float, n: int) -> float:
     return round(float(h_stat / (n - 1)), 4)
 
 
-def _tukey_hsd(sub: pd.DataFrame, target_col: str, group_col: str) -> dict:
+def _posthoc_comparisons_from_matrix(
+    matrix: pd.DataFrame,
+    sub: pd.DataFrame,
+    target_col: str,
+    group_col: str,
+) -> list[dict[str, Any]]:
+    """Convertit une matrice symétrique de p-values en liste de comparaisons."""
+    comparisons: list[dict[str, Any]] = []
+    groups = list(matrix.columns)
+    for i, g1 in enumerate(groups):
+        for g2 in groups[i + 1 :]:
+            try:
+                p_adj = float(matrix.loc[g1, g2])
+            except (TypeError, ValueError, KeyError):
+                continue
+            if p_adj != p_adj:  # NaN
+                continue
+            g1_vals = sub.loc[sub[group_col] == g1, target_col]
+            g2_vals = sub.loc[sub[group_col] == g2, target_col]
+            meandiff = (
+                round(float(g1_vals.mean() - g2_vals.mean()), 4)
+                if len(g1_vals) and len(g2_vals)
+                else None
+            )
+            comparisons.append({
+                "group1": str(g1),
+                "group2": str(g2),
+                "meandiff": meandiff,
+                "p_adj": round(p_adj, 5),
+                "significant": bool(p_adj < 0.05),
+            })
+    return comparisons
+
+
+def _tukey_hsd(sub: pd.DataFrame, target_col: str, group_col: str) -> dict[str, Any]:
     try:
         from statsmodels.stats.multicomp import pairwise_tukeyhsd
-        res = pairwise_tukeyhsd(sub[target_col], sub[group_col])
-        out = {}
+
+        data = pd.DataFrame({
+            "value": sub[target_col].to_numpy(),
+            "group": sub[group_col].to_numpy(),
+        })
+        res = pairwise_tukeyhsd(data["value"], data["group"])
+        comparisons: list[dict[str, Any]] = []
         for row in res.summary().data[1:]:
-            g1, g2, meandiff, p_adj, lower, upper, reject = row
-            out[f"{g1} vs {g2}"] = {
+            g1, g2, meandiff, p_adj, _lower, _upper, reject = row
+            comparisons.append({
+                "group1": str(g1),
+                "group2": str(g2),
                 "meandiff": round(float(meandiff), 4),
                 "p_adj": round(float(p_adj), 5),
-                "ci": [round(float(lower), 4), round(float(upper), 4)],
-                "significatif": bool(reject),
-            }
-        return out
+                "significant": bool(reject),
+            })
+        return {"method": "Tukey HSD", "comparisons": comparisons}
     except Exception as e:
         return {"error": str(e)}
 
 
-def _games_howell_or_fallback(sub: pd.DataFrame, target_col: str, group_col: str) -> dict:
+def _games_howell_or_fallback(
+    sub: pd.DataFrame, target_col: str, group_col: str,
+) -> dict[str, Any]:
     """Games-Howell si scikit-posthocs dispo, sinon repli sur Tukey avec avertissement."""
     if HAS_POSTHOCS:
         try:
             res = sp.posthoc_games_howell(sub, val_col=target_col, group_col=group_col)
-            return {"matrix_p_values": res.round(5).to_dict(), "methode": "Games-Howell"}
+            comparisons = _posthoc_comparisons_from_matrix(
+                res, sub, target_col, group_col,
+            )
+            return {"method": "Games-Howell", "comparisons": comparisons}
         except Exception:
             pass
     tukey = _tukey_hsd(sub, target_col, group_col)
-    tukey["_avertissement"] = (
-        "Games-Howell indisponible (scikit-posthocs manquant ou erreur) -- "
-        "repli sur Tukey HSD, à interpréter avec prudence car les variances sont inégales."
-    )
+    if "error" not in tukey:
+        tukey["method"] = (
+            "Tukey HSD (repli — variances inégales, Games-Howell indisponible)"
+        )
+        tukey["_avertissement"] = (
+            "Games-Howell indisponible (scikit-posthocs manquant ou erreur) -- "
+            "repli sur Tukey HSD, à interpréter avec prudence car les variances sont inégales."
+        )
     return tukey
 
 
-def _dunn_test(sub: pd.DataFrame, target_col: str, group_col: str) -> dict:
+def _dunn_test(sub: pd.DataFrame, target_col: str, group_col: str) -> dict[str, Any]:
     if not HAS_POSTHOCS:
         return {"error": "scikit-posthocs non installé -- test de Dunn indisponible."}
     try:
-        res = sp.posthoc_dunn(sub, val_col=target_col, group_col=group_col, p_adjust="bonferroni")
-        return {"matrix_p_values": res.round(5).to_dict(), "methode": "Dunn (correction Bonferroni)"}
+        res = sp.posthoc_dunn(
+            sub, val_col=target_col, group_col=group_col, p_adjust="bonferroni",
+        )
+        comparisons = _posthoc_comparisons_from_matrix(
+            res, sub, target_col, group_col,
+        )
+        return {
+            "method": "Test de Dunn (correction Bonferroni)",
+            "comparisons": comparisons,
+        }
     except Exception as e:
         return {"error": str(e)}
 
 
-def _format_two_group_result(test_name, stat, p, g1, g2, levels, effect_size, paired, levene=None) -> dict:
-    return {
+def _format_two_group_result(
+    test_name,
+    stat,
+    p,
+    g1,
+    g2,
+    levels,
+    effect_size,
+    paired,
+    levene=None,
+    df: float | None = None,
+    effect_size_name: str | None = None,
+) -> dict:
+    out: dict[str, Any] = {
         "status": "ok",
         "test": test_name,
         "statistic": round(float(stat), 4),
@@ -396,6 +560,12 @@ def _format_two_group_result(test_name, stat, p, g1, g2, levels, effect_size, pa
         "levene": levene,
         "significant": bool(p < 0.05),
     }
+    if effect_size_name is not None:
+        out["effect_size_name"] = effect_size_name
+    if df is not None and not (isinstance(df, float) and np.isnan(df)):
+        # Student : entier exact ; Welch : peut être non-entier (Satterthwaite)
+        out["df"] = int(df) if float(df).is_integer() else round(float(df), 4)
+    return out
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -430,11 +600,16 @@ def run_categorical_association(
         "n_observations": int(n),
     }
 
+    # ddl Chi-deux = (n_lignes - 1) * (n_cols - 1), déjà fourni par chi2_contingency
+    chi2_dof = int(dof)
+
     if all_cells_ok:
         test_name = "Chi-deux d'indépendance"
         result.update({
             "test": test_name, "statistic": round(float(chi2), 4),
-            "p_value": round(float(p_chi2), 6), "dof": int(dof),
+            "p_value": round(float(p_chi2), 6),
+            "df": chi2_dof,
+            "dof": chi2_dof,
             "cramers_v": cramers_v,
             "significant": bool(p_chi2 < 0.05),
         })
@@ -446,13 +621,20 @@ def run_categorical_association(
             "p_value": round(float(p_fisher), 6),
             "cramers_v": cramers_v,
             "significant": bool(p_fisher < 0.05),
-            "chi2_indicatif": {"statistic": round(float(chi2), 4), "p_value": round(float(p_chi2), 6)},
+            "chi2_indicatif": {
+                "statistic": round(float(chi2), 4),
+                "p_value": round(float(p_chi2), 6),
+                "df": chi2_dof,
+                "dof": chi2_dof,
+            },
         })
     else:
         test_name = "Chi-deux d'indépendance (avec réserve)"
         result.update({
             "test": test_name, "statistic": round(float(chi2), 4),
-            "p_value": round(float(p_chi2), 6), "dof": int(dof),
+            "p_value": round(float(p_chi2), 6),
+            "df": chi2_dof,
+            "dof": chi2_dof,
             "cramers_v": cramers_v,
             "significant": bool(p_chi2 < 0.05),
             "avertissement": (
