@@ -1,19 +1,7 @@
 FROM python:3.12-slim
 
-# Installer les dépendances système requises par WeasyPrint
-# GTK, Pango, Cairo et leurs dépendances
+# Installer les dépendances système minimales pour fpdf2
 RUN apt-get update && apt-get install -y \
-    libcairo2 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libgdk-pixbuf-2.0-0 \
-    libatk1.0-0 \
-    libatk-bridge-2.0-0 \
-    libatspi2.0-0 \
-    libglib2.0-0 \
-    libgobject-2.0-0 \
-    libharfbuzz-0-0 \
-    libffi-dev \
     libjpeg-dev \
     libpng-dev \
     && rm -rf /var/lib/apt/lists/*
