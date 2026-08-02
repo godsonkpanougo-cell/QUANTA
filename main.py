@@ -370,11 +370,14 @@ def get_report(
     if theme_norm not in {"dark", "light"}:
         theme_norm = "dark"
 
-    pdf_bytes = generate_pdf_report(result, theme=theme_norm)
+    pdf_bytes = generate_pdf_report(
+        result, theme=theme_norm
+    )
+
     if pdf_bytes is None:
         raise HTTPException(
             status_code=500,
-            detail="Échec de la génération du rapport PDF.",
+            detail="Échec de la génération PDF. Consultez les logs serveur."
         )
 
     suffix = "academique" if theme_norm == "light" else "dark"

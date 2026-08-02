@@ -432,6 +432,7 @@ def generate_pdf_report(
 
     except Exception as e:
         import traceback
+        print(f"ERREUR PDF: {e}")
         traceback.print_exc()
         return None
 
