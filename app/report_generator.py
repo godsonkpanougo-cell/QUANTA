@@ -50,17 +50,14 @@ class QuantaPDF(FPDF):
     def footer(self):
         pass
 
-    def set_fg(self, color_tuple):
-        r, g, b = color_tuple
-        self.set_text_color(r, g, b)
+    def set_fg(self, color):
+        self.set_text_color(color[0], color[1], color[2])
 
-    def set_bg(self, color_tuple):
-        r, g, b = color_tuple
-        self.set_fill_color(r, g, b)
+    def set_bg(self, color):
+        self.set_fill_color(color[0], color[1], color[2])
 
-    def set_border(self, color_tuple):
-        r, g, b = color_tuple
-        self.set_draw_color(r, g, b)
+    def set_border(self, color):
+        self.set_draw_color(color[0], color[1], color[2])
 
     def add_page_with_bg(self):
         self.add_page()
