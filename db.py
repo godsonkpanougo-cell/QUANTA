@@ -21,7 +21,12 @@ import threading
 from contextlib import contextmanager
 from typing import Any
 
-DB_PATH = os.environ.get("QUANTA_DB_PATH", "quanta.db")
+DB_PATH = os.environ.get("QUANTA_DB_PATH", "/data/quanta.db")
+
+# Créer le dossier /data si nécessaire (Railway volume persistant)
+db_dir = os.path.dirname(DB_PATH)
+if db_dir and not os.path.exists(db_dir):
+    os.makedirs(db_dir, exist_ok=True)
 
 # SQLite n'aime pas le multi-thread sans précaution -- FastAPI + BackgroundTasks
 # peut exécuter le code de fond dans un thread différent du thread principal.

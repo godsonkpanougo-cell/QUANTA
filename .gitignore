@@ -31,7 +31,6 @@ node_modules/
 quanta-frontend/.next/
 quanta-frontend/node_modules/
 quanta-frontend/.env.local
-quanta-frontend/.env.production
 
 # Données utilisateur (jamais de vraies données sur GitHub)
 data/samples/*.csv
