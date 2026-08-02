@@ -1,3 +1,4 @@
+# Updated: 2026-08-02 - fpdf2 migration
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.13.0
