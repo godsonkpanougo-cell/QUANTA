@@ -17,6 +17,40 @@ from typing import Any
 from fpdf import FPDF, XPos, YPos
 
 
+def _safe_text(text: str) -> str:
+    """Remplace les caractères Unicode problématiques par des équivalents ASCII."""
+    replacements = {
+        "—": "-",
+        "–": "-",
+        "\u2019": "'",
+        "\u2018": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "…": "...",
+        "≥": ">=",
+        "≤": "<=",
+        "α": "alpha",
+        "β": "beta",
+        "η": "eta",
+        "ε": "epsilon",
+        "ρ": "rho",
+        "²": "2",
+        "₀": "0",
+        "₁": "1",
+        "²": "2",
+        "³": "3",
+        "⁴": "4",
+        "⁵": "5",
+        "⁶": "6",
+        "⁷": "7",
+        "⁸": "8",
+        "⁹": "9",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+
 class QuantaPDF(FPDF):
     def __init__(self, theme="dark"):
         super().__init__()
@@ -82,12 +116,12 @@ def generate_pdf_report(
         pdf.set_y(80)
         pdf.set_font("Helvetica", "B", 36)
         pdf.set_fg(pdf.accent_gold)
-        pdf.cell(0, 20, "QUANTA", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(0, 20, _safe_text("QUANTA"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         # Sous-titre
         pdf.set_font("Helvetica", "", 16)
         pdf.set_fg(pdf.text_color)
-        pdf.cell(0, 10, "Rapport d'Analyse Statistique",
+        pdf.cell(0, 10, _safe_text("Rapport d'Analyse Statistique"),
                  align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         pdf.ln(15)
@@ -105,20 +139,20 @@ def generate_pdf_report(
         
         pdf.set_font("Helvetica", "", 10)
         pdf.set_fg(pdf.muted_color)
-        pdf.cell(0, 7, "Fichier analysé", align="C",
+        pdf.cell(0, 7, _safe_text("Fichier analyse"), align="C",
                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("Helvetica", "B", 12)
         pdf.set_fg(pdf.text_color)
-        pdf.cell(0, 8, filename, align="C",
+        pdf.cell(0, 8, _safe_text(filename), align="C",
                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(5)
         pdf.set_font("Helvetica", "", 10)
         pdf.set_fg(pdf.muted_color)
-        pdf.cell(0, 7, "Date de génération", align="C",
+        pdf.cell(0, 7, _safe_text("Date de generation"), align="C",
                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("Helvetica", "B", 11)
         pdf.set_fg(pdf.text_color)
-        pdf.cell(0, 8, date_str, align="C",
+        pdf.cell(0, 8, _safe_text(date_str), align="C",
                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(10)
 
@@ -135,11 +169,11 @@ def generate_pdf_report(
         pdf.set_y(pdf.get_y() + 3)
         pdf.set_font("Helvetica", "", 8)
         pdf.set_fg(pdf.muted_color)
-        pdf.cell(0, 5, "SCORE DE CONFIANCE", align="C",
+        pdf.cell(0, 5, _safe_text("SCORE DE CONFIANCE"), align="C",
                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("Helvetica", "B", 20)
         pdf.set_fg(pdf.accent_gold)
-        pdf.cell(0, 12, f"{int(score)} / 100 — {niveau}",
+        pdf.cell(0, 12, _safe_text(f"{int(score)} / 100 — {niveau}"),
                  align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(5)
 
@@ -160,7 +194,7 @@ def generate_pdf_report(
         pdf.set_fg(pdf.muted_color)
         py_ver = sys.version.split()[0]
         pdf.cell(0, 5,
-            f"QUANTA v0.1.0 · Python {py_ver} · scipy {scipy_ver} · statsmodels {sm_ver}",
+            _safe_text(f"QUANTA v0.1.0 · Python {py_ver} · scipy {scipy_ver} · statsmodels {sm_ver}"),
             align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         # SHA256 si disponible
@@ -168,7 +202,7 @@ def generate_pdf_report(
                     .get("file_hash", ""))
         if file_hash:
             pdf.set_font("Helvetica", "I", 6)
-            pdf.cell(0, 5, f"SHA256: {file_hash}",
+            pdf.cell(0, 5, _safe_text(f"SHA256: {file_hash}"),
                      align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         # ── SECTION 1 — PRÉSENTATION DES DONNÉES ───────
@@ -239,13 +273,13 @@ def generate_pdf_report(
                 pdf.set_y(y_start + 2)
                 pdf.set_font("Helvetica", "", 7)
                 pdf.set_fg(pdf.muted_color)
-                pdf.cell(0, 4, "HYPOTHÈSES",
+                pdf.cell(0, 4, _safe_text("HYPOTHESES"),
                          new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_font("Helvetica", "B", 9)
                 pdf.set_fg(pdf.text_color)
-                pdf.cell(0, 5, f"H\u2080 : {h0}",
+                pdf.cell(0, 5, _safe_text(f"H0 : {h0}"),
                          new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                pdf.cell(0, 5, f"H\u2081 : {h1}",
+                pdf.cell(0, 5, _safe_text(f"H1 : {h1}"),
                          new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.ln(3)
 
@@ -281,11 +315,11 @@ def generate_pdf_report(
                 pdf.set_font("Helvetica", "B", 9)
                 if pval < 0.05:
                     pdf.set_fg(pdf.accent_cyan)
-                    decision = f"Rejet de H\u2080 au seuil \u03b1 = 0,05."
+                    decision = _safe_text(f"Rejet de H0 au seuil alpha = 0,05.")
                 else:
                     pdf.set_fg(pdf.text_color)
-                    decision = f"Non-rejet de H\u2080 au seuil \u03b1 = 0,05."
-                pdf.cell(0, 7, f"Décision statistique : {decision}",
+                    decision = _safe_text(f"Non-rejet de H0 au seuil alpha = 0,05.")
+                pdf.cell(0, 7, _safe_text(f"Décision statistique : {decision}"),
                          new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_fg(pdf.text_color)
             pdf.ln(5)
@@ -326,12 +360,11 @@ def generate_pdf_report(
                 pdf.set_font("Helvetica", "B", 8)
                 pdf.set_fg((243, 156, 18))
                 pdf.cell(0, 5,
-                    "⚠ SKEPTIC ENGINE — VÉRIFICATION RECOMMANDÉE",
+                    _safe_text("! SKEPTIC ENGINE - VERIFICATION RECOMMANDEE"),
                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_font("Helvetica", "", 8)
                 pdf.set_fg(pdf.muted_color)
-                pdf.cell(0, 5,
-                    interp.get("skeptic_engine_message", ""),
+                pdf.cell(0, 5, _safe_text(interp.get("skeptic_engine_message", "")),
                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_fg(pdf.text_color)
                 pdf.ln(5)
@@ -392,7 +425,7 @@ def generate_pdf_report(
                        f"({test_name}, p={_fmt_pvalue(pval)})")
             
             pdf.set_font("Helvetica", "", 10)
-            pdf.multi_cell(0, 7, text,
+            pdf.multi_cell(0, 7, _safe_text(text),
                           new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_border(pdf.muted_color)
             pdf.set_line_width(0.2)
@@ -415,7 +448,7 @@ def generate_pdf_report(
                     min(len(r_script.split('\n')) * 4, 200), 'F')
             pdf.ln(2)
             for line in r_script.split('\n')[:60]:
-                pdf.cell(0, 4, line[:100],
+                pdf.cell(0, 4, _safe_text(line[:100]),
                          new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_fg(pdf.text_color)
 
@@ -451,7 +484,7 @@ def generate_pdf_report(
 def _section_title(pdf: "QuantaPDF", title: str):
     pdf.set_font("Helvetica", "B", 14)
     pdf.set_fg(pdf.accent_gold)
-    pdf.cell(0, 10, title,
+    pdf.cell(0, 10, _safe_text(title),
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_border(pdf.accent_gold)
     pdf.set_line_width(0.3)
@@ -462,18 +495,18 @@ def _section_title(pdf: "QuantaPDF", title: str):
 def _subsection_title(pdf: "QuantaPDF", title: str):
     pdf.set_font("Helvetica", "B", 11)
     pdf.set_fg(pdf.accent_cyan)
-    pdf.cell(0, 8, title,
+    pdf.cell(0, 8, _safe_text(title),
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_fg(pdf.text_color)
 
 def _key_value(pdf: "QuantaPDF", key: str, value: str):
     pdf.set_font("Helvetica", "", 9)
     pdf.set_fg(pdf.muted_color)
-    pdf.cell(70, 6, key,
+    pdf.cell(70, 6, _safe_text(key),
              new_x=XPos.RIGHT, new_y=YPos.TOP)
     pdf.set_fg(pdf.text_color)
     pdf.set_font("Helvetica", "B", 9)
-    pdf.cell(0, 6, str(value),
+    pdf.cell(0, 6, _safe_text(str(value)),
              new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 def _body_text(pdf: "QuantaPDF", text: str):
@@ -484,15 +517,15 @@ def _body_text(pdf: "QuantaPDF", text: str):
     pdf.set_bg(pdf.surface_color)
     pdf.rect(15, pdf.get_y(), 180, 2, 'F')
     pdf.ln(2)
-    pdf.multi_cell(0, 5, str(text),
+    pdf.multi_cell(0, 5, _safe_text(str(text)),
                    new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(4)
 
 def _bullet(pdf: "QuantaPDF", text: str):
     pdf.set_font("Helvetica", "", 9)
     pdf.set_fg(pdf.text_color)
-    pdf.cell(8, 6, "•", new_x=XPos.RIGHT, new_y=YPos.TOP)
-    pdf.multi_cell(0, 6, str(text),
+    pdf.cell(8, 6, _safe_text("•"), new_x=XPos.RIGHT, new_y=YPos.TOP)
+    pdf.multi_cell(0, 6, _safe_text(str(text)),
                    new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 def _table_header(pdf: "QuantaPDF",
@@ -503,7 +536,7 @@ def _table_header(pdf: "QuantaPDF",
     pdf.set_border(pdf.accent_gold)
     pdf.set_line_width(0.5)
     for col, w in zip(cols, widths):
-        pdf.cell(w, 8, col, border="B",
+        pdf.cell(w, 8, _safe_text(col), border="B",
                  new_x=XPos.RIGHT, new_y=YPos.TOP,
                  fill=True)
     pdf.ln(8)
@@ -515,7 +548,7 @@ def _table_row(pdf: "QuantaPDF",
     pdf.set_border(pdf.muted_color)
     pdf.set_line_width(0.1)
     for cell, w in zip(cells, widths):
-        pdf.cell(w, 7, str(cell), border="B",
+        pdf.cell(w, 7, _safe_text(str(cell)), border="B",
                  new_x=XPos.RIGHT, new_y=YPos.TOP)
     pdf.ln(7)
 
