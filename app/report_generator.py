@@ -1,11 +1,11 @@
 """
-QUANTA — report_generator.py
+QUANTA - report_generator.py
 
-Génère un rapport PDF professionnel à partir du dict retourné par
+Genere un rapport PDF professionnel a partir du dict retourne par
 brain.analyze_with_brain (intent + analysis + interpretation).
 
-Utilise fpdf2 (librairie Python pure, zéro dépendance système) au lieu
-de WeasyPrint pour éviter les problèmes de dépendances GTK/Pango/Cairo
+Utilise fpdf2 (librairie Python pure, zero dependance systeme) au lieu
+de WeasyPrint pour eviter les problemes de dependances GTK/Pango/Cairo
 sur Railway.
 """
 
@@ -18,42 +18,56 @@ from fpdf import FPDF, XPos, YPos
 
 
 def _safe_text(text: str) -> str:
-    """Remplace les caractères Unicode problématiques par des équivalents ASCII."""
+    """Remplace les caracteres Unicode problematiques par des equivalents ASCII."""
     if not isinstance(text, str):
         return str(text)
     replacements = {
-        "\u2014": "-",  # em dash —
-        "\u2013": "-",  # en dash –
+        "\u2014": "-",  # em dash -
+        "\u2013": "-",  # en dash -
         "\u2019": "'",  # apostrophe courbe
         "\u2018": "'",
         "\u201c": '"',
         "\u201d": '"',
         "\u2026": "...",
-        "\u2265": ">=",  # ≥
-        "\u2264": "<=",  # ≤
-        "\u03b1": "alpha",  # α
-        "\u03b2": "beta",   # β
-        "\u03b7": "eta",    # η
-        "\u03b5": "epsilon",# ε
-        "\u03c1": "rho",    # ρ
-        "\u00b2": "2",      # ²
-        "\u2080": "0",      # ₀
-        "\u2081": "1",      # ₁
-        "\u2082": "2",      # ₂
-        "\u00e9": "e",      # é
-        "\u00e8": "e",      # è
-        "\u00ea": "e",      # ê
-        "\u00e0": "a",      # à
-        "\u00e2": "a",      # â
-        "\u00f4": "o",      # ô
-        "\u00fb": "u",      # û
-        "\u00ee": "i",      # î
-        "\u00e7": "c",      # ç
-        "\u00f9": "u",      # ù
-        "\u00ab": '"',      # «
-        "\u00bb": '"',      # »
-        "\u00e6": "ae",     # æ
-        "\u0153": "oe",     # œ
+        "\u2265": ">=",  # >=
+        "\u2264": "<=",  # <=
+        "\u03b1": "alpha",  # alpha
+        "\u03b2": "beta",   # beta
+        "\u03b7": "eta",    # eta
+        "\u03b5": "epsilon",# epsilon
+        "\u03c1": "rho",    # rho
+        "\u00b2": "2",      # 2
+        "\u2080": "0",      # 0
+        "\u2081": "1",      # 1
+        "\u2082": "2",      # 2
+        "\u00e9": "e",      # e
+        "\u00e8": "e",      # e
+        "\u00ea": "e",      # e
+        "\u00e0": "a",      # a
+        "\u00e2": "a",      # a
+        "\u00f4": "o",      # o
+        "\u00fb": "u",      # u
+        "\u00ee": "i",      # i
+        "\u00e7": "c",      # c
+        "\u00f9": "u",      # u
+        "\u00ab": '"',      # "
+        "\u00bb": '"',      # "
+        "\u00e6": "ae",     # ae
+        "\u0153": "oe",     # oe
+        "\u2022": "-",   # bullet point -
+        "\u2023": ">",   # triangular bullet >
+        "\u25cf": "*",   # black circle *
+        "\u25cb": "o",   # white circle o
+        "\u2713": "OK",  # check mark [OK]
+        "\u2717": "X",   # cross mark [--]
+        "\u2718": "X",
+        "\u26a0": "!",   # warning [!]
+        "\u2694": "vs",  # crossed swords Critique :
+        "\u1f6e1": "",  # shield Reponse :
+        "\u00b0": " deg", # degre °
+        "\u2070": "0",
+        "\u00b9": "1",
+        "\u00b3": "3",
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
@@ -116,7 +130,7 @@ class QuantaPDF(FPDF):
             self.set_font("Helvetica", "I", 8)
             self.set_fg(self.muted_color)
             self.cell(0, 10,
-                f"QUANTA — Rapport d'analyse statistique · page {self.page_no()}",
+                f"QUANTA - Rapport d'analyse statistique · page {self.page_no()}",
                 align="C")
             self.ln(5)
 
@@ -147,7 +161,7 @@ def generate_pdf_report(
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page_with_bg()
 
-        # ── PAGE DE GARDE ──────────────────────────────
+        # -- PAGE DE GARDE ------------------------------
         pdf.set_bg(pdf.bg_color)
         pdf.rect(0, 0, 210, 297, 'F')
 
@@ -165,13 +179,13 @@ def generate_pdf_report(
 
         pdf.ln(15)
 
-        # Ligne séparatrice or
+        # Ligne separatrice or
         pdf.set_border(pdf.accent_gold)
         pdf.set_line_width(0.5)
         pdf.line(40, pdf.get_y(), 170, pdf.get_y())
         pdf.ln(10)
 
-        # Métadonnées
+        # Metadonnees
         filename = (analysis_result.get("analysis", {})
                    .get("filename", "inconnu"))
         date_str = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
@@ -199,7 +213,7 @@ def generate_pdf_report(
         confidence = (analysis_result.get("analysis", {})
                      .get("confidence_score", {}))
         score = confidence.get("score_global", 0)
-        niveau = confidence.get("niveau", "—")
+        niveau = confidence.get("niveau", "-")
         
         pdf.set_bg(pdf.surface_color)
         pdf.set_border(pdf.accent_gold)
@@ -212,7 +226,7 @@ def generate_pdf_report(
                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("Helvetica", "B", 20)
         pdf.set_fg(pdf.accent_gold)
-        pdf.cell(0, 12, f"{int(score)} / 100 — {niveau}",
+        pdf.cell(0, 12, f"{int(score)} / 100 - {niveau}",
                  align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(5)
 
@@ -244,23 +258,23 @@ def generate_pdf_report(
             pdf.cell(0, 5, f"SHA256: {file_hash}",
                      align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        # ── SECTION 1 — PRÉSENTATION DES DONNÉES ───────
+        # -- SECTION 1 - PRÉSENTATION DES DONNÉES -------
         pdf.add_page_with_bg()
-        _section_title(pdf, "1. Présentation des données")
+        _section_title(pdf, "1. Presentation des donnees")
         
         diag = (analysis_result.get("analysis", {})
                .get("diagnosis", {}))
         
         _key_value(pdf, "Nombre d'observations",
-                   str(diag.get("n_rows", "—")))
+                   str(diag.get("n_rows", "-")))
         _key_value(pdf, "Nombre de variables",
-                   str(diag.get("n_cols", "—")))
+                   str(diag.get("n_cols", "-")))
         _key_value(pdf, "Type de dataset",
-                   diag.get("dataset_type", "—"))
+                   diag.get("dataset_type", "-"))
         
         n_dupl = diag.get("n_duplicates", 0)
-        dupl_text = ("Aucun doublon détecté." if n_dupl == 0
-                    else f"{n_dupl} doublon(s) détecté(s).")
+        dupl_text = ("Aucun doublon detecte." if n_dupl == 0
+                    else f"{n_dupl} doublon(s) detecte(s).")
         _key_value(pdf, "Doublons", dupl_text)
 
         n_missing = diag.get("n_missing", 0)
@@ -277,11 +291,11 @@ def generate_pdf_report(
         
         _table_header(pdf, ["Variable", "Type"], [120, 60])
         for col in numeric_cols:
-            _table_row(pdf, [col, "Numérique"], [120, 60])
+            _table_row(pdf, [col, "Numerique"], [120, 60])
         for col in cat_cols:
-            _table_row(pdf, [col, "Catégorielle"], [120, 60])
+            _table_row(pdf, [col, "Categorielle"], [120, 60])
 
-        # ── SECTION 2 — ANALYSE STATISTIQUE ────────────
+        # -- SECTION 2 - ANALYSE STATISTIQUE ------------
         pdf.add_page_with_bg()
         _section_title(pdf, "2. Analyse statistique")
 
@@ -303,7 +317,7 @@ def generate_pdf_report(
             
             _subsection_title(pdf, f"{i}. {test_name}")
             
-            # Hypothèses
+            # Hypotheses
             h0, h1 = _get_hypotheses(action, result)
             if h0 and h1:
                 pdf.set_bg(pdf.surface_color)
@@ -322,7 +336,7 @@ def generate_pdf_report(
                          new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.ln(3)
 
-            # Résultats chiffrés
+            # Resultats chiffres
             stat = result.get("statistic")
             pval = result.get("p_value")
             df_val = result.get("df") or result.get("df_between")
@@ -331,25 +345,25 @@ def generate_pdf_report(
             power = result.get("power")
 
             _key_value(pdf, "Statistique de test",
-                      f"{stat:.4f}" if stat is not None else "—")
+                      f"{stat:.4f}" if stat is not None else "-")
             _key_value(pdf, "p-value",
-                      _fmt_pvalue(pval) if pval is not None else "—")
-            _key_value(pdf, "Degrés de liberté",
-                      str(df_val) if df_val is not None else "—")
+                      _fmt_pvalue(pval) if pval is not None else "-")
+            _key_value(pdf, "Degres de liberte",
+                      str(df_val) if df_val is not None else "-")
             
             if effect is not None:
                 interp_eff = _interpret_effect(effect_name, effect)
                 _key_value(pdf, effect_name or "Taille d'effet",
-                          f"{effect:.4f} — {interp_eff}")
+                          f"{effect:.4f} - {interp_eff}")
             
             if power is not None:
                 power_interp = _interpret_power(power)
                 pdf.set_font("Helvetica", "", 9)
                 pdf.set_fg(pdf.text_color)
-                _key_value(pdf, "Puissance (1-β)",
+                _key_value(pdf, "Puissance (1-beta)",
                           f"{power:.3f} ({power_interp})")
 
-            # Décision statistique
+            # Decision statistique
             if pval is not None:
                 pdf.set_font("Helvetica", "B", 9)
                 if pval < 0.05:
@@ -358,15 +372,15 @@ def generate_pdf_report(
                 else:
                     pdf.set_fg(pdf.text_color)
                     decision = f"Non-rejet de H0 au seuil alpha = 0,05."
-                pdf.cell(0, 7, f"Décision statistique : {decision}",
+                pdf.cell(0, 7, f"Decision statistique : {decision}",
                          new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_fg(pdf.text_color)
             pdf.ln(5)
 
-        # ── SECTION 3 — INTERPRÉTATION ──────────────────
+        # -- SECTION 3 - INTERPRÉTATION ------------------
         if interp.get("llm_available"):
             pdf.add_page_with_bg()
-            _section_title(pdf, "3. Interprétation")
+            _section_title(pdf, "3. Interpretation")
             
             interp_principale = interp.get(
                 "interpretation_principale", {})
@@ -379,12 +393,12 @@ def generate_pdf_report(
             _body_text(pdf,
                 interp_principale.get("niveau_analytique", ""))
             
-            _subsection_title(pdf, "Niveau décisionnel")
+            _subsection_title(pdf, "Niveau decisionnel")
             _body_text(pdf,
                 interp_principale.get("niveau_decisionnel", ""))
             
             if interp.get("resume_executif"):
-                _subsection_title(pdf, "Résumé exécutif")
+                _subsection_title(pdf, "Resume executif")
                 _body_text(pdf, interp["resume_executif"])
 
             # Skeptic Engine
@@ -408,9 +422,9 @@ def generate_pdf_report(
                 pdf.set_fg(pdf.text_color)
                 pdf.ln(5)
 
-        # ── SECTION 4 — LIMITES ET RÉSERVES ────────────
+        # -- SECTION 4 - LIMITES ET RÉSERVES ------------
         pdf.add_page_with_bg()
-        _section_title(pdf, "4. Limites et réserves")
+        _section_title(pdf, "4. Limites et reserves")
         
         confidence = (analysis_result.get("analysis", {})
                      .get("confidence_score", {}))
@@ -422,11 +436,11 @@ def generate_pdf_report(
                 _bullet(pdf, point)
         else:
             _body_text(pdf,
-                "Aucun point de vigilance particulier identifié.")
+                "Aucun point de vigilance particulier identifie.")
 
-        # ── EN RÉSUMÉ ───────────────────────────────────
+        # -- EN RÉSUMÉ -----------------------------------
         pdf.add_page_with_bg()
-        _section_title(pdf, "En résumé")
+        _section_title(pdf, "En resume")
         
         analyses_list = analysis_result.get("analyses", [])
         if not analyses_list:
@@ -451,15 +465,15 @@ def generate_pdf_report(
                            if effect else "")
             
             if pval < 0.05:
-                marker = "✓"
+                marker = "[OK]"
                 pdf.set_fg(pdf.accent_gold)
-                text = (f"{marker} Différence significative de {target} "
+                text = (f"{marker} Difference significative de {target} "
                        f"selon {group} ({test_name}, "
                        f"p={_fmt_pvalue(pval)}, effet {effect_interp})")
             else:
-                marker = "✗"
+                marker = "[--]"
                 pdf.set_fg(pdf.muted_color)
-                text = (f"{marker} Pas de différence significative de "
+                text = (f"{marker} Pas de difference significative de "
                        f"{target} selon {group} "
                        f"({test_name}, p={_fmt_pvalue(pval)})")
             
@@ -473,13 +487,13 @@ def generate_pdf_report(
         
         pdf.set_fg(pdf.text_color)
 
-        # ── ANNEXE A — SCRIPT R ─────────────────────────
+        # -- ANNEXE A - SCRIPT R -------------------------
         r_script = (analysis_result.get("analysis", {})
                    .get("inference", {})
                    .get("r_script", ""))
         if r_script:
             pdf.add_page_with_bg()
-            _section_title(pdf, "Annexe A — Script R")
+            _section_title(pdf, "Annexe A - Script R")
             pdf.set_font("Courier", "", 7)
             pdf.set_fg(pdf.muted_color)
             pdf.set_bg((13, 13, 13))
@@ -491,9 +505,9 @@ def generate_pdf_report(
                          new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_fg(pdf.text_color)
 
-        # ── ANNEXE C — BIBLIOGRAPHIE ────────────────────
+        # -- ANNEXE C - BIBLIOGRAPHIE --------------------
         pdf.add_page_with_bg()
-        _section_title(pdf, "Annexe C — Références méthodologiques")
+        _section_title(pdf, "Annexe C - References methodologiques")
         
         refs = {
             "Shapiro, S. S., & Wilk, M. B. (1965). An analysis of variance test for normality. Biometrika, 52(3-4), 591-611.",
@@ -518,7 +532,7 @@ def generate_pdf_report(
         return None
 
 
-# ── FONCTIONS UTILITAIRES ────────────────────────────────
+# -- FONCTIONS UTILITAIRES --------------------------------
 
 def _section_title(pdf: "QuantaPDF", title: str):
     pdf.set_font("Helvetica", "B", 14)
@@ -563,7 +577,7 @@ def _body_text(pdf: "QuantaPDF", text: str):
 def _bullet(pdf: "QuantaPDF", text: str):
     pdf.set_font("Helvetica", "", 9)
     pdf.set_fg(pdf.text_color)
-    pdf.cell(8, 6, "•", new_x=XPos.RIGHT, new_y=YPos.TOP)
+    pdf.cell(8, 6, "-", new_x=XPos.RIGHT, new_y=YPos.TOP)
     pdf.multi_cell(0, 6, str(text),
                    new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
@@ -593,7 +607,7 @@ def _table_row(pdf: "QuantaPDF",
 
 def _fmt_pvalue(p) -> str:
     if p is None:
-        return "—"
+        return "-"
     if p < 0.001:
         return "< 0.001"
     return f"{p:.3f}"
@@ -602,9 +616,9 @@ def _format_action(action: str) -> str:
     mapping = {
         "compare_groups_2": "Comparaison de 2 groupes",
         "compare_groups_k": "Comparaison de k groupes",
-        "correlation": "Analyse de corrélation",
-        "regression_ols": "Régression linéaire (OLS)",
-        "logistic_regression": "Régression logistique",
+        "correlation": "Analyse de correlation",
+        "regression_ols": "Regression lineaire (OLS)",
+        "logistic_regression": "Regression logistique",
         "association": "Test d'association (Chi-deux)",
         "descriptive_only": "Analyse descriptive",
     }
@@ -616,41 +630,41 @@ def _get_hypotheses(action: str, result: dict):
     if "compare_groups" in action:
         return (
             f"La distribution de {target} est identique dans tous les groupes de {group}.",
-            f"Au moins un groupe de {group} diffère des autres pour {target}."
+            f"Au moins un groupe de {group} differe des autres pour {target}."
         )
     if action == "correlation":
         return (
-            f"Il n'existe pas de corrélation entre {target} et {group} (ρ = 0).",
-            f"Une corrélation existe entre {target} et {group} (ρ ≠ 0)."
+            f"Il n'existe pas de correlation entre {target} et {group} (rho = 0).",
+            f"Une correlation existe entre {target} et {group} (rho != 0)."
         )
     if action == "association":
         return (
-            f"{target} et {group} sont indépendantes.",
-            f"{target} et {group} sont associées."
+            f"{target} et {group} sont independantes.",
+            f"{target} et {group} sont associees."
         )
     return None, None
 
 def _interpret_effect(name: str, value: float) -> str:
     abs_val = abs(value)
     if "d" in name.lower():
-        if abs_val < 0.2: return "négligeable"
+        if abs_val < 0.2: return "negligeable"
         if abs_val < 0.5: return "petit"
         if abs_val < 0.8: return "moyen"
         return "grand"
-    if "cramér" in name.lower() or "v" in name.lower():
-        if abs_val < 0.1: return "négligeable"
+    if "cramer" in name.lower() or "v" in name.lower():
+        if abs_val < 0.1: return "negligeable"
         if abs_val < 0.3: return "petit"
         if abs_val < 0.5: return "moyen"
         return "grand"
-    # η², ε², r
-    if abs_val < 0.01: return "négligeable"
+    # eta2, epsilon2, r
+    if abs_val < 0.01: return "negligeable"
     if abs_val < 0.06: return "petit"
     if abs_val < 0.14: return "moyen"
     return "grand"
 
 def _interpret_power(power: float) -> str:
     if power < 0.5:
-        return "insuffisante — risque élevé d'erreur de type II"
+        return "insuffisante - risque eleve d'erreur de type II"
     if power < 0.8:
-        return "modérée"
-    return "adéquate"
+        return "moderee"
+    return "adequate"
