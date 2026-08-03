@@ -19,10 +19,13 @@ from __future__ import annotations
 
 import html
 import io
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from weasyprint import HTML
+
+logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2267,6 +2270,9 @@ def _collect_charts_for_section(
     theme : "dark" (défaut) ou "light". Si "light" et charts_light disponible,
             utilise les graphiques light.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     seen: set[str] = set()
     collected: list[tuple[str, str]] = []
 
@@ -2288,6 +2294,14 @@ def _collect_charts_for_section(
     if theme == "light" and analysis.get("charts_light"):
         charts_source = "charts_light"
 
+    # LOGGING DIAGNOSTIC
+    logger.info(f"CHARTS DEBUG - analysis keys: {list(analysis.keys())}")
+    logger.info(f"CHARTS DEBUG - nested_result keys: {list(nested_result.keys())}")
+    logger.info(f"CHARTS DEBUG - charts_source: {charts_source}")
+    logger.info(f"CHARTS DEBUG - analysis.get(charts_source): {analysis.get(charts_source) is not None}")
+    if analysis.get(charts_source):
+        logger.info(f"CHARTS DEBUG - charts count: {len(analysis.get(charts_source, {}))}")
+
     for source in (
         nested_result.get(charts_source),
         nested_result.get("distribution_charts"),
@@ -2297,8 +2311,10 @@ def _collect_charts_for_section(
         data.get("distribution_charts"),
     ):
         if source:
+            logger.info(f"CHARTS DEBUG - Found source with {len(source) if isinstance(source, dict) else len(source)} items")
             _add(source)
 
+    logger.info(f"CHARTS DEBUG - Total collected: {len(collected)} charts")
     return collected
 
 
@@ -3221,6 +3237,7 @@ def generate_pdf_report(
     """
     try:
         if not isinstance(analysis_result, dict):
+            logger.error("PDF generation failed: analysis_result is not a dict")
             return None
         theme_norm = (theme or "dark").strip().lower()
         if theme_norm not in {"dark", "light"}:
@@ -3230,7 +3247,12 @@ def generate_pdf_report(
         HTML(string=html_document, base_url=".").write_pdf(target=pdf_buffer)
         pdf_bytes = pdf_buffer.getvalue()
         if not pdf_bytes:
+            logger.error("PDF generation failed: WeasyPrint returned empty PDF")
             return None
         return pdf_bytes
-    except Exception:
+    except Exception as e:
+        logger.error(
+            f"PDF generation failed: {type(e).__name__}: {str(e)}",
+            extra={"analysis_keys": list(analysis_result.keys()) if isinstance(analysis_result, dict) else None}
+        )
         return None

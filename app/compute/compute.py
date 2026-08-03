@@ -19,15 +19,22 @@ import io
 import base64
 import math
 import warnings
+import logging
 import numpy as np
 import pandas as pd
 import matplotlib
-matplotlib.use("Agg")  # mode sans affichage
+import os
+# Forcer le backend Agg avant toute importation pyplot
+os.environ['MPLBACKEND'] = 'Agg'
+matplotlib.use("Agg", force=True)  # mode sans affichage
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import shapiro, normaltest, pearsonr, spearmanr
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+logger = logging.getLogger(__name__)
+logger.info(f"Matplotlib backend: {matplotlib.get_backend()}")
 from statsmodels.stats.diagnostic import het_white, het_breuschpagan
 from statsmodels.stats.stattools import durbin_watson
 from typing import Any
@@ -120,13 +127,20 @@ def _fig_to_b64(fig, dpi: int = 100, theme: str = "dark") -> str:
     
     theme : "dark" (défaut) ou "light" (rapport académique clair).
     """
-    facecolor = "white" if theme == "light" else PALETTE["bg"]
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
-                 facecolor=facecolor)
-    plt.close(fig)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode()
+    try:
+        facecolor = "white" if theme == "light" else PALETTE["bg"]
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight",
+                     facecolor=facecolor)
+        plt.close(fig)
+        buf.seek(0)
+        b64_str = base64.b64encode(buf.read()).decode()
+        logger.debug(f"Generated chart: {len(b64_str)} chars base64")
+        return b64_str
+    except Exception as e:
+        logger.error(f"Failed to generate chart: {e}")
+        plt.close(fig)
+        return ""
 
 def _is_likely_id_column(series: pd.Series, col_name: str) -> bool:
     """
@@ -1764,6 +1778,10 @@ def run_base_compute_pipeline(file_bytes: bytes, filename: str,
         df, filename, numeric_cols, cat_cols, reg, diag.get("n_missing", 0)
     )
 
+    logger.info(f"Generated {len(all_charts)} charts for theme 'dark'")
+    if all_charts_light:
+        logger.info(f"Generated {len(all_charts_light)} charts for theme 'light'")
+    
     return {
         "diagnosis":   diag,
         "cleaning":    {k: v for k, v in clean.items() if k != "dataframe_clean"},

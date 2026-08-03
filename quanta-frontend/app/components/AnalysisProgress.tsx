@@ -19,6 +19,7 @@ const STEPS = [
 const POLL_INTERVAL_MS = 2000;
 const STEP_INTERVAL_MS = 3000;
 const COMPLETE_DELAY_MS = 500;
+const POLL_TIMEOUT_MS = 300000; // 5 minutes (300 secondes)
 const MAX_RUNNING_STEP = 6;
 const FINAL_STEP = 8;
 
@@ -229,10 +230,25 @@ export function AnalysisProgress({
       }
     };
 
-    void pollStatus();
-    pollIntervalId = setInterval(() => {
-      void pollStatus();
-    }, POLL_INTERVAL_MS);
+    const pollWithTimeout = async () => {
+      const deadline = Date.now() + POLL_TIMEOUT_MS;
+      
+      while (Date.now() < deadline && !finishedRef.current) {
+        await pollStatus();
+        
+        if (finishedRef.current) {
+          return;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+      }
+      
+      if (!finishedRef.current) {
+        finishWithError(`L'analyse a dépassé le délai maximum de ${POLL_TIMEOUT_MS / 1000} secondes.`);
+      }
+    };
+
+    void pollWithTimeout();
 
     stepIntervalId = setInterval(() => {
       if (!inProgressRef.current || finishedRef.current) {
@@ -242,9 +258,6 @@ export function AnalysisProgress({
     }, STEP_INTERVAL_MS);
 
     return () => {
-      if (pollIntervalId) {
-        clearInterval(pollIntervalId);
-      }
       if (stepIntervalId) {
         clearInterval(stepIntervalId);
       }

@@ -190,12 +190,18 @@ def get_analysis(analysis_id: str) -> dict[str, Any] | None:
 def list_analyses(limit: int = 100) -> list[dict[str, Any]]:
     with _get_conn() as conn:
         rows = conn.execute(
-            "SELECT analysis_id, status, query, created_at FROM analyses "
+            "SELECT analysis_id, status, query, created_at, updated_at FROM analyses "
             "ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
     return [
         {"analysis_id": r["analysis_id"], "status": r["status"],
-         "query": r["query"], "created_at": r["created_at"]}
+         "query": r["query"], "created_at": r["created_at"], "updated_at": r["updated_at"]}
         for r in rows
     ]
+
+
+def delete_analysis(analysis_id: str) -> None:
+    """Supprime une analyse de la base de données."""
+    with _get_conn() as conn:
+        conn.execute("DELETE FROM analyses WHERE analysis_id = ?", (analysis_id,))

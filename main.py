@@ -16,21 +16,28 @@ base) ; seul leur chemin et leurs métadonnées sont en base.
 
 from __future__ import annotations
 
-import hashlib
-import json
-import logging
 import os
-import tempfile
+import sys
 import uuid
-from datetime import datetime, timezone
+import base64
+import io
+import tempfile
+import logging
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
+
+# Forcer le backend matplotlib Agg AVANT toute importation
+os.environ['MPLBACKEND'] = 'Agg'
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from apscheduler.schedulers.background import BackgroundScheduler
 
 import db
 from app.compute import compute
@@ -41,9 +48,60 @@ from app.report_generator import generate_pdf_report
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-logger = logging.getLogger(__name__)
+# Configuration logging structuré
+import structlog
+
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.JSONRenderer()
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger()
+
+def _run_with_timeout(func, args=(), kwargs={}, timeout=300):
+    """
+    Exécute une fonction avec un timeout portable (Windows + Linux).
+    Utilise threading pour éviter les limitations de signal sur Windows.
+    """
+    result = [None]
+    exception = [None]
+    
+    def target():
+        try:
+            result[0] = func(*args, **kwargs)
+        except Exception as e:
+            exception[0] = e
+    
+    thread = threading.Thread(target=target)
+    thread.start()
+    thread.join(timeout=timeout)
+    
+    if thread.is_alive():
+        # Timeout - le thread tourne encore
+        # On ne peut pas tuer le thread en Python, mais on peut retourner une erreur
+        raise TimeoutError(f"Operation timeout after {timeout}s")
+    
+    if exception[0] is not None:
+        raise exception[0]
+    
+    return result[0]
 
 app = FastAPI(title="QUANTA API", version="0.1.0")
+
+# Rate limiting pour protéger contre les abus
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
 
 # CORS : autoriser le frontend local pendant le développement. À restreindre
 # au domaine de production réel avant le déploiement (Jour 61 du programme).
@@ -62,15 +120,66 @@ db.init_db()
 # STOCKAGE DES FICHIERS PHYSIQUES (les métadonnées sont en base via db.py)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "quanta_uploads")
+UPLOAD_DIR = os.environ.get("QUANTA_UPLOAD_DIR", "/data/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 Mo (limite Jour 61 du programme)
-MAX_ROWS = 50_000
+MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 Mo (augmenté pour production)
+MAX_ROWS = 100_000  # Augmenté pour production
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CLEANUP AUTOMATIQUE (fichiers et analyses anciens)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def cleanup_old_files() -> None:
+    """
+    Nettoie les fichiers uploadés et analyses de plus de 24 heures.
+    Exécuté périodiquement par APScheduler.
+    """
+    try:
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
+        
+        # Nettoyer les fichiers uploadés
+        if os.path.exists(UPLOAD_DIR):
+            for filename in os.listdir(UPLOAD_DIR):
+                filepath = os.path.join(UPLOAD_DIR, filename)
+                if os.path.isfile(filepath):
+                    file_mtime = datetime.fromtimestamp(os.path.getmtime(filepath), tz=timezone.utc)
+                    if file_mtime < cutoff_time:
+                        try:
+                            os.remove(filepath)
+                            logger.info(f"Deleted old upload file: {filename}")
+                        except Exception as e:
+                            logger.warning(f"Failed to delete file {filename}: {e}")
+        
+        # Nettoyer les analyses anciennes de la base
+        old_analyses = db.list_analyses(limit=1000)
+        deleted_count = 0
+        for analysis in old_analyses:
+            if analysis.get("updated_at"):
+                try:
+                    updated_at = datetime.fromisoformat(analysis["updated_at"])
+                    if updated_at < cutoff_time:
+                        db.delete_analysis(analysis["analysis_id"])
+                        deleted_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to parse date for analysis {analysis.get('analysis_id')}: {e}")
+        
+        if deleted_count > 0:
+            logger.info(f"Deleted {deleted_count} old analyses from database")
+            
+    except Exception as e:
+        logger.error(f"Cleanup failed: {e}")
+
+
+# Démarrer le scheduler de cleanup
+scheduler = BackgroundScheduler()
+scheduler.add_job(cleanup_old_files, 'interval', hours=6)
+scheduler.start()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -100,6 +209,7 @@ def health() -> dict[str, str]:
 
 
 @app.post("/upload")
+@limiter.limit("20/minute")
 async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     """
     Reçoit un fichier (CSV/Excel/Stata/SPSS), le sauvegarde temporairement,
@@ -160,6 +270,125 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     }
 
 
+def _run_analysis_core(analysis_id: str, file_id: str, query: str) -> None:
+    """
+    Logique principale d'analyse, exécutée avec timeout.
+    """
+    db.update_analysis(analysis_id, status="running", updated_at=_now())
+    audit_trail: list[dict[str, str]] = []
+
+    upload_info = db.get_upload(file_id)
+    if upload_info is None:
+        db.update_analysis(
+            analysis_id, status="error",
+            error=f"file_id '{file_id}' introuvable -- le fichier a peut-être expiré ou n'a jamais été uploadé.",
+            updated_at=_now(),
+        )
+        return
+
+    with open(upload_info["path"], "rb") as f:
+        file_bytes = f.read()
+
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    filename = upload_info["filename"]
+    n_rows = upload_info["n_rows"]
+    n_cols = upload_info["n_cols"]
+    numeric_cols = upload_info["numeric_cols"]
+    cat_cols = upload_info["cat_cols"]
+
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext == "csv":
+        encoding = compute._detect_csv_encoding(file_bytes)
+    elif ext in {"xls", "xlsx", "dta", "sav"}:
+        encoding = f"n/a ({ext})"
+    else:
+        encoding = "inconnu"
+
+    audit_trail.append({
+        "timestamp": _now(),
+        "etape": "Chargement du fichier",
+        "detail": (
+            f"{n_rows} lignes, {n_cols} colonnes, encodage {encoding}"
+        ),
+    })
+    audit_trail.append({
+        "timestamp": _now(),
+        "etape": "Diagnostic structurel",
+        "detail": (
+            f"{len(numeric_cols)} variables numériques, "
+            f"{len(cat_cols)} catégorielles"
+        ),
+    })
+
+    def run_analysis_fn(intent: ts.AnalysisIntent) -> dict[str, Any]:
+        analysis = run_full_analysis(file_bytes, filename, intent)
+        # Journaliser chaque test lancé (appelé 1× en mode query, N× en auto).
+        inference = analysis.get("inference") if isinstance(analysis, dict) else None
+        if isinstance(inference, dict):
+            test_result = inference.get("result")
+            test_name = None
+            if isinstance(test_result, dict):
+                test_name = test_result.get("test") or test_result.get("method")
+            action = inference.get("action_executed")
+            p_value = (
+                test_result.get("p_value")
+                if isinstance(test_result, dict)
+                else None
+            )
+            label = test_name or action or intent.action or "test"
+            detail_parts = [f"action={action or intent.action}"]
+            if intent.target_col:
+                detail_parts.append(f"target={intent.target_col}")
+            if intent.group_col:
+                detail_parts.append(f"group={intent.group_col}")
+            if p_value is not None:
+                detail_parts.append(f"p={p_value}")
+            audit_trail.append({
+                "timestamp": _now(),
+                "etape": f"Test : {label}",
+                "detail": ", ".join(detail_parts),
+            })
+        return analysis
+
+    diagnosis = {
+        "numeric_cols": numeric_cols,
+        "cat_cols": cat_cols,
+        "n_rows": n_rows,
+        "n_cols": n_cols,
+        "dataset_type": upload_info.get("dataset_type"),
+        "id_cols": upload_info.get("id_cols", []),
+    }
+
+    result = brain.analyze_with_brain(
+        user_query=query,
+        available_numeric_cols=numeric_cols,
+        available_cat_cols=cat_cols,
+        run_analysis_fn=run_analysis_fn,
+        diagnosis=diagnosis,
+    )
+    result["file_hash"] = file_hash
+    
+    # LOGGING DIAGNOSTIC - Vérifier la présence des charts
+    logger.info(f"ANALYSIS DEBUG - result keys: {list(result.keys())}")
+    if "analysis" in result:
+        logger.info(f"ANALYSIS DEBUG - analysis keys: {list(result['analysis'].keys())}")
+        if "charts" in result["analysis"]:
+            logger.info(f"ANALYSIS DEBUG - charts present in analysis: {len(result['analysis']['charts'])} charts")
+        else:
+            logger.warning("ANALYSIS DEBUG - NO CHARTS in analysis!")
+    else:
+        logger.warning("ANALYSIS DEBUG - NO 'analysis' key in result!")
+
+    audit_trail.append({
+        "timestamp": _now(),
+        "etape": "Génération du rapport",
+        "detail": "PDF généré avec succès",
+    })
+    result["audit_trail"] = audit_trail
+
+    db.update_analysis(analysis_id, status="done", result=result, updated_at=_now())
+
+
 def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None:
     """
     Exécutée en arrière-plan par BackgroundTasks. Ne lève jamais d'exception
@@ -167,109 +396,14 @@ def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None
     l'analyse, consultable via /status.
     """
     try:
-        db.update_analysis(analysis_id, status="running", updated_at=_now())
-        audit_trail: list[dict[str, str]] = []
-
-        upload_info = db.get_upload(file_id)
-        if upload_info is None:
-            db.update_analysis(
-                analysis_id, status="error",
-                error=f"file_id '{file_id}' introuvable -- le fichier a peut-être expiré ou n'a jamais été uploadé.",
-                updated_at=_now(),
-            )
-            return
-
-        with open(upload_info["path"], "rb") as f:
-            file_bytes = f.read()
-
-        file_hash = hashlib.sha256(file_bytes).hexdigest()
-        filename = upload_info["filename"]
-        n_rows = upload_info["n_rows"]
-        n_cols = upload_info["n_cols"]
-        numeric_cols = upload_info["numeric_cols"]
-        cat_cols = upload_info["cat_cols"]
-
-        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        if ext == "csv":
-            encoding = compute._detect_csv_encoding(file_bytes)
-        elif ext in {"xls", "xlsx", "dta", "sav"}:
-            encoding = f"n/a ({ext})"
-        else:
-            encoding = "inconnu"
-
-        audit_trail.append({
-            "timestamp": _now(),
-            "etape": "Chargement du fichier",
-            "detail": (
-                f"{n_rows} lignes, {n_cols} colonnes, encodage {encoding}"
-            ),
-        })
-        audit_trail.append({
-            "timestamp": _now(),
-            "etape": "Diagnostic structurel",
-            "detail": (
-                f"{len(numeric_cols)} variables numériques, "
-                f"{len(cat_cols)} catégorielles"
-            ),
-        })
-
-        def run_analysis_fn(intent: ts.AnalysisIntent) -> dict[str, Any]:
-            analysis = run_full_analysis(file_bytes, filename, intent)
-            # Journaliser chaque test lancé (appelé 1× en mode query, N× en auto).
-            inference = analysis.get("inference") if isinstance(analysis, dict) else None
-            if isinstance(inference, dict):
-                test_result = inference.get("result")
-                test_name = None
-                if isinstance(test_result, dict):
-                    test_name = test_result.get("test") or test_result.get("method")
-                action = inference.get("action_executed")
-                p_value = (
-                    test_result.get("p_value")
-                    if isinstance(test_result, dict)
-                    else None
-                )
-                label = test_name or action or intent.action or "test"
-                detail_parts = [f"action={action or intent.action}"]
-                if intent.target_col:
-                    detail_parts.append(f"target={intent.target_col}")
-                if intent.group_col:
-                    detail_parts.append(f"group={intent.group_col}")
-                if p_value is not None:
-                    detail_parts.append(f"p={p_value}")
-                audit_trail.append({
-                    "timestamp": _now(),
-                    "etape": f"Test : {label}",
-                    "detail": ", ".join(detail_parts),
-                })
-            return analysis
-
-        diagnosis = {
-            "numeric_cols": numeric_cols,
-            "cat_cols": cat_cols,
-            "n_rows": n_rows,
-            "n_cols": n_cols,
-            "dataset_type": upload_info.get("dataset_type"),
-            "id_cols": upload_info.get("id_cols", []),
-        }
-
-        result = brain.analyze_with_brain(
-            user_query=query,
-            available_numeric_cols=numeric_cols,
-            available_cat_cols=cat_cols,
-            run_analysis_fn=run_analysis_fn,
-            diagnosis=diagnosis,
+        # Exécuter l'analyse avec un timeout de 5 minutes (300 secondes)
+        _run_with_timeout(_run_analysis_core, args=(analysis_id, file_id, query), timeout=300)
+    except TimeoutError as e:
+        db.update_analysis(
+            analysis_id, status="error",
+            error=f"Timeout: {str(e)}",
+            updated_at=_now(),
         )
-        result["file_hash"] = file_hash
-
-        audit_trail.append({
-            "timestamp": _now(),
-            "etape": "Génération du rapport",
-            "detail": "PDF généré avec succès",
-        })
-        result["audit_trail"] = audit_trail
-
-        db.update_analysis(analysis_id, status="done", result=result, updated_at=_now())
-
     except Exception as e:
         # Filet de sécurité ultime : même une erreur totalement imprévue ne
         # doit jamais laisser l'analyse bloquée en "running" indéfiniment.
@@ -281,6 +415,7 @@ def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None
 
 
 @app.post("/analyze")
+@limiter.limit("10/minute")
 def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
     """
     Lance une analyse en arrière-plan et retourne immédiatement un
@@ -378,6 +513,10 @@ def get_report(
     logger.info(f"REPORT DEBUG - Keys: {list(result.keys())}")
     if "analysis" in result:
         logger.info(f"REPORT DEBUG - analysis keys: {list(result['analysis'].keys())}")
+        if "charts" in result["analysis"]:
+            logger.info(f"REPORT DEBUG - charts present: {len(result['analysis']['charts'])} charts")
+        else:
+            logger.warning("REPORT DEBUG - NO CHARTS in analysis!")
     if "interpretation" in result:
         logger.info(f"REPORT DEBUG - interp keys: {list(result['interpretation'].keys())}")
     logger.info(f"REPORT DEBUG - 'analyses' present: {'analyses' in result}")

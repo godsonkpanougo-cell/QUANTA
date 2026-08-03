@@ -1,6 +1,6 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
-# Dépendances système WeasyPrint
+# Dépendances système WeasyPrint + Matplotlib
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libglib2.0-dev \
@@ -17,6 +17,13 @@ RUN apt-get update && apt-get install -y \
     fonts-dejavu-core \
     libjpeg-dev \
     libpng-dev \
+    python3-tk \
+    libfreetype6-dev \
+    liblcms2-dev \
+    libwebp-dev \
+    libharfbuzz-dev \
+    libfribidi-dev \
+    libxcb1-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

@@ -24,10 +24,13 @@ de lever une exception.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
 from dataclasses import asdict
+
+logger = logging.getLogger(__name__)
 from pathlib import Path
 from typing import Any
 
@@ -52,9 +55,9 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 #   PRIMARY_API_KEY, PRIMARY_BASE_URL, PRIMARY_MODEL
 #   FALLBACK_API_KEY, FALLBACK_BASE_URL, FALLBACK_MODEL   (optionnel)
 
-REQUEST_TIMEOUT_SECONDS = 30
-MAX_RETRIES_PER_PROVIDER = 2
-RETRY_BACKOFF_SECONDS = 3
+REQUEST_TIMEOUT_SECONDS = 90
+MAX_RETRIES_PER_PROVIDER = 3
+RETRY_BACKOFF_SECONDS = 5
 
 
 def _llm_config() -> dict[str, dict[str, str]]:
@@ -96,7 +99,10 @@ def call_llm(
     for provider_name in ("primary", "fallback"):
         cfg = _llm_config()[provider_name]
         if not cfg["api_key"]:
+            logger.warning(f"LLM provider {provider_name}: no API key configured")
             continue
+
+        logger.info(f"Attempting LLM call with provider {provider_name}, model {cfg['model']}")
 
         for attempt in range(MAX_RETRIES_PER_PROVIDER):
             try:
@@ -120,18 +126,27 @@ def call_llm(
 
                 if response.status_code == 200:
                     data = response.json()
+                    logger.info(f"LLM call succeeded with provider {provider_name} on attempt {attempt + 1}")
                     return data["choices"][0]["message"]["content"]
 
                 if response.status_code == 429:
+                    logger.warning(f"LLM rate limit (429) from {provider_name}, attempt {attempt + 1}, backing off")
                     time.sleep(RETRY_BACKOFF_SECONDS * (attempt + 1))
                     continue
 
+                logger.error(f"LLM call failed with status {response.status_code} from {provider_name}: {response.text[:200]}")
                 break
 
-            except requests.exceptions.RequestException:
+            except requests.exceptions.Timeout:
+                logger.warning(f"LLM timeout from {provider_name} on attempt {attempt + 1}")
+                time.sleep(RETRY_BACKOFF_SECONDS)
+                continue
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"LLM request exception from {provider_name} on attempt {attempt + 1}: {str(e)}")
                 time.sleep(RETRY_BACKOFF_SECONDS)
                 continue
 
+    logger.error("All LLM providers failed after retries")
     return None
 
 
@@ -809,11 +824,25 @@ def analyze_with_brain(
     # ── Mode requête : comportement historique inchangé ─────────────────────
     intent = text_to_intent(query_text, available_numeric_cols, available_cat_cols)
     analysis_result = run_analysis_fn(intent)
-    interpretation = generate_interpretation(analysis_result)
-
-    return {
-        "mode": "query",
-        "intent": asdict(intent),
-        "analysis": analysis_result,
-        "interpretation": interpretation,
-    }
+    
+    # S'assurer que les charts sont au bon niveau pour le générateur PDF
+    # Si analysis_result a déjà "charts" au niveau racine (orchestrator),
+    # on ne l'emballe pas dans "analysis" pour éviter l'imbrication
+    if "charts" in analysis_result and "analysis" not in analysis_result:
+        # Résultat direct de l'orchestrateur
+        interpretation = generate_interpretation(analysis_result)
+        return {
+            "mode": "query",
+            "intent": asdict(intent),
+            "analysis": analysis_result,  # charts sont déjà dedans
+            "interpretation": interpretation,
+        }
+    else:
+        # Comportement historique
+        interpretation = generate_interpretation(analysis_result)
+        return {
+            "mode": "query",
+            "intent": asdict(intent),
+            "analysis": analysis_result,
+            "interpretation": interpretation,
+        }
