@@ -1,4 +1,4 @@
-# Updated: 2026-08-02 - fpdf2 migration
+# Updated: 2026-08-03 - revert to WeasyPrint
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.13.0
@@ -44,5 +44,10 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2026.2
 uvicorn==0.49.0
-fpdf2==2.8.1
+weasyprint==69.0
+pydyf>=0.11.0
+tinyhtml5>=2.0.0b1
+tinycss2>=1.5.0
+cssselect2>=0.8.0
+pyphen>=0.9.1
 xarray==2026.7.0
