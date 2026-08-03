@@ -17,6 +17,8 @@ base) ; seul leur chemin et leurs métadonnées sont en base.
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import os
 import tempfile
 import uuid
@@ -38,6 +40,8 @@ from app.orchestrator import run_full_analysis
 from app.report_generator import generate_pdf_report
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="QUANTA API", version="0.1.0")
 
@@ -369,6 +373,14 @@ def get_report(
     theme_norm = (theme or "dark").strip().lower()
     if theme_norm not in {"dark", "light"}:
         theme_norm = "dark"
+
+    # LOG DE DIAGNOSTIC
+    logger.info(f"REPORT DEBUG - Keys: {list(result.keys())}")
+    if "analysis" in result:
+        logger.info(f"REPORT DEBUG - analysis keys: {list(result['analysis'].keys())}")
+    if "interpretation" in result:
+        logger.info(f"REPORT DEBUG - interp keys: {list(result['interpretation'].keys())}")
+    logger.info(f"REPORT DEBUG - 'analyses' present: {'analyses' in result}")
 
     pdf_bytes = generate_pdf_report(
         result, theme=theme_norm
