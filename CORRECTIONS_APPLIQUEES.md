@@ -7,11 +7,12 @@
 
 ## Résumé Exécutif
 
-19 corrections majeures ont été appliquées en 3 phases + 1 phase critique supplémentaire :
+21 corrections majeures ont été appliquées en 3 phases + 1 phase critique supplémentaire + 1 phase déploiement :
 - **Phase 1** (5 corrections) : Infrastructure critique (Python, timeouts, volumes, logging)
 - **Phase 2** (5 corrections) : Configuration et persistance (tests, stockage, frontend, CORS)
 - **Phase 3** (4 corrections) : Robustesse et maintenance (rate limiting, erreurs LLM, limites, cleanup)
 - **Phase 4** (5 corrections) : Correction critique PDF vide (matplotlib, logging, diagnostics)
+- **Phase 5** (2 corrections) : Correction déploiement Railway (Debian Bookworm, variable PORT)
 
 Toutes les modifications respectent les règles absolues :
 - ✅ Aucune rupture des 6 tests existants
@@ -518,6 +519,60 @@ Sans charts, le générateur PDF produisait un rapport vide.
 **Test local :** Le PDF est généré correctement (50814 bytes) avec 4 charts (distributions, categories, qqplots, correlation_heatmap).
 
 **Après déploiement :** Les charts seront générés correctement et le PDF sera complet avec tous les graphes et schémas.
+
+---
+
+## Phase 5 : Correction Déploiement Railway
+
+### 5.1 Correction Image Docker Debian (Dockerfile)
+
+**Fichier modifié :** `Dockerfile`
+
+**Modification :**
+```dockerfile
+FROM python:3.12-slim-bookworm
+```
+
+**Problème résolu :** Debian Trixie (testing) a remplacé `libgdk-pixbuf2.0-0` par `libgdk-pixbuf-xlib-2.0-0`, causant l'échec du build avec l'erreur "Package 'libgdk-pixbuf2.0-0' has no installation candidate".
+
+**Impact :** Debian Bookworm (stable) a les bons noms de packages compatibles avec WeasyPrint et matplotlib, permettant le build réussi.
+
+---
+
+### 5.2 Correction Expansion Variable PORT (Dockerfile)
+
+**Fichier modifié :** `Dockerfile`
+
+**Modification :**
+```dockerfile
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+```
+
+**Problème résolu :** Railway définit la variable d'environnement `PORT`, mais le CMD sans shell expansion passait la chaîne littérale `'$PORT'` au lieu de sa valeur, causant l'erreur "Invalid value for '--port': '$PORT' is not a valid integer".
+
+**Impact :** L'application démarre correctement sur le port Railway avec l'expansion correcte de la variable d'environnement.
+
+---
+
+## Récapitulatif des Fichiers Modifiés
+
+### Backend Python
+1. `runtime.txt` - Version Python
+2. `Dockerfile` - Image Docker Python + python3-tk + Debian Bookworm + PORT expansion
+3. `app/llm/brain.py` - Timeouts LLM + logging erreurs
+4. `main.py` - Timeout BackgroundTasks + stockage persistant + structlog + rate limiting + limites + cleanup + logs diagnostics + startup log + MPLBACKEND
+5. `railway.toml` - Volume persistant
+6. `app/report_generator.py` - Logging WeasyPrint + logging charts extraction
+7. `db.py` - Fonction delete_analysis + updated_at dans list_analyses
+8. `requirements.txt` - structlog, slowapi, apscheduler
+9. `.env.example` - CORS + QUANTA_UPLOAD_DIR
+10. `app/compute/compute.py` - Logging charts + gestion erreurs + MPLBACKEND
+
+### Frontend TypeScript
+11. `quanta-frontend/app/components/AnalysisProgress.tsx` - Timeout polling
+
+### Documentation
+12. `CORRECTIONS_APPLIQUEES.md` - Rapport complet des corrections
 
 ---
 
