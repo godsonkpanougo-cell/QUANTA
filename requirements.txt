@@ -1,4 +1,3 @@
-# Updated: 2026-08-03 - revert to WeasyPrint
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.13.0
@@ -26,7 +25,8 @@ pandas-flavor==0.8.1
 patsy==1.0.2
 pillow==12.2.0
 pingouin==0.6.1
-pydantic==2.13.
+pydantic==2.13.4
+pydantic_core==2.46.4
 pyparsing==3.3.2
 pyreadstat==1.3.5
 python-dateutil==2.9.0.post0
@@ -45,9 +45,4 @@ typing_extensions==4.15.0
 tzdata==2026.2
 uvicorn==0.49.0
 weasyprint==69.0
-pydyf>=0.11.0
-tinyhtml5>=2.0.0b1
-tinycss2>=1.5.0
-cssselect2>=0.8.0
-pyphen>=0.9.1
 xarray==2026.7.0
