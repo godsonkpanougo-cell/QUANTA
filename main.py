@@ -31,6 +31,12 @@ from typing import Any
 os.environ['MPLBACKEND'] = 'Agg'
 
 from dotenv import load_dotenv
+
+# LOG DE DÉMARRAGE POUR CONFIRMER LA VERSION
+print("=" * 60)
+print("QUANTA STARTUP - VERSION WITH MATPLOTLIB FIX")
+print("Matplotlib backend forced: Agg")
+print("=" * 60)
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
