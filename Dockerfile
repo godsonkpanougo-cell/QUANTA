@@ -1,3 +1,4 @@
+# Force rebuild - v2
 FROM python:3.12-slim-bookworm
 
 # Dépendances système WeasyPrint + Matplotlib
