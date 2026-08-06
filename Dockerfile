@@ -35,6 +35,9 @@ COPY . .
 
 RUN mkdir -p /data/uploads
 
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
 EXPOSE 8000
 
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD ["/app/start.sh"]
