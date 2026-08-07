@@ -420,8 +420,7 @@ def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None
 
 
 @app.post("/analyze")
-@limiter.limit("10/minute")
-def analyze(http_request: Request, request: AnalyzeRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
+def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
     """
     Lance une analyse en arrière-plan et retourne immédiatement un
     analysis_id. Le frontend doit ensuite poller GET /status/{analysis_id}
