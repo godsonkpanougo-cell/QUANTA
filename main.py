@@ -215,8 +215,7 @@ def health() -> dict[str, str]:
 
 
 @app.post("/upload")
-@limiter.limit("20/minute")
-async def upload_file(request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
+async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     """
     Reçoit un fichier (CSV/Excel/Stata/SPSS), le sauvegarde temporairement,
     et retourne un diagnostic léger (colonnes disponibles par type) --
