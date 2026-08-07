@@ -24,6 +24,7 @@ import io
 import tempfile
 import logging
 import threading
+import hashlib
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
