@@ -29,9 +29,12 @@ logger = logging.getLogger(__name__)
 def _get_weasyprint():
     try:
         from weasyprint import HTML
+        print("WeasyPrint import réussi")
         return HTML
     except Exception as e:
         print(f"WeasyPrint non disponible: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
