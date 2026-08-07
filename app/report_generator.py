@@ -23,9 +23,16 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from weasyprint import HTML
-
 logger = logging.getLogger(__name__)
+
+
+def _get_weasyprint():
+    try:
+        from weasyprint import HTML
+        return HTML
+    except Exception as e:
+        print(f"WeasyPrint non disponible: {e}")
+        return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3243,6 +3250,10 @@ def generate_pdf_report(
         if theme_norm not in {"dark", "light"}:
             theme_norm = "dark"
         html_document = _build_html(analysis_result, theme=theme_norm)
+        HTML = _get_weasyprint()
+        if HTML is None:
+            print("WeasyPrint indisponible - PDF non généré")
+            return None
         pdf_buffer = io.BytesIO()
         HTML(string=html_document, base_url=".").write_pdf(target=pdf_buffer)
         pdf_bytes = pdf_buffer.getvalue()

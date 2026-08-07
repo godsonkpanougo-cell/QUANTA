@@ -5,13 +5,19 @@ aptPkgs = [
   "python3-venv",
   "python3-full",
   "libglib2.0-0",
+  "libglib2.0-dev",
+  "libgobject-2.0-0",
   "libpango-1.0-0",
   "libpangocairo-1.0-0",
   "libcairo2",
+  "libcairo2-dev",
   "libgdk-pixbuf2.0-0",
   "libffi-dev",
   "shared-mime-info",
-  "fonts-liberation"
+  "fonts-liberation",
+  "fonts-dejavu-core",
+  "libxml2",
+  "libxslt1.1"
 ]
 
 [phases.install]
