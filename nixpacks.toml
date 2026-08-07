@@ -7,6 +7,8 @@ aptPkgs = [
   "libglib2.0-0",
   "libglib2.0-dev",
   "libgobject-2.0-0",
+  "libgirepository-1.0-1",
+  "gir1.2-glib-2.0",
   "libpango-1.0-0",
   "libpangocairo-1.0-0",
   "libcairo2",
@@ -25,6 +27,11 @@ cmds = [
   "python3 -m venv /opt/venv",
   "/opt/venv/bin/pip install --upgrade pip",
   "/opt/venv/bin/pip install -r requirements.txt"
+]
+
+[phases.build]
+cmds = [
+  "ldconfig"
 ]
 
 [start]
