@@ -3255,18 +3255,63 @@ def generate_pdf_report(
         html_document = _build_html(analysis_result, theme=theme_norm)
         HTML = _get_weasyprint()
         if HTML is None:
-            print("WeasyPrint indisponible - PDF non généré")
-            return None
+            print("WeasyPrint indisponible - fallback vers fpdf2")
+            return _generate_fallback_pdf(analysis_result)
         pdf_buffer = io.BytesIO()
         HTML(string=html_document, base_url=".").write_pdf(target=pdf_buffer)
         pdf_bytes = pdf_buffer.getvalue()
         if not pdf_bytes:
             logger.error("PDF generation failed: WeasyPrint returned empty PDF")
-            return None
+            return _generate_fallback_pdf(analysis_result)
         return pdf_bytes
     except Exception as e:
+        print(f"ERREUR PDF WeasyPrint: {e}")
+        import traceback
+        traceback.print_exc()
         logger.error(
             f"PDF generation failed: {type(e).__name__}: {str(e)}",
             extra={"analysis_keys": list(analysis_result.keys()) if isinstance(analysis_result, dict) else None}
         )
-        return None
+        return _generate_fallback_pdf(analysis_result)
+
+
+def _generate_fallback_pdf(analysis_result: dict[str, Any]) -> bytes:
+    """PDF minimal sans WeasyPrint si celui-ci échoue."""
+    try:
+        from fpdf import FPDF, XPos, YPos
+    except ImportError:
+        print("fpdf2 non disponible - fallback impossible")
+        return b""
+    
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 24)
+    pdf.set_text_color(201, 168, 76)
+    pdf.cell(0, 20, "QUANTA", align="C",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Helvetica", "", 14)
+    pdf.set_text_color(50, 50, 50)
+    pdf.cell(0, 10, "Rapport d Analyse Statistique",
+             align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(10)
+    
+    # Score de confiance
+    confidence = (analysis_result.get("analysis", {})
+                 .get("confidence_score", {}))
+    score = confidence.get("score_global", 0)
+    niveau = confidence.get("niveau", "")
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, f"Score de confiance : {int(score)}/100 - {niveau}",
+             align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(10)
+    
+    # Résumé interprétation
+    interp = analysis_result.get("interpretation", {})
+    resume = interp.get("resume_executif", "")
+    if resume:
+        pdf.set_font("Helvetica", "", 11)
+        pdf.set_text_color(30, 30, 30)
+        pdf.multi_cell(0, 7, resume[:500],
+                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    
+    return bytes(pdf.output())
