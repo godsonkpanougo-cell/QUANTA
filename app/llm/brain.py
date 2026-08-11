@@ -298,39 +298,94 @@ Ne JAMAIS inclure de balises markdown ou de texte hors de cet objet JSON."""
 
 
 def _build_results_summary_for_prompt(analysis_result: dict[str, Any]) -> str:
-    """Résumé condensé des résultats pour le prompt LLM (sans charts/scripts lourds)."""
+    """Résumé condensé des résultats pour le prompt LLM (sans données brutes volumineuses)."""
     diag = analysis_result.get("diagnosis", {})
     inference = analysis_result.get("inference", {})
     confidence = analysis_result.get("confidence_score", {})
-
-    summary: dict[str, Any] = {
+    
+    # On n'envoie QUE les statistiques calculées, jamais les données brutes
+    result = inference.get("result", {})
+    
+    # Nettoyer le résultat : supprimer les champs volumineux avant envoi au LLM
+    result_clean = {}
+    for key, value in result.items():
+        # Exclure les champs contenant des données brutes volumineuses
+        if key in ["raw_data", "data", "values", 
+                   "observations", "sample",
+                   "r_script", "stata_script",
+                   "python_script", "charts",
+                   "distribution_charts", "audit_log"]:
+            continue
+        # Limiter les listes longues
+        if isinstance(value, list) and len(value) > 20:
+            result_clean[key] = value[:20]
+            result_clean[f"{key}_truncated"] = True
+        elif isinstance(value, str) and len(value) > 500:
+            result_clean[key] = value[:500] + "..."
+        else:
+            result_clean[key] = value
+    
+    summary = {
         "dataset": {
-            "n_lignes": diag.get("n_rows"),
-            "n_colonnes": diag.get("n_cols"),
-            "type_dataset": diag.get("dataset_type"),
+            "n_rows": diag.get("n_rows"),
+            "n_cols": diag.get("n_cols"),
+            "type": diag.get("dataset_type"),
         },
-        "intention_utilisateur": inference.get("intent_received", {}).get("raw_query"),
-        "action_executee": inference.get("action_executed"),
-        "resultat_test": inference.get("result"),
-        "score_confiance": {
+        "action": inference.get("action_executed"),
+        "query": inference.get(
+            "intent_received", {}
+        ).get("raw_query", "")[:200],
+        "result": result_clean,
+        "confidence": {
             "score": confidence.get("score_global"),
             "niveau": confidence.get("niveau"),
-            "points_de_vigilance": confidence.get("points_de_vigilance"),
+            "vigilance": confidence.get(
+                "points_de_vigilance", []
+            )[:5],
         },
     }
-
+    
     # Mode autonome : fournir l'ensemble des tests pour une interprétation globale.
     tests_effectues = analysis_result.get("tests_effectues")
     if isinstance(tests_effectues, list) and tests_effectues:
-        summary["tests_effectues"] = tests_effectues
+        # Tronquer chaque test pour éviter l'explosion
+        tests_clean = []
+        for test in tests_effectues[:10]:  # Max 10 tests
+            test_clean = {}
+            for key, value in test.items():
+                if key in ["raw_data", "data", "values", 
+                           "observations", "sample",
+                           "r_script", "stata_script",
+                           "python_script", "charts",
+                           "distribution_charts", "audit_log"]:
+                    continue
+                if isinstance(value, list) and len(value) > 20:
+                    test_clean[key] = value[:20]
+                elif isinstance(value, str) and len(value) > 500:
+                    test_clean[key] = value[:500] + "..."
+                else:
+                    test_clean[key] = value
+            tests_clean.append(test_clean)
+        summary["tests_effectues"] = tests_clean
         summary["mode"] = "analyse_autonome_multi_tests"
         summary["consigne"] = (
             "Interprète l'ENSEMBLE des tests listés dans tests_effectues. "
             "Le résumé exécutif et les trois niveaux doivent couvrir tous "
             "les résultats significatifs, pas seulement le test principal."
         )
-
-    return json.dumps(summary, ensure_ascii=False, indent=2)
+    
+    json_str = json.dumps(
+        summary, ensure_ascii=False, indent=2
+    )
+    
+    # Limite absolue : 3000 tokens max (environ 12 000 caractères)
+    MAX_CHARS = 12000
+    if len(json_str) > MAX_CHARS:
+        # Tronquer proprement
+        json_str = json_str[:MAX_CHARS]
+        json_str += '\n... [données tronquées] ...'
+    
+    return json_str
 
 
 def _extract_p_value(analysis: dict[str, Any]) -> float | None:
