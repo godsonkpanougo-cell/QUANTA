@@ -1983,14 +1983,13 @@ def run_acm(df: pd.DataFrame,
         
         # Valeurs propres et inertie
         eigenvalues = acm.eigenvalues_.tolist()
-        inertia = acm.explained_inertia_.tolist()
+        total_inertia = sum(eigenvalues)
+        inertia_pct = [round(v / total_inertia * 100, 2) for v in eigenvalues]
         cumulative_inertia = []
         cumul = 0
-        for v in inertia:
+        for v in inertia_pct:
             cumul += v
-            cumulative_inertia.append(round(cumul * 100, 2))
-        
-        inertia_pct = [round(v * 100, 2) for v in inertia]
+            cumulative_inertia.append(round(cumul, 2))
         
         # Coordonnées des modalités
         coords = acm.column_coordinates(df_cat)
