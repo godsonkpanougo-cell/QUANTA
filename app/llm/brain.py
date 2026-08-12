@@ -277,6 +277,18 @@ Pour CHAQUE test statistique présent dans les résultats, tu dois produire 3 ni
 
 3. NIVEAU DÉCISIONNEL : conclusion opérationnelle orientée action, formulée pour un décideur qui n'a pas de formation statistique. Que doit-il retenir et, si pertinent, quelle action cela suggère-t-il ?
 
+INTERPRÉTATION SPÉCIFIQUE POUR L'ACM (Analyse des Correspondances Multiples) :
+Si les résultats contiennent une section "acm" avec les champs suivants :
+- inertia_pct : pourcentage d'inertie expliquée par chaque dimension
+- cumulative_inertia : pourcentage cumulé d'inertie
+- top_contributions_dim1 : contributions des modalités à l'axe 1
+- interpretation_note : note d'interprétation générée par le système
+
+Pour l'ACM, adapte les 3 niveaux comme suit :
+1. NIVEAU TECHNIQUE : mentionne le nombre de variables catégorielles analysées, le pourcentage d'inertie expliquée par les axes 1 et 2, et les modalités les plus contributives à l'axe 1. Explique que l'ACM est une technique d'analyse factorielle pour données catégorielles.
+2. NIVEAU ANALYTIQUE : interprète les proximités entre modalités sur le plan factoriel (les modalités proches ont des profils similaires). Mentionne les dimensions qui expliquent le plus d'inertie et ce que cela suggère sur la structure des données.
+3. NIVEAU DÉCISIONNEL : synthétise les principaux patterns d'association entre variables catégorielles et suggère des actions ou des investigations complémentaires basées sur ces associations.
+
 Tu dois aussi produire :
 - Un résumé exécutif global (3-5 phrases, niveau décisionnel) qui synthétise l'ensemble de l'analyse
 - Une liste de limites/réserves méthodologiques basées sur les points_de_vigilance fournis

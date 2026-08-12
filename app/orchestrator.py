@@ -454,6 +454,17 @@ def auto_intent(diagnosis: dict[str, Any]) -> list[ts.AnalysisIntent]:
             )
         )
 
+    # Règle 4: 3+ catégorielles → ACM (Analyse des Correspondances Multiples)
+    if len(cat_cols) >= 3:
+        intents.append(
+            ts.AnalysisIntent(
+                action="association",
+                target_col=cat_cols[0],
+                group_col=cat_cols[1],
+                raw_query="[auto]",
+            )
+        )
+
     # Toujours ajouter un descriptif global en dernier
     intents.append(ts.AnalysisIntent(action="descriptive_only", raw_query="[auto]"))
 

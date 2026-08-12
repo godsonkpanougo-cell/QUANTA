@@ -2881,6 +2881,129 @@ def _html_en_resume(
   </section>
 """
 
+def _html_acm_section(acm_result: dict[str, Any], table_counter: list[int]) -> str:
+    """Génère la section ACM du rapport PDF."""
+    if not acm_result or acm_result.get("status") != "ok":
+        return ""
+    
+    n_rows = acm_result.get("n_rows", "—")
+    n_variables = acm_result.get("n_variables", "—")
+    variables = acm_result.get("variables", [])
+    inertia_pct = acm_result.get("inertia_pct", [])
+    cumulative_inertia = acm_result.get("cumulative_inertia", [])
+    interpretation_note = acm_result.get("interpretation_note", "")
+    plan_factoriel = acm_result.get("plan_factoriel")
+    scree_plot = acm_result.get("scree_plot")
+    top_contributions = acm_result.get("top_contributions_dim1", [])
+    
+    # Tableau des valeurs propres
+    eigenvalues_rows = ""
+    for i, (inertia, cumul) in enumerate(zip(inertia_pct, cumulative_inertia), start=1):
+        eigenvalues_rows += f"""
+        <tr>
+          <td class="num">{i}</td>
+          <td class="num">{_fmt_number(inertia, 2)}%</td>
+          <td class="num">{_fmt_number(cumul, 2)}%</td>
+        </tr>
+        """
+    
+    eigenvalues_caption = _next_table_caption(
+        table_counter,
+        "Valeurs propres et inertie expliquée par dimension — ACM"
+    )
+    eigenvalues_table = f"""
+    {eigenvalues_caption}
+    <table class="apa">
+      <thead>
+        <tr>
+          <th class="num">Dimension</th>
+          <th class="num">% d'inertie</th>
+          <th class="num">% cumulé</th>
+        </tr>
+      </thead>
+      <tbody>
+        {eigenvalues_rows}
+      </tbody>
+    </table>
+    """
+    
+    # Tableau des contributions
+    contrib_rows = ""
+    for contrib in top_contributions[:10]:
+        modalite = contrib.get("modalite", "—")
+        contribution = contrib.get("contribution", 0)
+        contrib_rows += f"""
+        <tr>
+          <td>{_esc(modalite)}</td>
+          <td class="num">{_fmt_number(contribution * 100, 2)}%</td>
+        </tr>
+        """
+    
+    contrib_caption = _next_table_caption(
+        table_counter,
+        "Contributions des modalités à l'axe 1 — ACM"
+    )
+    contrib_table = f"""
+    {contrib_caption}
+    <table class="apa">
+      <thead>
+        <tr>
+          <th>Modalité</th>
+          <th class="num">Contribution (%)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {contrib_rows}
+      </tbody>
+    </table>
+    """
+    
+    # Graphiques
+    plan_factoriel_img = ""
+    if plan_factoriel:
+        plan_factoriel_img = f"""
+    <div style="text-align:center; margin:16px 0;">
+      <img src="data:image/png;base64,{plan_factoriel}" 
+           alt="Plan factoriel ACM" 
+           style="max-width:100%; height:auto; border-radius:8px;"/>
+    </div>
+        """
+    
+    scree_plot_img = ""
+    if scree_plot:
+        scree_plot_img = f"""
+    <div style="text-align:center; margin:16px 0;">
+      <img src="data:image/png;base64,{scree_plot}" 
+           alt="Scree plot ACM" 
+           style="max-width:100%; height:auto; border-radius:8px;"/>
+    </div>
+        """
+    
+    return f"""
+  <section class="section">
+    <h2>Analyse des Correspondances Multiples (ACM)</h2>
+    <p class="muted">
+      L'ACM explore les structures d'association entre {n_variables} variables catégorielles
+      sur {n_rows} observations.
+    </p>
+    
+    <h3>Note d'interprétation</h3>
+    <div class="card">
+      <p>{_esc(interpretation_note)}</p>
+    </div>
+    
+    <h3>Plan factoriel</h3>
+    {plan_factoriel_img}
+    
+    <h3>Valeurs propres</h3>
+    {scree_plot_img}
+    {eigenvalues_table}
+    
+    <h3>Contributions à l'axe 1</h3>
+    {contrib_table}
+  </section>
+"""
+
 def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
     intent, analysis, interpretation = _unpack(analysis_result)
 
@@ -3157,6 +3280,9 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
     <h2>2. Analyse statistique</h2>
     {section2_html}
   </section>
+
+  <!-- SECTION ACM -->
+  {_html_acm_section(test_result.get("acm") if test_result else None, table_counter)}
 
   <!-- SECTION 3 -->
   <section class="section">
