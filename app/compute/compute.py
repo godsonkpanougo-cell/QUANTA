@@ -142,6 +142,125 @@ def _fig_to_b64(fig, dpi: int = 100, theme: str = "dark") -> str:
         plt.close(fig)
         return ""
 
+def generate_boxplot(df: pd.DataFrame, target_col: str, group_col: str, theme: str = "dark") -> str:
+    """
+    Génère un boxplot montrant la distribution de target_col pour chaque groupe de group_col.
+    
+    Retourne une chaîne base64 de l'image PNG.
+    """
+    _apply_mpl_theme(theme)
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    if theme == "light":
+        fig.patch.set_facecolor('white')
+        ax.set_facecolor('white')
+    else:
+        fig.patch.set_facecolor(PALETTE["bg"])
+        ax.set_facecolor(PALETTE["panel"])
+    
+    groups = df[group_col].unique()
+    data = [df[df[group_col]==g][target_col].dropna() for g in groups]
+    
+    bp = ax.boxplot(data, labels=groups, patch_artist=True)
+    
+    if theme == "light":
+        for patch in bp['boxes']:
+            patch.set_facecolor('white')
+            patch.set_edgecolor('#1A1A1A')
+        for element in ['whiskers','caps']:
+            for line in bp[element]:
+                line.set_color('#666666')
+        for median in bp['medians']:
+            median.set_color('#1A1A1A')
+        for flier in bp['fliers']:
+            flier.set_markerfacecolor('#1A1A1A')
+            flier.set_alpha(0.5)
+        
+        ax.set_title(f'Distribution de {target_col} par {group_col}', color='#1A1A1A', fontsize=13, pad=15)
+        ax.set_xlabel(group_col, color='#1A1A1A')
+        ax.set_ylabel(target_col, color='#1A1A1A')
+        ax.tick_params(colors='#1A1A1A')
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#666666')
+        ax.grid(True, alpha=0.3, color='#CCCCCC')
+    else:
+        for patch in bp['boxes']:
+            patch.set_facecolor(PALETTE["panel"])
+            patch.set_edgecolor(PALETTE["gold"])
+        for element in ['whiskers','caps']:
+            for line in bp[element]:
+                line.set_color(PALETTE["muted"])
+        for median in bp['medians']:
+            median.set_color(PALETTE["accent"])
+        for flier in bp['fliers']:
+            flier.set_markerfacecolor(PALETTE["gold"])
+            flier.set_alpha(0.5)
+        
+        ax.set_title(f'Distribution de {target_col} par {group_col}', color=PALETTE["text"], fontsize=13, pad=15)
+        ax.set_xlabel(group_col, color=PALETTE["muted"])
+        ax.set_ylabel(target_col, color=PALETTE["muted"])
+        ax.tick_params(colors=PALETTE["muted"])
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#555563')
+        ax.grid(True, alpha=0.1, color='#555563')
+    
+    plt.tight_layout()
+    return _fig_to_b64(fig, theme=theme)
+
+
+def generate_scatter(df: pd.DataFrame, var1: str, var2: str, theme: str = "dark") -> str:
+    """
+    Génère un scatter plot entre deux variables avec droite de régression.
+    
+    Retourne une chaîne base64 de l'image PNG.
+    """
+    _apply_mpl_theme(theme)
+    
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    if theme == "light":
+        fig.patch.set_facecolor('white')
+        ax.set_facecolor('white')
+    else:
+        fig.patch.set_facecolor(PALETTE["bg"])
+        ax.set_facecolor(PALETTE["panel"])
+    
+    x = df[var1].dropna()
+    y = df[var2].dropna()
+    common_idx = x.index.intersection(y.index)
+    x, y = x[common_idx], y[common_idx]
+    
+    if theme == "light":
+        ax.scatter(x, y, color='#1A1A1A', alpha=0.5, s=30, edgecolors='none')
+        line_color = '#1A1A1A'
+        text_color = '#1A1A1A'
+        grid_color = '#CCCCCC'
+        spine_color = '#666666'
+    else:
+        ax.scatter(x, y, color=PALETTE["gold"], alpha=0.5, s=30, edgecolors='none')
+        line_color = PALETTE["accent"]
+        text_color = PALETTE["text"]
+        grid_color = '#555563'
+        spine_color = '#555563'
+    
+    # Droite de régression
+    z = np.polyfit(x, y, 1)
+    p = np.poly1d(z)
+    ax.plot(sorted(x), p(sorted(x)), color=line_color, linewidth=1.5, linestyle='--', alpha=0.8)
+    
+    ax.set_title(f'Corrélation : {var1} vs {var2}', color=text_color, fontsize=13, pad=15)
+    ax.set_xlabel(var1, color=text_color)
+    ax.set_ylabel(var2, color=text_color)
+    ax.tick_params(colors=text_color)
+    for spine in ax.spines.values():
+        spine.set_edgecolor(spine_color)
+    ax.grid(True, alpha=0.1 if theme == "dark" else 0.3, color=grid_color)
+    
+    plt.tight_layout()
+    return _fig_to_b64(fig, theme=theme)
+
+
 def _is_likely_id_column(series: pd.Series, col_name: str) -> bool:
     """
     Détecte si une colonne numérique est probablement un identifiant
@@ -977,6 +1096,7 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
     )
 
     pairs = {}
+    scatter_plots = {}
     for i, c1 in enumerate(numeric_cols):
         for j, c2 in enumerate(numeric_cols):
             if i < j:
@@ -992,7 +1112,8 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
                     p_matrix.loc[c1, c2] = p
                     p_matrix.loc[c2, c1] = p
 
-                    pairs[f"{c1} x {c2}"] = {
+                    pair_key = f"{c1} x {c2}"
+                    pairs[pair_key] = {
                         "r":        round(float(r), 4),
                         "p_value":  round(float(p), 5),
                         "n":        len(common),
@@ -1006,6 +1127,14 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
                         ),
                         "direction": "Positive" if r > 0 else "Négative",
                     }
+                    
+                    # Générer scatter plot pour les corrélations significatives
+                    if p < 0.05:
+                        try:
+                            scatter_b64 = generate_scatter(df, c1, c2, theme=theme)
+                            scatter_plots[pair_key] = scatter_b64
+                        except Exception as e:
+                            scatter_plots[pair_key] = None
 
     # Heatmap
     charts = {}
@@ -1039,6 +1168,7 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
         "matrix":     corr_matrix.to_dict(),
         "p_matrix":   p_matrix.round(5).to_dict(),
         "pairs":      pairs,
+        "scatter_plots": scatter_plots,
         "charts":     charts,
     }
 

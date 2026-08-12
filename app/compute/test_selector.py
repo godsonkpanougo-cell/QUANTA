@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 import statsmodels.api as sm
+from app.compute.compute import generate_boxplot, generate_scatter
 
 try:
     import scikit_posthocs as sp
@@ -276,13 +277,22 @@ def run_two_group_comparison(
         ),
     })
 
-    return _format_two_group_result(
+    result = _format_two_group_result(
         test_name, stat, p, g1, g2, levels, effect_size, paired=False, df=df_val,
         effect_size_name=effect_size_name,
         levene={"statistic": round(levene_stat, 4) if not np.isnan(levene_stat) else None,
                 "p_value": round(levene_p, 5) if not np.isnan(levene_p) else None,
                 "equal_variance": equal_var},
     )
+    
+    # Générer le boxplot
+    try:
+        boxplot_b64 = generate_boxplot(df, target_col, group_col, theme="dark")
+        result["boxplot"] = boxplot_b64
+    except Exception as e:
+        result["boxplot"] = None
+    
+    return result
 
 
 def run_multi_group_comparison(
@@ -394,6 +404,13 @@ def run_multi_group_comparison(
             + f" -> {test_name}. Post-hoc : {posthoc_name}."
         ),
     })
+    
+    # Générer le boxplot
+    try:
+        boxplot_b64 = generate_boxplot(df, target_col, group_col, theme="dark")
+        result["boxplot"] = boxplot_b64
+    except Exception as e:
+        result["boxplot"] = None
 
     return result
 

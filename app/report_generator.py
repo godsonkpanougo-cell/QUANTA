@@ -2323,6 +2323,20 @@ def _collect_charts_for_section(
         if source:
             logger.info(f"CHARTS DEBUG - Found source with {len(source) if isinstance(source, dict) else len(source)} items")
             _add(source)
+    
+    # Ajouter le boxplot si disponible (comparaison de groupes)
+    boxplot = data.get("boxplot") or nested_result.get("boxplot")
+    if boxplot:
+        logger.info("CHARTS DEBUG - Found boxplot")
+        _add(("Boxplot - Distribution par groupe", boxplot))
+    
+    # Ajouter les scatter plots si disponibles (corrélations significatives)
+    scatter_plots = data.get("scatter_plots") or nested_result.get("scatter_plots")
+    if scatter_plots and isinstance(scatter_plots, dict):
+        logger.info(f"CHARTS DEBUG - Found {len(scatter_plots)} scatter plots")
+        for pair_key, scatter_b64 in scatter_plots.items():
+            if scatter_b64:
+                _add((f"Scatter plot - {pair_key}", scatter_b64))
 
     logger.info(f"CHARTS DEBUG - Total collected: {len(collected)} charts")
     return collected
