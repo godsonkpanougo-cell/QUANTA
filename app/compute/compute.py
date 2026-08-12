@@ -1929,259 +1929,260 @@ def run_base_compute_pipeline(file_bytes: bytes, filename: str,
         "dataframe_clean": df,
         "numeric_cols":    numeric_cols,
         "cat_cols":        cat_cols,
-    } 
- #   ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê  
- #   1 0 .   A N A L Y S E   D E S   C O R R E S P O N D A N C E S   M U L T I P L E S   ( A C M )  
- #   ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê ‚ " ê  
-  
- d e f   r u n _ a c m ( d f :   p d . D a t a F r a m e ,    
-                         c a t _ c o l s :   l i s t [ s t r ] ,  
-                         n _ c o m p o n e n t s :   i n t   =   5 )   - >   d i c t :  
-         " " "  
-         A n a l y s e   d e s   C o r r e s p o n d a n c e s   M u l t i p l e s .  
-         U n i q u e m e n t   s u r   l e s   c o l o n n e s   c a t √ © g o r i e l l e s .  
-         M i n i m u m   3   v a r i a b l e s   c a t √ © g o r i e l l e s   r e q u i s e s .  
-         " " "  
-         t r y :  
-                 i m p o r t   p r i n c e  
-                  
-                 #   P r √ © p a r e r   l e s   d o n n √ © e s  
-                 d f _ c a t   =   d f [ c a t _ c o l s ] . d r o p n a ( )  
-                 n _ r o w s   =   l e n ( d f _ c a t )  
-                  
-                 i f   n _ r o w s   <   1 0 :  
-                         r e t u r n   {  
-                                 " s t a t u s " :   " e r r o r " ,  
-                                 " e r r o r " :   " P a s   a s s e z   d ' o b s e r v a t i o n s   p o u r   l ' A C M   ( m i n i m u m   1 0 ) "  
-                         }  
-                  
-                 i f   l e n ( c a t _ c o l s )   <   3 :  
-                         r e t u r n   {  
-                                 " s t a t u s " :   " e r r o r " ,    
-                                 " e r r o r " :   " L ' A C M   n √ © c e s s i t e   a u   m o i n s   3   v a r i a b l e s   c a t √ © g o r i e l l e s "  
-                         }  
-                  
-                 #   C o n v e r t i r   e n   s t r i n g   p o u r   p r i n c e  
-                 d f _ c a t   =   d f _ c a t . a s t y p e ( s t r )  
-                  
-                 #   A j u s t e r   n _ c o m p o n e n t s  
-                 n _ c o m p   =   m i n ( n _ c o m p o n e n t s ,   l e n ( c a t _ c o l s )   -   1 )  
-                  
-                 #   A j u s t e r   n _ i t e r  
-                 n _ i t e r   =   m i n ( 1 0 ,   n _ r o w s   -   1 )  
-                  
-                 #   L a n c e r   l ' A C M  
-                 a c m   =   p r i n c e . M C A (  
-                         n _ c o m p o n e n t s = n _ c o m p ,  
-                         n _ i t e r = n _ i t e r ,  
-                         r a n d o m _ s t a t e = 4 2 ,  
-                         e n g i n e = ' s k l e a r n '  
-                 )  
-                 a c m   =   a c m . f i t ( d f _ c a t )  
-                  
-                 #   V a l e u r s   p r o p r e s   e t   i n e r t i e  
-                 e i g e n v a l u e s   =   a c m . e i g e n v a l u e s _ . t o l i s t ( )  
-                 i n e r t i a   =   a c m . e x p l a i n e d _ i n e r t i a _ . t o l i s t ( )  
-                 c u m u l a t i v e _ i n e r t i a   =   [ ]  
-                 c u m u l   =   0  
-                 f o r   v   i n   i n e r t i a :  
-                         c u m u l   + =   v  
-                         c u m u l a t i v e _ i n e r t i a . a p p e n d ( r o u n d ( c u m u l   *   1 0 0 ,   2 ) )  
-                  
-                 i n e r t i a _ p c t   =   [ r o u n d ( v   *   1 0 0 ,   2 )   f o r   v   i n   i n e r t i a ]  
-                  
-                 #   C o o r d o n n √ © e s   d e s   m o d a l i t √ © s  
-                 c o o r d s   =   a c m . c o l u m n _ c o o r d i n a t e s ( d f _ c a t )  
-                 m o d a l i t i e s _ c o o r d s   =   [ ]  
-                 f o r   i d x ,   r o w   i n   c o o r d s . i t e r r o w s ( ) :  
-                         m o d a l i t i e s _ c o o r d s . a p p e n d ( {  
-                                 " m o d a l i t e " :   s t r ( i d x ) ,  
-                                 " d i m 1 " :   r o u n d ( f l o a t ( r o w . i l o c [ 0 ] ) ,   4 ) ,  
-                                 " d i m 2 " :   r o u n d ( f l o a t ( r o w . i l o c [ 1 ] ) ,   4 )    
-                                                 i f   l e n ( r o w )   >   1   e l s e   0 . 0  
-                         } )  
-                  
-                 #   C o n t r i b u t i o n s   d e s   m o d a l i t √ © s   √ †   l ' a x e   1  
-                 c o n t r i b u t i o n s   =   a c m . c o l u m n _ c o n t r i b u t i o n s _  
-                 t o p _ c o n t r i b _ d i m 1   =   [ ]  
-                 i f   c o n t r i b u t i o n s   i s   n o t   N o n e :  
-                         c o n t r i b _ d i m 1   =   c o n t r i b u t i o n s . i l o c [ : ,   0 ]  
-                         t o p _ 1 0   =   c o n t r i b _ d i m 1 . n l a r g e s t ( 1 0 )  
-                         f o r   m o d ,   v a l   i n   t o p _ 1 0 . i t e m s ( ) :  
-                                 t o p _ c o n t r i b _ d i m 1 . a p p e n d ( {  
-                                         " m o d a l i t e " :   s t r ( m o d ) ,  
-                                         " c o n t r i b u t i o n " :   r o u n d ( f l o a t ( v a l ) ,   4 )  
-                                 } )  
-                  
-                 #   G √ © n √ © r e r   l e   p l a n   f a c t o r i e l   ( g r a p h i q u e   p r i n c i p a l   A C M )  
-                 p l a n _ f a c t o r i e l   =   _ g e n e r a t e _ a c m _ p l o t (  
-                         m o d a l i t i e s _ c o o r d s ,  
-                         i n e r t i a _ p c t ,  
-                         c a t _ c o l s  
-                 )  
-                  
-                 #   G √ © n √ © r e r   l e   g r a p h i q u e   d e s   v a l e u r s   p r o p r e s  
-                 s c r e e _ p l o t   =   _ g e n e r a t e _ s c r e e _ p l o t (  
-                         i n e r t i a _ p c t  
-                 )  
-                  
-                 r e t u r n   {  
-                         " s t a t u s " :   " o k " ,  
-                         " n _ r o w s " :   n _ r o w s ,  
-                         " n _ v a r i a b l e s " :   l e n ( c a t _ c o l s ) ,  
-                         " v a r i a b l e s " :   c a t _ c o l s ,  
-                         " n _ c o m p o n e n t s " :   n _ c o m p ,  
-                         " e i g e n v a l u e s " :   e i g e n v a l u e s ,  
-                         " i n e r t i a _ p c t " :   i n e r t i a _ p c t ,  
-                         " c u m u l a t i v e _ i n e r t i a " :   c u m u l a t i v e _ i n e r t i a ,  
-                         " m o d a l i t i e s _ c o o r d s " :   m o d a l i t i e s _ c o o r d s ,  
-                         " t o p _ c o n t r i b u t i o n s _ d i m 1 " :   t o p _ c o n t r i b _ d i m 1 ,  
-                         " p l a n _ f a c t o r i e l " :   p l a n _ f a c t o r i e l ,  
-                         " s c r e e _ p l o t " :   s c r e e _ p l o t ,  
-                         " i n t e r p r e t a t i o n _ n o t e " :   (  
-                                 f " L ' a x e   1   e x p l i q u e   { i n e r t i a _ p c t [ 0 ] } %   "  
-                                 f " d e   l ' i n e r t i e   t o t a l e .   "  
-                                 f " L e s   a x e s   1   e t   2   e n s e m b l e   e x p l i q u e n t   "  
-                                 f " { c u m u l a t i v e _ i n e r t i a [ 1 ]   i f   l e n ( c u m u l a t i v e _ i n e r t i a )   >   1   e l s e   i n e r t i a _ p c t [ 0 ] } % . "  
-                         )  
-                 }  
-          
-         e x c e p t   E x c e p t i o n   a s   e :  
-                 i m p o r t   t r a c e b a c k  
-                 t r a c e b a c k . p r i n t _ e x c ( )  
-                 r e t u r n   { " s t a t u s " :   " e r r o r " ,   " e r r o r " :   s t r ( e ) }  
-  
-  
- d e f   _ g e n e r a t e _ a c m _ p l o t ( m o d a l i t i e s _ c o o r d s :   l i s t ,  
-                                                 i n e r t i a _ p c t :   l i s t ,  
-                                                 c a t _ c o l s :   l i s t )   - >   s t r   |   N o n e :  
-         " " " P l a n   f a c t o r i e l   A C M   ‚ ¨    g r a p h i q u e   s i g n a t u r e . " " "  
-         t r y :  
-                 i m p o r t   m a t p l o t l i b . p y p l o t   a s   p l t  
-                 i m p o r t   m a t p l o t l i b  
-                 m a t p l o t l i b . u s e ( ' A g g ' )  
-                 i m p o r t   n u m p y   a s   n p  
-                  
-                 f i g ,   a x   =   p l t . s u b p l o t s ( f i g s i z e = ( 1 2 ,   8 ) )  
-                 f i g . p a t c h . s e t _ f a c e c o l o r ( ' # 0 A 0 A 0 F ' )  
-                 a x . s e t _ f a c e c o l o r ( ' # 1 3 1 3 1 A ' )  
-                  
-                 #   C o u l e u r s   p a r   v a r i a b l e  
-                 c o l o r s   =   [ ' # C 9 A 8 4 C ' ,   ' # 0 0 D 4 F F ' ,   ' # 2 E C C 7 1 ' ,    
-                                     ' # E 7 4 C 3 C ' ,   ' # 9 B 5 9 B 6 ' ,   ' # F 3 9 C 1 2 ' ,  
-                                     ' # 1 A B C 9 C ' ,   ' # E 6 7 E 2 2 ' ]  
-                  
-                 f o r   i ,   m o d   i n   e n u m e r a t e ( m o d a l i t i e s _ c o o r d s ) :  
-                         l a b e l   =   m o d [ " m o d a l i t e " ]  
-                         x   =   m o d [ " d i m 1 " ]  
-                         y   =   m o d [ " d i m 2 " ]  
-                          
-                         #   D √ © t e c t e r   l a   v a r i a b l e   p a r e n t e  
-                         v a r _ c o l o r   =   ' # C 9 A 8 4 C '  
-                         f o r   j ,   c o l   i n   e n u m e r a t e ( c a t _ c o l s ) :  
-                                 i f   l a b e l . s t a r t s w i t h ( c o l ) :  
-                                         v a r _ c o l o r   =   c o l o r s [ j   %   l e n ( c o l o r s ) ]  
-                                         b r e a k  
-                          
-                         a x . s c a t t e r ( x ,   y ,   c o l o r = v a r _ c o l o r ,    
-                                             s = 8 0 ,   z o r d e r = 5 ,   a l p h a = 0 . 8 )  
-                         a x . a n n o t a t e (  
-                                 l a b e l ,   ( x ,   y ) ,  
-                                 t e x t c o o r d s = " o f f s e t   p o i n t s " ,  
-                                 x y t e x t = ( 5 ,   5 ) ,  
-                                 f o n t s i z e = 8 ,  
-                                 c o l o r = ' # E 8 E 8 E 8 ' ,  
-                                 a l p h a = 0 . 9  
-                         )  
-                  
-                 #   A x e s   c e n t r a u x  
-                 a x . a x h l i n e ( y = 0 ,   c o l o r = ' # 5 5 5 5 6 3 ' ,    
-                                       l i n e w i d t h = 0 . 5 ,   l i n e s t y l e = ' - - ' )  
-                 a x . a x v l i n e ( x = 0 ,   c o l o r = ' # 5 5 5 5 6 3 ' ,    
-                                       l i n e w i d t h = 0 . 5 ,   l i n e s t y l e = ' - - ' )  
-                  
-                 d i m 1 _ p c t   =   i n e r t i a _ p c t [ 0 ]   i f   i n e r t i a _ p c t   e l s e   0  
-                 d i m 2 _ p c t   =   i n e r t i a _ p c t [ 1 ]   i f   l e n ( i n e r t i a _ p c t )   >   1   e l s e   0  
-                  
-                 a x . s e t _ x l a b e l (  
-                         f ' D i m e n s i o n   1   ( { d i m 1 _ p c t } % ) ' ,  
-                         c o l o r = ' # 9 A 9 A A 8 ' ,   f o n t s i z e = 1 1  
-                 )  
-                 a x . s e t _ y l a b e l (  
-                         f ' D i m e n s i o n   2   ( { d i m 2 _ p c t } % ) ' ,  
-                         c o l o r = ' # 9 A 9 A A 8 ' ,   f o n t s i z e = 1 1  
-                 )  
-                 a x . s e t _ t i t l e (  
-                         ' A C M   ‚ ¨    P l a n   F a c t o r i e l   ( D i m e n s i o n s   1   e t   2 ) ' ,  
-                         c o l o r = ' # E 8 E 8 E 8 ' ,   f o n t s i z e = 1 3 ,   p a d = 1 5  
-                 )  
-                 a x . t i c k _ p a r a m s ( c o l o r s = ' # 9 A 9 A A 8 ' )  
-                 f o r   s p i n e   i n   a x . s p i n e s . v a l u e s ( ) :  
-                         s p i n e . s e t _ e d g e c o l o r ( ' # 5 5 5 5 6 3 ' )  
-                 a x . g r i d ( T r u e ,   a l p h a = 0 . 0 8 ,   c o l o r = ' # 5 5 5 5 6 3 ' )  
-                  
-                 b u f   =   i o . B y t e s I O ( )  
-                 p l t . s a v e f i g ( b u f ,   f o r m a t = ' p n g ' ,   d p i = 1 2 0 ,  
-                                         b b o x _ i n c h e s = ' t i g h t ' ,  
-                                         f a c e c o l o r = ' # 0 A 0 A 0 F ' )  
-                 p l t . c l o s e ( )  
-                 b u f . s e e k ( 0 )  
-                 i m p o r t   b a s e 6 4  
-                 r e t u r n   b a s e 6 4 . b 6 4 e n c o d e ( b u f . r e a d ( ) ) . d e c o d e ( )  
-          
-         e x c e p t   E x c e p t i o n :  
-                 r e t u r n   N o n e  
-  
-  
- d e f   _ g e n e r a t e _ s c r e e _ p l o t ( i n e r t i a _ p c t :   l i s t )   - >   s t r   |   N o n e :  
-         " " " G r a p h i q u e   d e s   v a l e u r s   p r o p r e s   ( s c r e e   p l o t ) . " " "  
-         t r y :  
-                 i m p o r t   m a t p l o t l i b . p y p l o t   a s   p l t  
-                 i m p o r t   m a t p l o t l i b  
-                 m a t p l o t l i b . u s e ( ' A g g ' )  
-                 i m p o r t   n u m p y   a s   n p  
-                  
-                 f i g ,   a x   =   p l t . s u b p l o t s ( f i g s i z e = ( 8 ,   5 ) )  
-                 f i g . p a t c h . s e t _ f a c e c o l o r ( ' # 0 A 0 A 0 F ' )  
-                 a x . s e t _ f a c e c o l o r ( ' # 1 3 1 3 1 A ' )  
-                  
-                 a x e s   =   [ f ' D i m   { i + 1 } '   f o r   i   i n   r a n g e ( l e n ( i n e r t i a _ p c t ) ) ]  
-                 b a r s   =   a x . b a r ( a x e s ,   i n e r t i a _ p c t ,    
-                                           c o l o r = ' # C 9 A 8 4 C ' ,   a l p h a = 0 . 8 ,  
-                                           e d g e c o l o r = ' # E 8 D 5 A 3 ' )  
-                  
-                 #   C o u r b e   c u m u l a t i v e  
-                 c u m u l   =   n p . c u m s u m ( i n e r t i a _ p c t )  
-                 a x 2   =   a x . t w i n x ( )  
-                 a x 2 . p l o t ( a x e s ,   c u m u l ,    
-                                 c o l o r = ' # 0 0 D 4 F F ' ,   l i n e w i d t h = 2 ,  
-                                 m a r k e r = ' o ' ,   m a r k e r s i z e = 6 )  
-                 a x 2 . s e t _ y l a b e l ( ' I n e r t i e   c u m u l √ © e   ( % ) ' ,    
-                                             c o l o r = ' # 0 0 D 4 F F ' )  
-                 a x 2 . t i c k _ p a r a m s ( c o l o r s = ' # 0 0 D 4 F F ' )  
-                 a x 2 . s e t _ y l i m ( 0 ,   1 0 5 )  
-                  
-                 a x . s e t _ t i t l e ( ' I n e r t i e   e x p l i q u √ © e   p a r   d i m e n s i o n ' ,  
-                                         c o l o r = ' # E 8 E 8 E 8 ' ,   f o n t s i z e = 1 2 ,   p a d = 1 5 )  
-                 a x . s e t _ x l a b e l ( ' D i m e n s i o n s ' ,   c o l o r = ' # 9 A 9 A A 8 ' )  
-                 a x . s e t _ y l a b e l ( ' %   d \ ' i n e r t i e ' ,   c o l o r = ' # 9 A 9 A A 8 ' )  
-                 a x . t i c k _ p a r a m s ( c o l o r s = ' # 9 A 9 A A 8 ' )  
-                 f o r   s p i n e   i n   a x . s p i n e s . v a l u e s ( ) :  
-                         s p i n e . s e t _ e d g e c o l o r ( ' # 5 5 5 5 6 3 ' )  
-                 a x . g r i d ( T r u e ,   a l p h a = 0 . 0 8 ,   a x i s = ' y ' ,    
-                               c o l o r = ' # 5 5 5 5 6 3 ' )  
-                  
-                 f i g . p a t c h . s e t _ f a c e c o l o r ( ' # 0 A 0 A 0 F ' )  
-                  
-                 b u f   =   i o . B y t e s I O ( )  
-                 p l t . s a v e f i g ( b u f ,   f o r m a t = ' p n g ' ,   d p i = 1 2 0 ,  
-                                         b b o x _ i n c h e s = ' t i g h t ' ,  
-                                         f a c e c o l o r = ' # 0 A 0 A 0 F ' )  
-                 p l t . c l o s e ( )  
-                 b u f . s e e k ( 0 )  
-                 i m p o r t   b a s e 6 4  
-                 r e t u r n   b a s e 6 4 . b 6 4 e n c o d e ( b u f . r e a d ( ) ) . d e c o d e ( )  
-          
-         e x c e p t   E x c e p t i o n :  
-                 r e t u r n   N o n e  
- 
+    }
+
+
+# ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê
+# 10. ANALYSE DES CORRESPONDANCES MULTIPLES (ACM)
+# ‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê‚ïê
+
+def run_acm(df: pd.DataFrame, 
+            cat_cols: list[str],
+            n_components: int = 5) -> dict:
+    """
+    Analyse des Correspondances Multiples.
+    Uniquement sur les colonnes cat√©gorielles.
+    Minimum 3 variables cat√©gorielles requises.
+    """
+    try:
+        import prince
+        
+        # Pr√©parer les donn√©es
+        df_cat = df[cat_cols].dropna()
+        n_rows = len(df_cat)
+        
+        if n_rows < 10:
+            return {
+                "status": "error",
+                "error": "Pas assez d'observations pour l'ACM (minimum 10)"
+            }
+        
+        if len(cat_cols) < 3:
+            return {
+                "status": "error", 
+                "error": "L'ACM n√©cessite au moins 3 variables cat√©gorielles"
+            }
+        
+        # Convertir en string pour prince
+        df_cat = df_cat.astype(str)
+        
+        # Ajuster n_components
+        n_comp = min(n_components, len(cat_cols) - 1)
+        
+        # Ajuster n_iter
+        n_iter = min(10, n_rows - 1)
+        
+        # Lancer l'ACM
+        acm = prince.MCA(
+            n_components=n_comp,
+            n_iter=n_iter,
+            random_state=42,
+            engine='sklearn'
+        )
+        acm = acm.fit(df_cat)
+        
+        # Valeurs propres et inertie
+        eigenvalues = acm.eigenvalues_.tolist()
+        inertia = acm.explained_inertia_.tolist()
+        cumulative_inertia = []
+        cumul = 0
+        for v in inertia:
+            cumul += v
+            cumulative_inertia.append(round(cumul * 100, 2))
+        
+        inertia_pct = [round(v * 100, 2) for v in inertia]
+        
+        # Coordonn√©es des modalit√©s
+        coords = acm.column_coordinates(df_cat)
+        modalities_coords = []
+        for idx, row in coords.iterrows():
+            modalities_coords.append({
+                "modalite": str(idx),
+                "dim1": round(float(row.iloc[0]), 4),
+                "dim2": round(float(row.iloc[1]), 4) 
+                        if len(row) > 1 else 0.0
+            })
+        
+        # Contributions des modalit√©s √† l'axe 1
+        contributions = acm.column_contributions_
+        top_contrib_dim1 = []
+        if contributions is not None:
+            contrib_dim1 = contributions.iloc[:, 0]
+            top_10 = contrib_dim1.nlargest(10)
+            for mod, val in top_10.items():
+                top_contrib_dim1.append({
+                    "modalite": str(mod),
+                    "contribution": round(float(val), 4)
+                })
+        
+        # G√©n√©rer le plan factoriel (graphique principal ACM)
+        plan_factoriel = _generate_acm_plot(
+            modalities_coords,
+            inertia_pct,
+            cat_cols
+        )
+        
+        # G√©n√©rer le graphique des valeurs propres
+        scree_plot = _generate_scree_plot(
+            inertia_pct
+        )
+        
+        return {
+            "status": "ok",
+            "n_rows": n_rows,
+            "n_variables": len(cat_cols),
+            "variables": cat_cols,
+            "n_components": n_comp,
+            "eigenvalues": eigenvalues,
+            "inertia_pct": inertia_pct,
+            "cumulative_inertia": cumulative_inertia,
+            "modalities_coords": modalities_coords,
+            "top_contributions_dim1": top_contrib_dim1,
+            "plan_factoriel": plan_factoriel,
+            "scree_plot": scree_plot,
+            "interpretation_note": (
+                f"L'axe 1 explique {inertia_pct[0]}% "
+                f"de l'inertie totale. "
+                f"Les axes 1 et 2 ensemble expliquent "
+                f"{cumulative_inertia[1] if len(cumulative_inertia) > 1 else inertia_pct[0]}%."
+            )
+        }
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "error": str(e)}
+
+
+def _generate_acm_plot(modalities_coords: list,
+                        inertia_pct: list,
+                        cat_cols: list) -> str | None:
+    """Plan factoriel ACM ‚Äî graphique signature."""
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use('Agg')
+        import numpy as np
+        
+        fig, ax = plt.subplots(figsize=(12, 8))
+        fig.patch.set_facecolor('#0A0A0F')
+        ax.set_facecolor('#13131A')
+        
+        # Couleurs par variable
+        colors = ['#C9A84C', '#00D4FF', '#2ECC71', 
+                  '#E74C3C', '#9B59B6', '#F39C12',
+                  '#1ABC9C', '#E67E22']
+        
+        for i, mod in enumerate(modalities_coords):
+            label = mod["modalite"]
+            x = mod["dim1"]
+            y = mod["dim2"]
+            
+            # D√©tecter la variable parente
+            var_color = '#C9A84C'
+            for j, col in enumerate(cat_cols):
+                if label.startswith(col):
+                    var_color = colors[j % len(colors)]
+                    break
+            
+            ax.scatter(x, y, color=var_color, 
+                      s=80, zorder=5, alpha=0.8)
+            ax.annotate(
+                label, (x, y),
+                textcoords="offset points",
+                xytext=(5, 5),
+                fontsize=8,
+                color='#E8E8E8',
+                alpha=0.9
+            )
+        
+        # Axes centraux
+        ax.axhline(y=0, color='#555563', 
+                   linewidth=0.5, linestyle='--')
+        ax.axvline(x=0, color='#555563', 
+                   linewidth=0.5, linestyle='--')
+        
+        dim1_pct = inertia_pct[0] if inertia_pct else 0
+        dim2_pct = inertia_pct[1] if len(inertia_pct) > 1 else 0
+        
+        ax.set_xlabel(
+            f'Dimension 1 ({dim1_pct}%)',
+            color='#9A9AA8', fontsize=11
+        )
+        ax.set_ylabel(
+            f'Dimension 2 ({dim2_pct}%)',
+            color='#9A9AA8', fontsize=11
+        )
+        ax.set_title(
+            'ACM ‚Äî Plan Factoriel (Dimensions 1 et 2)',
+            color='#E8E8E8', fontsize=13, pad=15
+        )
+        ax.tick_params(colors='#9A9AA8')
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#555563')
+        ax.grid(True, alpha=0.08, color='#555563')
+        
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=120,
+                    bbox_inches='tight',
+                    facecolor='#0A0A0F')
+        plt.close()
+        buf.seek(0)
+        import base64
+        return base64.b64encode(buf.read()).decode()
+    
+    except Exception:
+        return None
+
+
+def _generate_scree_plot(inertia_pct: list) -> str | None:
+    """Graphique des valeurs propres (scree plot)."""
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use('Agg')
+        import numpy as np
+        
+        fig, ax = plt.subplots(figsize=(8, 5))
+        fig.patch.set_facecolor('#0A0A0F')
+        ax.set_facecolor('#13131A')
+        
+        axes = [f'Dim {i+1}' for i in range(len(inertia_pct))]
+        bars = ax.bar(axes, inertia_pct, 
+                     color='#C9A84C', alpha=0.8,
+                     edgecolor='#E8D5A3')
+        
+        # Courbe cumulative
+        cumul = np.cumsum(inertia_pct)
+        ax2 = ax.twinx()
+        ax2.plot(axes, cumul, 
+                color='#00D4FF', linewidth=2,
+                marker='o', markersize=6)
+        ax2.set_ylabel('Inertie cumul√©e (%)', 
+                      color='#00D4FF')
+        ax2.tick_params(colors='#00D4FF')
+        ax2.set_ylim(0, 105)
+        
+        ax.set_title('Inertie expliqu√©e par dimension',
+                    color='#E8E8E8', fontsize=12, pad=15)
+        ax.set_xlabel('Dimensions', color='#9A9AA8')
+        ax.set_ylabel('% d\'inertie', color='#9A9AA8')
+        ax.tick_params(colors='#9A9AA8')
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#555563')
+        ax.grid(True, alpha=0.08, axis='y', 
+               color='#555563')
+        
+        fig.patch.set_facecolor('#0A0A0F')
+        
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=120,
+                    bbox_inches='tight',
+                    facecolor='#0A0A0F')
+        plt.close()
+        buf.seek(0)
+        import base64
+        return base64.b64encode(buf.read()).decode()
+    
+    except Exception:
+        return None
