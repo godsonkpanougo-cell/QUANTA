@@ -478,7 +478,7 @@ def get_history() -> dict[str, Any]:
 
 
 @app.get("/report/{analysis_id}")
-def get_report(
+async def get_report(
     analysis_id: str,
     theme: str = "dark",
 ) -> Response:
@@ -527,14 +527,34 @@ def get_report(
         logger.info(f"REPORT DEBUG - interp keys: {list(result['interpretation'].keys())}")
     logger.info(f"REPORT DEBUG - 'analyses' present: {'analyses' in result}")
 
-    pdf_bytes = generate_pdf_report(
-        result, theme=theme_norm
-    )
+    try:
+        # Timeout de 30 secondes pour la génération
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(
+                generate_pdf_report,
+                result,
+                theme_norm
+            )
+            pdf_bytes = future.result(timeout=30)
+    except concurrent.futures.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="Génération PDF trop longue"
+        )
+    except Exception as e:
+        print(f"ERREUR PDF: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur génération PDF: {str(e)}"
+        )
 
     if pdf_bytes is None:
         raise HTTPException(
             status_code=500,
-            detail="Échec de la génération PDF. Consultez les logs serveur."
+            detail="PDF généré vide"
         )
 
     suffix = "academique" if theme_norm == "light" else "dark"
@@ -542,7 +562,12 @@ def get_report(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET",
+            "Access-Control-Allow-Headers": "*",
+        },
     )
 
 

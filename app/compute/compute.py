@@ -1963,6 +1963,13 @@ def run_acm(df: pd.DataFrame,
                 "error": "L'ACM nécessite au moins 3 variables catégorielles"
             }
         
+        # Sampling pour éviter le crash sur grands datasets
+        sampling_note = None
+        if n_rows > 5000:
+            df_cat = df_cat.sample(n=5000, random_state=42)
+            n_rows = 5000
+            sampling_note = "Échantillon de 5000 lignes utilisé pour l'ACM (dataset > 5000 observations)"
+        
         # Convertir en string pour prince
         df_cat = df_cat.astype(str)
         
@@ -2026,7 +2033,7 @@ def run_acm(df: pd.DataFrame,
             inertia_pct
         )
         
-        return {
+        result = {
             "status": "ok",
             "n_rows": n_rows,
             "n_variables": len(cat_cols),
@@ -2046,6 +2053,11 @@ def run_acm(df: pd.DataFrame,
                 f"{cumulative_inertia[1] if len(cumulative_inertia) > 1 else inertia_pct[0]}%."
             )
         }
+        
+        if sampling_note:
+            result["sampling_note"] = sampling_note
+        
+        return result
     
     except Exception as e:
         import traceback
