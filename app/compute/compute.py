@@ -121,7 +121,7 @@ def _fig_style(fig, ax_list=None, theme: str = "dark"):
             for spine in ax.spines.values():
                 spine.set_edgecolor(PALETTE["muted"])
 
-def _fig_to_b64(fig, dpi: int = 100, theme: str = "dark") -> str:
+def _fig_to_b64(fig, dpi: int = 80, theme: str = "dark") -> str:
     """
     Convertit une figure matplotlib en base64 PNG (dpi réduit pour le poids).
     
@@ -150,7 +150,7 @@ def generate_boxplot(df: pd.DataFrame, target_col: str, group_col: str, theme: s
     """
     _apply_mpl_theme(theme)
     
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(7, 4))
     
     if theme == "light":
         fig.patch.set_facecolor('white')
@@ -217,7 +217,7 @@ def generate_scatter(df: pd.DataFrame, var1: str, var2: str, theme: str = "dark"
     """
     _apply_mpl_theme(theme)
     
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(7, 4))
     
     if theme == "light":
         fig.patch.set_facecolor('white')
@@ -863,7 +863,7 @@ def descriptive_stats(df: pd.DataFrame, numeric_cols: list[str], cat_cols: list[
         n = len(cols_to_plot)
         ncols = min(n, 3)
         nrows = (n + ncols - 1) // ncols
-        fig, axes = plt.subplots(nrows, ncols, figsize=(4.2 * ncols, 3.4 * nrows))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 2.8 * nrows))
         axes = np.array(axes).flatten() if n > 1 else np.array([axes])
 
         for i, col in enumerate(cols_to_plot):
@@ -893,7 +893,7 @@ def descriptive_stats(df: pd.DataFrame, numeric_cols: list[str], cat_cols: list[
     cat_to_plot = cat_cols[:3]
     if cat_to_plot:
         n = len(cat_to_plot)
-        fig, axes = plt.subplots(1, n, figsize=(5.5 * n, 3.6))
+        fig, axes = plt.subplots(1, n, figsize=(4.5 * n, 3.0))
         axes = np.array([axes]) if n == 1 else axes.flatten()
 
         for i, col in enumerate(cat_to_plot):
@@ -963,7 +963,7 @@ def normality_tests(df: pd.DataFrame, numeric_cols: list[str], theme: str = "dar
         n = len(cols_to_plot)
         ncols = min(n, 2)
         nrows = (n + ncols - 1) // ncols
-        fig, axes = plt.subplots(nrows, ncols, figsize=(5.5 * ncols, 4.5 * nrows))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(4.5 * ncols, 3.5 * nrows))
         axes = np.array(axes).flatten() if n > 1 else np.array([axes])
 
     for col in numeric_cols:
@@ -1139,8 +1139,8 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
     # Heatmap
     charts = {}
     n = len(numeric_cols)
-    size = max(5, n * 0.85)
-    fig, ax = plt.subplots(figsize=(size, size * 0.8))
+    size = max(4, n * 0.7)
+    fig, ax = plt.subplots(figsize=(size, size * 0.7))
 
     mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
     cmap = sns.diverging_palette(220, 40, as_cmap=True)
@@ -1282,7 +1282,7 @@ def ols_regression(
         title_color = PALETTE["gold"]
 
     charts = {}
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.2))
+    fig, axes = plt.subplots(1, 2, figsize=(7, 3.0))
 
     axes[0].scatter(model.fittedvalues, residuals, color=bar_color, alpha=0.6, s=20)
     axes[0].axhline(0, color=ref_line_color, linewidth=1.5, linestyle="--")
@@ -2075,7 +2075,7 @@ def _generate_acm_plot(modalities_coords: list,
         matplotlib.use('Agg')
         import numpy as np
         
-        fig, ax = plt.subplots(figsize=(12, 8))
+        fig, ax = plt.subplots(figsize=(7, 4))
         fig.patch.set_facecolor('#0A0A0F')
         ax.set_facecolor('#13131A')
         
@@ -2134,7 +2134,7 @@ def _generate_acm_plot(modalities_coords: list,
         ax.grid(True, alpha=0.08, color='#555563')
         
         buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=120,
+        plt.savefig(buf, format='png', dpi=80,
                     bbox_inches='tight',
                     facecolor='#0A0A0F')
         plt.close()
@@ -2154,7 +2154,7 @@ def _generate_scree_plot(inertia_pct: list) -> str | None:
         matplotlib.use('Agg')
         import numpy as np
         
-        fig, ax = plt.subplots(figsize=(8, 5))
+        fig, ax = plt.subplots(figsize=(7, 4))
         fig.patch.set_facecolor('#0A0A0F')
         ax.set_facecolor('#13131A')
         
@@ -2187,7 +2187,7 @@ def _generate_scree_plot(inertia_pct: list) -> str | None:
         fig.patch.set_facecolor('#0A0A0F')
         
         buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=120,
+        plt.savefig(buf, format='png', dpi=80,
                     bbox_inches='tight',
                     facecolor='#0A0A0F')
         plt.close()

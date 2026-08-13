@@ -115,9 +115,9 @@ app.state.limiter = limiter
 # au domaine de production réel avant le déploiement (Jour 61 du programme).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(","),
+    allow_origins=["*"],  # Temporairement autoriser tous les origines pour éviter erreur CORS sur 502
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 

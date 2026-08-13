@@ -25,6 +25,45 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Limite absolue de graphiques dans le PDF pour éviter crash mémoire WeasyPrint
+MAX_CHARTS_IN_PDF = 6
+
+
+def _select_charts(all_charts: dict, max_charts: int = MAX_CHARTS_IN_PDF) -> dict:
+    """
+    Priorise les graphiques les plus importants pour le PDF.
+    Ordre de priorité :
+    1. plan_factoriel (ACM)
+    2. scree_plot
+    3. correlation_circle (ACP)
+    4. individuals_plot (ACP)
+    5. boxplot (premier seulement)
+    6. scatter_plot (premier seulement)
+    7. distributions
+    8. qqplots
+    9. categories
+    10. correlation_heatmap
+    """
+    priority = [
+        "plan_factoriel",
+        "scree_plot",
+        "correlation_circle",
+        "individuals_plot",
+        "boxplot",
+        "scatter_plot",
+        "distributions",
+        "qqplots",
+        "categories",
+        "correlation_heatmap",
+    ]
+    selected = {}
+    for key in priority:
+        if len(selected) >= max_charts:
+            break
+        if key in all_charts and all_charts[key]:
+            selected[key] = all_charts[key]
+    return selected
+
 
 def _get_weasyprint():
     try:
@@ -3012,6 +3051,16 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
     test_result = _as_dict(inference.get("result"))
     confidence = _as_dict(analysis.get("confidence_score"))
     interp_main = _as_dict(interpretation.get("interpretation_principale"))
+
+    # Limiter les graphiques pour éviter crash mémoire WeasyPrint
+    charts_source = "charts"
+    if theme == "light" and analysis.get("charts_light"):
+        charts_source = "charts_light"
+    
+    all_charts = analysis.get(charts_source, {})
+    if all_charts:
+        limited_charts = _select_charts(all_charts)
+        analysis[charts_source] = limited_charts
 
     # Compteur APA partagé pour toute la génération du rapport.
     table_counter: list[int] = [0]
