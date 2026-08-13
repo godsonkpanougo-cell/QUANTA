@@ -26,35 +26,26 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Limite absolue de graphiques dans le PDF pour éviter crash mémoire WeasyPrint
-MAX_CHARTS_IN_PDF = 6
+MAX_CHARTS_IN_PDF = 4
 
 
 def _select_charts(all_charts: dict, max_charts: int = MAX_CHARTS_IN_PDF) -> dict:
     """
     Priorise les graphiques les plus importants pour le PDF.
-    Ordre de priorité :
-    1. plan_factoriel (ACM)
-    2. scree_plot
-    3. correlation_circle (ACP)
-    4. individuals_plot (ACP)
-    5. boxplot (premier seulement)
-    6. scatter_plot (premier seulement)
-    7. distributions
-    8. qqplots
-    9. categories
-    10. correlation_heatmap
+    Ordre de priorité strict (max 4 images) :
+    1. distributions (histogrammes)
+    2. plan_factoriel ACM (si présent)
+    3. scree_plot
+    4. boxplot (premier seulement)
+    
+    Exclus du PDF (disponibles dans l'interface web) :
+    - qqplots, categories, scatter_plot, correlation_heatmap, individuals_plot
     """
     priority = [
+        "distributions",
         "plan_factoriel",
         "scree_plot",
-        "correlation_circle",
-        "individuals_plot",
         "boxplot",
-        "scatter_plot",
-        "distributions",
-        "qqplots",
-        "categories",
-        "correlation_heatmap",
     ]
     selected = {}
     for key in priority:
@@ -3051,6 +3042,23 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
     test_result = _as_dict(inference.get("result"))
     confidence = _as_dict(analysis.get("confidence_score"))
     interp_main = _as_dict(interpretation.get("interpretation_principale"))
+
+    # Logs diagnostic ACM
+    print(f"ACM DEBUG - analysis_result keys: {list(analysis_result.keys())}")
+    print(f"ACM DEBUG - analysis keys: {list(analysis.keys())}")
+    print(f"ACM DEBUG - test_result keys: {list(test_result.keys())}")
+    print(f"ACM DEBUG - 'acm' in test_result: {'acm' in test_result}")
+    print(f"ACM DEBUG - 'acm' in analysis: {'acm' in analysis}")
+    print(f"ACM DEBUG - 'acm' in analysis_result: {'acm' in analysis_result}")
+    
+    # Vérifier chemin multi-analyses
+    if "analyses" in analysis_result:
+        print(f"ACM DEBUG - analyses found, count: {len(analysis_result['analyses'])}")
+        for i, a in enumerate(analysis_result['analyses'][:3]):  # Vérifier les 3 premiers
+            print(f"ACM DEBUG - analysis[{i}] keys: {list(a.keys())}")
+            if 'result' in a:
+                print(f"ACM DEBUG - analysis[{i}]['result'] keys: {list(a['result'].keys())}")
+                print(f"ACM DEBUG - 'acm' in analysis[{i}]['result']: {'acm' in a['result']}")
 
     # Limiter les graphiques pour éviter crash mémoire WeasyPrint
     charts_source = "charts"

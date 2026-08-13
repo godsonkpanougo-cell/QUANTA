@@ -468,7 +468,16 @@ def auto_intent(diagnosis: dict[str, Any]) -> list[ts.AnalysisIntent]:
     # Toujours ajouter un descriptif global en dernier
     intents.append(ts.AnalysisIntent(action="descriptive_only", raw_query="[auto]"))
 
-    return intents if intents else [ts.AnalysisIntent(action="descriptive_only", raw_query="[auto]")]
+    # Déduplication des intents (éviter doublons Chi-deux)
+    intents_seen = set()
+    intents_deduplicated = []
+    for intent in intents:
+        key = (intent.action, intent.target_col, intent.group_col)
+        if key not in intents_seen:
+            intents_seen.add(key)
+            intents_deduplicated.append(intent)
+
+    return intents_deduplicated if intents_deduplicated else [ts.AnalysisIntent(action="descriptive_only", raw_query="[auto]")]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
