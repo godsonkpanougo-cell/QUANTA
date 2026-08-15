@@ -26,25 +26,23 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 # Limite absolue de graphiques dans le PDF pour éviter crash mémoire WeasyPrint
-MAX_CHARTS_IN_PDF = 4
+MAX_CHARTS_IN_PDF = 3
 
 
 def _select_charts(all_charts: dict, max_charts: int = MAX_CHARTS_IN_PDF) -> dict:
     """
     Priorise les graphiques les plus importants pour le PDF.
-    Ordre de priorité strict (max 4 images) :
-    1. distributions (histogrammes)
-    2. plan_factoriel ACM (si présent)
-    3. scree_plot
-    4. boxplot (premier seulement)
+    Ordre de priorité strict (max 3 images) :
+    1. distributions (histogrammes des numériques)
+    2. plan_factoriel (ACM si présent)
+    3. boxplot (premier seulement)
     
     Exclus du PDF (disponibles dans l'interface web) :
-    - qqplots, categories, scatter_plot, correlation_heatmap, individuals_plot
+    - qqplots, categories, scatter_plot, correlation_heatmap, scree_plot, individuals_plot
     """
     priority = [
         "distributions",
         "plan_factoriel",
-        "scree_plot",
         "boxplot",
     ]
     selected = {}

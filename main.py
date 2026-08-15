@@ -393,6 +393,27 @@ def _run_analysis_core(analysis_id: str, file_id: str, query: str) -> None:
     })
     result["audit_trail"] = audit_trail
 
+    # Générer les PDFs en arrière-plan avant de marquer l'analyse comme terminée
+    from app.report_generator import generate_pdf_report
+    import os
+    
+    upload_dir = os.environ.get("QUANTA_UPLOAD_DIR", "/data/uploads")
+    
+    for theme in ["dark", "light"]:
+        try:
+            pdf_bytes = generate_pdf_report(result, theme=theme)
+            if pdf_bytes:
+                pdf_path = os.path.join(
+                    upload_dir,
+                    f"report_{analysis_id}_{theme}.pdf"
+                )
+                os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+                with open(pdf_path, "wb") as f:
+                    f.write(pdf_bytes)
+                logger.info(f"PDF {theme} généré: {pdf_path}")
+        except Exception as e:
+            logger.error(f"Erreur PDF {theme}: {e}")
+
     db.update_analysis(analysis_id, status="done", result=result, updated_at=_now())
 
 
@@ -478,7 +499,7 @@ def get_history() -> dict[str, Any]:
 
 
 @app.get("/report/{analysis_id}")
-async def get_report(
+def get_report(
     analysis_id: str,
     theme: str = "dark",
 ) -> Response:
@@ -504,57 +525,37 @@ async def get_report(
             ),
         )
 
-    result = analysis.get("result")
-    if not isinstance(result, dict):
-        raise HTTPException(
-            status_code=500,
-            detail="Résultat d'analyse invalide ou absent — génération du PDF impossible.",
-        )
-
     theme_norm = (theme or "dark").strip().lower()
     if theme_norm not in {"dark", "light"}:
         theme_norm = "dark"
 
-    # LOG DE DIAGNOSTIC
-    logger.info(f"REPORT DEBUG - Keys: {list(result.keys())}")
-    if "analysis" in result:
-        logger.info(f"REPORT DEBUG - analysis keys: {list(result['analysis'].keys())}")
-        if "charts" in result["analysis"]:
-            logger.info(f"REPORT DEBUG - charts present: {len(result['analysis']['charts'])} charts")
-        else:
-            logger.warning("REPORT DEBUG - NO CHARTS in analysis!")
-    if "interpretation" in result:
-        logger.info(f"REPORT DEBUG - interp keys: {list(result['interpretation'].keys())}")
-    logger.info(f"REPORT DEBUG - 'analyses' present: {'analyses' in result}")
-
-    try:
-        # Timeout de 30 secondes pour la génération
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(
-                generate_pdf_report,
-                result,
-                theme_norm
+    # Chercher le fichier pré-généré
+    import os
+    upload_dir = os.environ.get("QUANTA_UPLOAD_DIR", "/data/uploads")
+    pdf_path = os.path.join(upload_dir, f"report_{analysis_id}_{theme_norm}.pdf")
+    
+    if os.path.exists(pdf_path):
+        # Servir le fichier pré-généré
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
+        logger.info(f"PDF pré-généré servi: {pdf_path}")
+    else:
+        # Fallback : générer à la demande (pour anciennes analyses)
+        result = analysis.get("result")
+        if not isinstance(result, dict):
+            raise HTTPException(
+                status_code=500,
+                detail="Résultat d'analyse invalide ou absent — génération du PDF impossible.",
             )
-            pdf_bytes = future.result(timeout=30)
-    except concurrent.futures.TimeoutError:
-        raise HTTPException(
-            status_code=504,
-            detail="Génération PDF trop longue"
-        )
-    except Exception as e:
-        print(f"ERREUR PDF: {e}")
-        import traceback
-        traceback.print_exc()
+        
+        from app.report_generator import generate_pdf_report
+        pdf_bytes = generate_pdf_report(result, theme=theme_norm)
+        logger.info(f"PDF généré à la demande (fallback): {analysis_id}")
+    
+    if not pdf_bytes:
         raise HTTPException(
             status_code=500,
-            detail=f"Erreur génération PDF: {str(e)}"
-        )
-
-    if pdf_bytes is None:
-        raise HTTPException(
-            status_code=500,
-            detail="PDF généré vide"
+            detail="PDF non disponible"
         )
 
     suffix = "academique" if theme_norm == "light" else "dark"
