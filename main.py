@@ -393,27 +393,6 @@ def _run_analysis_core(analysis_id: str, file_id: str, query: str) -> None:
     })
     result["audit_trail"] = audit_trail
 
-    # Générer les PDFs en arrière-plan avant de marquer l'analyse comme terminée
-    from app.report_generator import generate_pdf_report
-    import os
-    
-    upload_dir = os.environ.get("QUANTA_UPLOAD_DIR", "/data/uploads")
-    
-    for theme in ["dark", "light"]:
-        try:
-            pdf_bytes = generate_pdf_report(result, theme=theme)
-            if pdf_bytes:
-                pdf_path = os.path.join(
-                    upload_dir,
-                    f"report_{analysis_id}_{theme}.pdf"
-                )
-                os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-                with open(pdf_path, "wb") as f:
-                    f.write(pdf_bytes)
-                logger.info(f"PDF {theme} généré: {pdf_path}")
-        except Exception as e:
-            logger.error(f"Erreur PDF {theme}: {e}")
-
     db.update_analysis(analysis_id, status="done", result=result, updated_at=_now())
 
 
@@ -529,33 +508,38 @@ def get_report(
     if theme_norm not in {"dark", "light"}:
         theme_norm = "dark"
 
-    # Chercher le fichier pré-généré
-    import os
-    upload_dir = os.environ.get("QUANTA_UPLOAD_DIR", "/data/uploads")
-    pdf_path = os.path.join(upload_dir, f"report_{analysis_id}_{theme_norm}.pdf")
-    
-    if os.path.exists(pdf_path):
-        # Servir le fichier pré-généré
-        with open(pdf_path, "rb") as f:
-            pdf_bytes = f.read()
-        logger.info(f"PDF pré-généré servi: {pdf_path}")
+    result = analysis.get("result")
+    if not isinstance(result, dict):
+        raise HTTPException(
+            status_code=500,
+            detail="Résultat d'analyse invalide ou absent — génération du PDF impossible.",
+        )
+
+    # Détecter si dataset volumineux
+    n_rows = (result.get("analysis", {})
+              .get("diagnosis", {})
+              .get("n_rows", 0))
+    n_cols = (result.get("analysis", {})
+              .get("diagnosis", {})
+              .get("n_cols", 0))
+    is_large = n_rows > 1000 or n_cols > 10
+    logger.info(f"Dataset size: {n_rows} rows, {n_cols} cols, is_large={is_large}")
+
+    if is_large:
+        # PDF léger fpdf2 sans graphiques
+        from app.report_generator import generate_lightweight_pdf
+        pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm)
+        logger.info(f"PDF léger généré: {analysis_id}")
     else:
-        # Fallback : générer à la demande (pour anciennes analyses)
-        result = analysis.get("result")
-        if not isinstance(result, dict):
-            raise HTTPException(
-                status_code=500,
-                detail="Résultat d'analyse invalide ou absent — génération du PDF impossible.",
-            )
-        
+        # PDF complet WeasyPrint
         from app.report_generator import generate_pdf_report
         pdf_bytes = generate_pdf_report(result, theme=theme_norm)
-        logger.info(f"PDF généré à la demande (fallback): {analysis_id}")
+        logger.info(f"PDF complet généré: {analysis_id}")
     
     if not pdf_bytes:
         raise HTTPException(
             status_code=500,
-            detail="PDF non disponible"
+            detail="Erreur génération PDF"
         )
 
     suffix = "academique" if theme_norm == "light" else "dark"
