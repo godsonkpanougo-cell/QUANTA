@@ -515,26 +515,16 @@ def get_report(
             detail="Résultat d'analyse invalide ou absent — génération du PDF impossible.",
         )
 
-    # Détecter si dataset volumineux
-    n_rows = (result.get("analysis", {})
-              .get("diagnosis", {})
-              .get("n_rows", 0))
-    n_cols = (result.get("analysis", {})
-              .get("diagnosis", {})
-              .get("n_cols", 0))
-    is_large = n_rows > 1000 or n_cols > 10
-    logger.info(f"Dataset size: {n_rows} rows, {n_cols} cols, is_large={is_large}")
-
-    if is_large:
-        # PDF léger fpdf2 sans graphiques
-        from app.report_generator import generate_lightweight_pdf
-        pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm)
-        logger.info(f"PDF léger généré: {analysis_id}")
+    # Essayer PDF chunked pour tous les datasets
+    from app.report_generator import generate_pdf_chunked, generate_lightweight_pdf
+    pdf_bytes = generate_pdf_chunked(result, theme=theme_norm)
+    
+    if pdf_bytes:
+        logger.info(f"PDF chunked généré: {analysis_id}")
     else:
-        # PDF complet WeasyPrint
-        from app.report_generator import generate_pdf_report
-        pdf_bytes = generate_pdf_report(result, theme=theme_norm)
-        logger.info(f"PDF complet généré: {analysis_id}")
+        # Fallback PDF léger fpdf2
+        logger.warning(f"PDF chunked échoué, fallback PDF léger: {analysis_id}")
+        pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm)
     
     if not pdf_bytes:
         raise HTTPException(

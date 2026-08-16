@@ -50,4 +50,5 @@ structlog==24.1.0
 slowapi==0.1.9
 apscheduler==3.10.4
 fpdf2==2.8.1
+pypdf==4.3.1
 prince==0.13.1

@@ -66,6 +66,115 @@ def _get_weasyprint():
         return None
 
 
+def _weasyprint_safe(html: str) -> bytes | None:
+    """WeasyPrint avec gestion d'erreur."""
+    try:
+        HTML = _get_weasyprint()
+        if HTML is None:
+            return None
+        return HTML(string=html).write_pdf()
+    except Exception as e:
+        print(f"WeasyPrint error: {e}")
+        return None
+
+
+def _split_html_by_sections(full_html: str) -> list[str]:
+    """Divise le HTML complet en sections basées sur les balises <section>."""
+    import re
+    # Trouver toutes les sections avec leur contenu
+    pattern = r'<section class="section">(.*?)</section>'
+    sections = re.findall(pattern, full_html, re.DOTALL)
+    return sections
+
+
+def _wrap_section_in_html(section_html: str, theme: str = "dark") -> str:
+    """Enveloppe une section dans un HTML complet avec CSS."""
+    css = _get_css(theme)
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>{css}</style>
+</head>
+<body>
+    {section_html}
+</body>
+</html>"""
+
+
+def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -> bytes | None:
+    """
+    Génère le PDF en chunks séparés pour éviter le dépassement mémoire.
+    Divise le HTML en sections et génère chaque chunk séparément.
+    """
+    try:
+        import gc
+        from pypdf import PdfWriter
+        import io
+        
+        # Générer le HTML complet
+        full_html = _build_html(analysis_result, theme)
+        
+        # Diviser en sections
+        sections = _split_html_by_sections(full_html)
+        
+        writer = PdfWriter()
+        
+        # Générer chaque section comme un chunk séparé
+        for i, section_html in enumerate(sections):
+            # Limiter les graphiques dans le chunk 2 (analyses statistiques)
+            if i == 1:  # Section 2 = analyses statistiques
+                section_html = _limit_charts_in_html(section_html, max_charts=2)
+            
+            # Envelopper dans un HTML complet
+            wrapped_html = _wrap_section_in_html(section_html, theme)
+            
+            # Générer PDF pour ce chunk
+            pdf_chunk = _weasyprint_safe(wrapped_html)
+            if pdf_chunk:
+                from pypdf import PdfReader
+                reader = PdfReader(io.BytesIO(pdf_chunk))
+                for page in reader.pages:
+                    writer.add_page(page)
+            
+            # Libérer la mémoire
+            del pdf_chunk, wrapped_html, section_html
+            gc.collect()
+        
+        # Fusionner en un seul PDF
+        output = io.BytesIO()
+        writer.write(output)
+        return output.getvalue()
+    
+    except Exception as e:
+        print(f"Erreur PDF chunked: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def _limit_charts_in_html(html: str, max_charts: int = 2) -> str:
+    """Limite le nombre d'images dans le HTML."""
+    import re
+    # Trouver toutes les balises img
+    img_pattern = r'<img[^>]*>'
+    images = re.findall(img_pattern, html)
+    
+    if len(images) <= max_charts:
+        return html
+    
+    # Garder seulement les max_charts premières images
+    kept_images = images[:max_charts]
+    
+    # Remplacer toutes les images par les gardées
+    result = html
+    for i, img in enumerate(images):
+        if i >= max_charts:
+            result = result.replace(img, '', 1)
+    
+    return result
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS D'EXTRACTION (défensifs — jamais d'exception sur clé absente)
 # ═══════════════════════════════════════════════════════════════════════════════
