@@ -89,7 +89,7 @@ def _split_html_by_sections(full_html: str) -> list[str]:
 
 def _wrap_section_in_html(section_html: str, theme: str = "dark") -> str:
     """Enveloppe une section dans un HTML complet avec CSS."""
-    css = _get_css(theme)
+    css = _css()
     return f"""<!DOCTYPE html>
 <html>
 <head>
