@@ -134,7 +134,7 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
             
             # Limiter les graphiques dans le chunk 2 (analyses statistiques)
             if i == 1:  # Section 2 = analyses statistiques
-                section_html = _limit_charts_in_html(section_html, max_charts=2)
+                section_html = _limit_charts_in_html(section_html, max_charts=1)
                 print(f"CHUNKED PDF - Graphiques limités dans section {i+1}")
             
             # Envelopper dans un HTML complet
