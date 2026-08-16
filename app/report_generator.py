@@ -112,30 +112,46 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         from pypdf import PdfWriter
         import io
         
+        print("CHUNKED PDF - Début génération")
+        
         # Générer le HTML complet
         full_html = _build_html(analysis_result, theme)
+        print(f"CHUNKED PDF - HTML généré, longueur: {len(full_html)}")
         
         # Diviser en sections
         sections = _split_html_by_sections(full_html)
+        print(f"CHUNKED PDF - Sections trouvées: {len(sections)}")
+        
+        if not sections:
+            print("CHUNKED PDF - ERREUR: Aucune section trouvée!")
+            return None
         
         writer = PdfWriter()
         
         # Générer chaque section comme un chunk séparé
         for i, section_html in enumerate(sections):
+            print(f"CHUNKED PDF - Traitement section {i+1}/{len(sections)}, longueur: {len(section_html)}")
+            
             # Limiter les graphiques dans le chunk 2 (analyses statistiques)
             if i == 1:  # Section 2 = analyses statistiques
                 section_html = _limit_charts_in_html(section_html, max_charts=2)
+                print(f"CHUNKED PDF - Graphiques limités dans section {i+1}")
             
             # Envelopper dans un HTML complet
             wrapped_html = _wrap_section_in_html(section_html, theme)
+            print(f"CHUNKED PDF - HTML enveloppé pour section {i+1}, longueur: {len(wrapped_html)}")
             
             # Générer PDF pour ce chunk
             pdf_chunk = _weasyprint_safe(wrapped_html)
             if pdf_chunk:
+                print(f"CHUNKED PDF - PDF chunk {i+1} généré, taille: {len(pdf_chunk)}")
                 from pypdf import PdfReader
                 reader = PdfReader(io.BytesIO(pdf_chunk))
+                print(f"CHUNKED PDF - Chunk {i+1} a {len(reader.pages)} pages")
                 for page in reader.pages:
                     writer.add_page(page)
+            else:
+                print(f"CHUNKED PDF - ERREUR: Chunk {i+1} échoué")
             
             # Libérer la mémoire
             del pdf_chunk, wrapped_html, section_html
@@ -144,10 +160,12 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         # Fusionner en un seul PDF
         output = io.BytesIO()
         writer.write(output)
-        return output.getvalue()
+        result = output.getvalue()
+        print(f"CHUNKED PDF - PDF final généré, taille: {len(result)}")
+        return result
     
     except Exception as e:
-        print(f"Erreur PDF chunked: {e}")
+        print(f"CHUNKED PDF - Erreur: {e}")
         import traceback
         traceback.print_exc()
         return None
