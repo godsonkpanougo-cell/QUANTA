@@ -81,8 +81,8 @@ def _weasyprint_safe(html: str) -> bytes | None:
 def _split_html_by_sections(full_html: str) -> list[str]:
     """Divise le HTML complet en sections basées sur les balises <section>."""
     import re
-    # Trouver toutes les sections avec leur contenu
-    pattern = r'<section class="section">(.*?)</section>'
+    # Trouver toutes les sections avec leur contenu (peu importe la classe)
+    pattern = r'<section[^>]*>(.*?)</section>'
     sections = re.findall(pattern, full_html, re.DOTALL)
     return sections
 
