@@ -66,7 +66,7 @@ def _llm_config() -> dict[str, dict[str, str]]:
         "primary": {
             "api_key": os.environ.get("PRIMARY_API_KEY", os.environ.get("GROQ_API_KEY", "")),
             "base_url": os.environ.get("PRIMARY_BASE_URL", "https://api.groq.com/openai/v1"),
-            "model": os.environ.get("PRIMARY_MODEL", "llama-3.3-70b-versatile"),
+            "model": os.environ.get("PRIMARY_MODEL", "llama-3.1-8b-instant"),
         },
         "fallback": {
             "api_key": os.environ.get("FALLBACK_API_KEY", os.environ.get("OPENROUTER_API_KEY", "")),
