@@ -66,12 +66,12 @@ def _llm_config() -> dict[str, dict[str, str]]:
         "primary": {
             "api_key": os.environ.get("PRIMARY_API_KEY", os.environ.get("GROQ_API_KEY", "")),
             "base_url": os.environ.get("PRIMARY_BASE_URL", "https://api.groq.com/openai/v1"),
-            "model": os.environ.get("PRIMARY_MODEL", "gemma2-9b-it"),
+            "model": os.environ.get("PRIMARY_MODEL", "mixtral-8x7b-32768"),
         },
         "fallback": {
             "api_key": os.environ.get("FALLBACK_API_KEY", os.environ.get("OPENROUTER_API_KEY", "")),
             "base_url": os.environ.get("FALLBACK_BASE_URL", "https://openrouter.ai/api/v1"),
-            "model": os.environ.get("FALLBACK_MODEL", "moonshot/kimi-k2-instruct"),
+            "model": os.environ.get("FALLBACK_MODEL", "meta-llama/llama-3-8b-instruct:free"),
         },
     }
 
