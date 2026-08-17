@@ -25,8 +25,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Limite absolue de graphiques dans le PDF pour éviter crash mémoire WeasyPrint
-MAX_CHARTS_IN_PDF = 3
+# Limite de graphiques dans le PDF (subprocess PDF Worker peut utiliser toute la RAM)
+MAX_CHARTS_IN_PDF = 10
 
 
 def _select_charts(all_charts: dict, max_charts: int = MAX_CHARTS_IN_PDF) -> dict:
