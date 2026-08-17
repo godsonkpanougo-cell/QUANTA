@@ -71,7 +71,7 @@ def _llm_config() -> dict[str, dict[str, str]]:
         "fallback": {
             "api_key": os.environ.get("FALLBACK_API_KEY", os.environ.get("OPENROUTER_API_KEY", "")),
             "base_url": os.environ.get("FALLBACK_BASE_URL", "https://openrouter.ai/api/v1"),
-            "model": os.environ.get("FALLBACK_MODEL", "deepseek/deepseek-chat"),
+            "model": os.environ.get("FALLBACK_MODEL", "moonshotai/kimi-k2-instruct"),
         },
     }
 
