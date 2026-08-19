@@ -45,7 +45,6 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 GROQ_MODEL = os.environ.get("PRIMARY_MODEL", "llama-3.3-70b-versatile")
 OPENROUTER_MODEL = os.environ.get("FALLBACK_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
 
-# Afficher les modèles au démarrage pour confirmer
 print(f"LLM Primary model: {GROQ_MODEL}")
 print(f"LLM Fallback model: {OPENROUTER_MODEL}")
 
