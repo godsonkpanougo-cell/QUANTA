@@ -41,6 +41,14 @@ from app.compute.test_selector import AnalysisIntent
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
+# Modèles LLM lus depuis les variables d'environnement
+GROQ_MODEL = os.environ.get("PRIMARY_MODEL", "llama-3.3-70b-versatile")
+OPENROUTER_MODEL = os.environ.get("FALLBACK_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
+
+# Afficher les modèles au démarrage pour confirmer
+print(f"LLM Primary model: {GROQ_MODEL}")
+print(f"LLM Fallback model: {OPENROUTER_MODEL}")
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION LLM — agnostique au provider
@@ -66,12 +74,12 @@ def _llm_config() -> dict[str, dict[str, str]]:
         "primary": {
             "api_key": os.environ.get("PRIMARY_API_KEY", os.environ.get("GROQ_API_KEY", "")),
             "base_url": os.environ.get("PRIMARY_BASE_URL", "https://api.groq.com/openai/v1"),
-            "model": os.environ.get("PRIMARY_MODEL", "mixtral-8x7b-32768"),
+            "model": GROQ_MODEL,
         },
         "fallback": {
             "api_key": os.environ.get("FALLBACK_API_KEY", os.environ.get("OPENROUTER_API_KEY", "")),
             "base_url": os.environ.get("FALLBACK_BASE_URL", "https://openrouter.ai/api/v1"),
-            "model": os.environ.get("FALLBACK_MODEL", "meta-llama/llama-3-8b-instruct:free"),
+            "model": OPENROUTER_MODEL,
         },
     }
 
