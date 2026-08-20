@@ -520,6 +520,8 @@ def get_report(
     upload_dir = os.environ.get("QUANTA_UPLOAD_DIR", "/data/uploads")
     os.makedirs(upload_dir, exist_ok=True)
     
+    print(f"DEBUG REPORT - analysis_id: {analysis_id}, theme: {theme_norm}")
+    
     # Chercher PDF déjà généré
     pdf_path = os.path.join(upload_dir, f"report_{analysis_id}_{theme_norm}.pdf")
     
