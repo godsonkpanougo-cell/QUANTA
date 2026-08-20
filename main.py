@@ -523,56 +523,39 @@ def get_report(
     # Chercher PDF déjà généré
     pdf_path = os.path.join(upload_dir, f"report_{analysis_id}_{theme_norm}.pdf")
     
-    if not os.path.exists(pdf_path):
-        # Écrire le JSON d'entrée dans un fichier temp
-        with tempfile.NamedTemporaryFile(
-            mode='w', suffix='.json',
-            delete=False, encoding='utf-8'
-        ) as tmp:
-            json.dump(result, tmp, ensure_ascii=False)
-            input_path = tmp.name
+    # Supprimer PDF existant pour forcer régénération avec PDF Worker
+    if os.path.exists(pdf_path):
+        os.unlink(pdf_path)
+    
+    # Toujours lancer le PDF Worker
+    # Écrire le JSON d'entrée dans un fichier temp
+    with tempfile.NamedTemporaryFile(
+        mode='w', suffix='.json',
+        delete=False, encoding='utf-8'
+    ) as tmp:
+        json.dump(result, tmp, ensure_ascii=False)
+        input_path = tmp.name
+    
+    try:
+        # Lancer le subprocess PDF Worker
+        # Timeout 300s (5 minutes)
+        logger.info(f"PDF Worker - Lancement subprocess pour {analysis_id}")
+        proc = subprocess.run(
+            [sys.executable, "app/pdf_worker.py", input_path, pdf_path, theme_norm],
+            timeout=300,
+            capture_output=True,
+            text=True
+        )
         
-        try:
-            # Lancer le subprocess PDF Worker
-            # Timeout 300s (5 minutes)
-            logger.info(f"PDF Worker - Lancement subprocess pour {analysis_id}")
-            proc = subprocess.run(
-                [sys.executable, "app/pdf_worker.py", input_path, pdf_path, theme_norm],
-                timeout=300,
-                capture_output=True,
-                text=True
-            )
-            
-            logger.info(f"PDF Worker - Returncode: {proc.returncode}")
-            if proc.stdout:
-                logger.info(f"PDF Worker - Stdout: {proc.stdout[:500]}")
-            if proc.stderr:
-                logger.error(f"PDF Worker - Stderr: {proc.stderr[:500]}")
-            
-            if proc.returncode != 0:
-                logger.error(f"PDF Worker échoué, fallback PDF léger")
-                # Fallback PDF léger
-                from app.report_generator import generate_lightweight_pdf
-                pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm)
-                if pdf_bytes:
-                    filename = f"rapport_quanta_{analysis_id[:8]}.pdf"
-                    return Response(
-                        content=pdf_bytes,
-                        media_type="application/pdf",
-                        headers={
-                            "Content-Disposition": f"attachment; filename={filename}",
-                            "Access-Control-Allow-Origin": "*",
-                            "Access-Control-Allow-Methods": "GET",
-                            "Access-Control-Allow-Headers": "*",
-                        }
-                    )
-                raise HTTPException(status_code=500, detail="Erreur génération PDF")
-            
-            logger.info(f"PDF Worker - Succès, PDF généré: {pdf_path}")
+        logger.info(f"PDF Worker - Returncode: {proc.returncode}")
+        if proc.stdout:
+            logger.info(f"PDF Worker - Stdout: {proc.stdout[:500]}")
+        if proc.stderr:
+            logger.error(f"PDF Worker - Stderr: {proc.stderr[:500]}")
         
-        except subprocess.TimeoutExpired:
-            # Timeout 5min dépassé = très grand dataset
-            # Retourner PDF léger
+        if proc.returncode != 0:
+            logger.error(f"PDF Worker échoué, fallback PDF léger")
+            # Fallback PDF léger
             from app.report_generator import generate_lightweight_pdf
             pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm)
             if pdf_bytes:
@@ -587,14 +570,35 @@ def get_report(
                         "Access-Control-Allow-Headers": "*",
                     }
                 )
-            raise HTTPException(status_code=504, detail="Timeout génération PDF")
+            raise HTTPException(status_code=500, detail="Erreur génération PDF")
         
-        finally:
-            # Nettoyer le fichier JSON temporaire
-            try:
-                os.unlink(input_path)
-            except:
-                pass
+        logger.info(f"PDF Worker - Succès, PDF généré: {pdf_path}")
+    
+    except subprocess.TimeoutExpired:
+        # Timeout 5min dépassé = très grand dataset
+        # Retourner PDF léger
+        from app.report_generator import generate_lightweight_pdf
+        pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm)
+        if pdf_bytes:
+            filename = f"rapport_quanta_{analysis_id[:8]}.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f"attachment; filename={filename}",
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET",
+                    "Access-Control-Allow-Headers": "*",
+                }
+            )
+        raise HTTPException(status_code=504, detail="Timeout génération PDF")
+    
+    finally:
+        # Nettoyer le fichier JSON temporaire
+        try:
+            os.unlink(input_path)
+        except:
+            pass
     
     # Lire et servir le PDF
     try:
