@@ -3693,6 +3693,7 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
             resume_safe = (resume
                 .replace("\u2014", "-")
                 .replace("\u2019", "'")
+                .replace("\u2011", "-")
                 .replace("\u0153", "oe")
                 .replace("\u00e9", "e")
                 .replace("\u00e8", "e")
@@ -3726,6 +3727,7 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
                 texte_safe = (texte
                     .replace("\u2014", "-")
                     .replace("\u2019", "'")
+                    .replace("\u2011", "-")
                     .replace("\u0153", "oe")
                     .replace("\u00e9", "e")
                     .replace("\u00e8", "e")
