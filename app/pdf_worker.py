@@ -8,6 +8,10 @@ Usage: python pdf_worker.py input.json output.pdf dark
 import sys
 import json
 import os
+from pathlib import Path
+
+# Ajouter le répertoire racine au PYTHONPATH pour les imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 def main():
     if len(sys.argv) < 4:
