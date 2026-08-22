@@ -562,11 +562,11 @@ def get_report(
         )
         print(f"DEBUG - Après subprocess.run, returncode: {proc.returncode}")
         
-        logger.info(f"PDF Worker - Returncode: {proc.returncode}")
+        print(f"PDF Worker - Returncode: {proc.returncode}")
         if proc.stdout:
-            logger.info(f"PDF Worker - Stdout: {proc.stdout[:500]}")
+            print(f"PDF Worker - Stdout: {proc.stdout[:500]}")
         if proc.stderr:
-            logger.error(f"PDF Worker - Stderr: {proc.stderr[:500]}")
+            print(f"PDF Worker - Stderr: {proc.stderr[:500]}")
         
         if proc.returncode != 0:
             logger.error(f"PDF Worker échoué, fallback PDF léger")
