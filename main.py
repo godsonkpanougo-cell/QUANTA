@@ -553,12 +553,14 @@ def get_report(
         # Lancer le subprocess PDF Worker
         # Timeout 300s (5 minutes)
         logger.info(f"PDF Worker - Lancement subprocess pour {analysis_id}")
+        print(f"DEBUG - Avant subprocess.run")
         proc = subprocess.run(
             [sys.executable, "app/pdf_worker.py", input_path, pdf_path, theme_norm],
             timeout=300,
             capture_output=True,
             text=True
         )
+        print(f"DEBUG - Après subprocess.run, returncode: {proc.returncode}")
         
         logger.info(f"PDF Worker - Returncode: {proc.returncode}")
         if proc.stdout:
@@ -586,6 +588,12 @@ def get_report(
             raise HTTPException(status_code=500, detail="Erreur génération PDF")
         
         logger.info(f"PDF Worker - Succès, PDF généré: {pdf_path}")
+    
+    except Exception as e:
+        print(f"DEBUG - Exception subprocess: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
     
     except subprocess.TimeoutExpired:
         # Timeout 5min dépassé = très grand dataset
