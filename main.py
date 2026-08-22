@@ -527,7 +527,10 @@ def get_report(
     
     # Supprimer PDF existant pour forcer régénération avec PDF Worker
     if os.path.exists(pdf_path):
+        print(f"DEBUG - Suppression PDF existant: {pdf_path}")
         os.unlink(pdf_path)
+    
+    print(f"DEBUG - Lancement PDF Worker")
     
     # Toujours lancer le PDF Worker
     # Écrire le JSON d'entrée dans un fichier temp
