@@ -3711,7 +3711,7 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
                 .replace("\u00ee", "i")
                 .replace("\u00e2", "a")
             )
-            pdf.multi_cell(0, 6, resume_safe[:800])
+            pdf.multi_cell(0, 6, resume_safe)  # Plus de limite de caractères
             pdf.ln(5)
         
         # Interprétation 3 niveaux
@@ -3747,7 +3747,7 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
                     .replace("\u00e0", "a")
                     .replace("\u00e7", "c")
                 )
-                pdf.multi_cell(0, 5, texte_safe[:600])
+                pdf.multi_cell(0, 5, texte_safe)  # Plus de limite de caractères
                 pdf.ln(4)
         
         # En résumé
@@ -3762,6 +3762,36 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
             "Note : rapport allege (dataset volumineux).",
             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(5)
+        
+        # Résultats des tests
+        tests = analysis_result.get("analysis", {}).get("tests", [])
+        if tests:
+            pdf.add_page()
+            pdf.set_font("Helvetica", "B", 13)
+            pdf.set_text_color(201, 168, 76)
+            pdf.cell(0, 10, "Resultats des tests",
+                    new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.ln(5)
+            
+            for test in tests[:10]:  # Limiter à 10 tests pour éviter PDF trop long
+                test_name = test.get("test_name", "Test inconnu")
+                p_value = test.get("p_value", "N/A")
+                conclusion = test.get("conclusion", "")
+                
+                pdf.set_font("Helvetica", "B", 10)
+                pdf.set_text_color(0, 0, 0)
+                pdf.cell(0, 6, test_name,
+                        new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                
+                pdf.set_font("Helvetica", "", 9)
+                pdf.set_text_color(50, 50, 50)
+                pdf.cell(0, 5, f"p-value: {p_value}",
+                        new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                
+                if conclusion:
+                    conclusion_safe = conclusion.replace("\u2264", "<=").replace("\u2265", ">=")
+                    pdf.multi_cell(0, 5, conclusion_safe[:300])
+                pdf.ln(3)
         
         return bytes(pdf.output())
     
