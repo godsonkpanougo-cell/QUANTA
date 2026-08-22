@@ -534,12 +534,20 @@ def get_report(
     
     # Toujours lancer le PDF Worker
     # Écrire le JSON d'entrée dans un fichier temp
-    with tempfile.NamedTemporaryFile(
-        mode='w', suffix='.json',
-        delete=False, encoding='utf-8'
-    ) as tmp:
-        json.dump(result, tmp, ensure_ascii=False)
-        input_path = tmp.name
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='.json',
+            delete=False, encoding='utf-8'
+        ) as tmp:
+            print(f"DEBUG - Création fichier temp: {tmp.name}")
+            json.dump(result, tmp, ensure_ascii=False)
+            input_path = tmp.name
+            print(f"DEBUG - JSON écrit, input_path: {input_path}")
+    except Exception as e:
+        print(f"DEBUG - Erreur création fichier temp: {e}")
+        raise
+    
+    print(f"DEBUG - Entrée bloc try subprocess")
     
     try:
         # Lancer le subprocess PDF Worker
