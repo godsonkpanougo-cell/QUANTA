@@ -330,7 +330,7 @@ def _run_analysis_core(analysis_id: str, file_id: str, query: str) -> None:
     })
 
     def run_analysis_fn(intent: ts.AnalysisIntent) -> dict[str, Any]:
-        analysis = run_full_analysis(file_bytes, filename, intent)
+        analysis = run_full_analysis(file_bytes, filename, intent, theme="dark")
         # Journaliser chaque test lancé (appelé 1× en mode query, N× en auto).
         inference = analysis.get("inference") if isinstance(analysis, dict) else None
         if isinstance(inference, dict):
