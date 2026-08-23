@@ -3639,6 +3639,27 @@ def _generate_fallback_pdf(analysis_result: dict[str, Any]) -> bytes:
     return bytes(pdf.output())
 
 
+def _sanitize_for_fpdf(text: str) -> str:
+    """Remplace les caractères Unicode non supportés par la police 
+    helvetica de fpdf2 par leurs équivalents ASCII, pour garantir que 
+    ce PDF de secours ne plante jamais quel que soit le contenu."""
+    if not isinstance(text, str):
+        return text
+    replacements = {
+        "→": "->", "←": "<-", "↔": "<->",
+        "≤": "<=", "≥": ">=", "±": "+/-",
+        "χ": "chi", "²": "2", "η": "eta", "ε": "epsilon",
+        "ρ": "rho", "α": "alpha", "–": "-", "—": "-",
+        "'": "'", "'": "'", """: '"', """: '"',
+        "…": "...",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    # Filet de sécurité final : supprime tout caractère restant hors 
+    # Latin-1 plutôt que de laisser fpdf2 planter dessus.
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
 def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark") -> bytes | None:
     """
     PDF léger avec fpdf2 (zero WeasyPrint) pour les datasets volumineux.
@@ -3658,11 +3679,11 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
         # Page de garde simple
         pdf.set_font("Helvetica", "B", 24)
         pdf.set_text_color(201, 168, 76)
-        pdf.cell(0, 20, "QUANTA", align="C",
+        pdf.cell(0, 20, _sanitize_for_fpdf("QUANTA"), align="C",
                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("Helvetica", "", 14)
         pdf.set_text_color(50, 50, 50)
-        pdf.cell(0, 10, "Rapport d Analyse Statistique",
+        pdf.cell(0, 10, _sanitize_for_fpdf("Rapport d Analyse Statistique"),
                 align="C", new_x=XPos.LMARGIN, 
                 new_y=YPos.NEXT)
         pdf.ln(10)
@@ -3675,7 +3696,7 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
         niveau = confidence.get("niveau", "")
         pdf.set_font("Helvetica", "B", 14)
         pdf.cell(0, 10,
-            f"Score de confiance : {int(score)}/100 - {niveau}",
+            _sanitize_for_fpdf(f"Score de confiance : {int(score)}/100 - {niveau}"),
             align="C", new_x=XPos.LMARGIN, 
             new_y=YPos.NEXT)
         pdf.ln(10)
@@ -3686,32 +3707,10 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
         if resume:
             pdf.set_font("Helvetica", "B", 12)
             pdf.set_text_color(0, 0, 0)
-            pdf.cell(0, 8, "Resume executif",
+            pdf.cell(0, 8, _sanitize_for_fpdf("Resume executif"),
                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_font("Helvetica", "", 10)
-            # Remplacer caractères non-Latin1
-            resume_safe = (resume
-                .replace("\u2014", "-")
-                .replace("\u2019", "'")
-                .replace("\u2011", "-")
-                .replace("\u202f", " ")
-                .replace("\u03b5", "e")
-                .replace("\u03b1", "a")
-                .replace("\u2248", "~")
-                .replace("\u207b", "-")
-                .replace("\u2264", "<=")
-                .replace("\u0153", "oe")
-                .replace("\u00e9", "e")
-                .replace("\u00e8", "e")
-                .replace("\u00ea", "e")
-                .replace("\u00e0", "a")
-                .replace("\u00e7", "c")
-                .replace("\u00f4", "o")
-                .replace("\u00fb", "u")
-                .replace("\u00ee", "i")
-                .replace("\u00e2", "a")
-            )
-            pdf.multi_cell(0, 6, resume_safe)  # Plus de limite de caractères
+            pdf.multi_cell(0, 6, _sanitize_for_fpdf(resume))  # Plus de limite de caractères
             pdf.ln(5)
         
         # Interprétation 3 niveaux
@@ -3725,41 +3724,24 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
             if texte:
                 pdf.set_font("Helvetica", "B", 11)
                 pdf.set_text_color(0, 100, 150)
-                pdf.cell(0, 8, niveau_name,
+                pdf.cell(0, 8, _sanitize_for_fpdf(niveau_name),
                         new_x=XPos.LMARGIN, 
                         new_y=YPos.NEXT)
                 pdf.set_font("Helvetica", "", 9)
                 pdf.set_text_color(50, 50, 50)
-                texte_safe = (texte
-                    .replace("\u2014", "-")
-                    .replace("\u2019", "'")
-                    .replace("\u2011", "-")
-                    .replace("\u202f", " ")
-                    .replace("\u03b5", "e")
-                    .replace("\u03b1", "a")
-                    .replace("\u2248", "~")
-                    .replace("\u207b", "-")
-                    .replace("\u2264", "<=")
-                    .replace("\u0153", "oe")
-                    .replace("\u00e9", "e")
-                    .replace("\u00e8", "e")
-                    .replace("\u00ea", "e")
-                    .replace("\u00e0", "a")
-                    .replace("\u00e7", "c")
-                )
-                pdf.multi_cell(0, 5, texte_safe)  # Plus de limite de caractères
+                pdf.multi_cell(0, 5, _sanitize_for_fpdf(texte))  # Plus de limite de caractères
                 pdf.ln(4)
         
         # En résumé
         pdf.add_page()
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(201, 168, 76)
-        pdf.cell(0, 10, "En resume",
+        pdf.cell(0, 10, _sanitize_for_fpdf("En resume"),
                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("Helvetica", "", 10)
         pdf.set_text_color(50, 50, 50)
         pdf.cell(0, 7,
-            "Note : rapport allege (dataset volumineux).",
+            _sanitize_for_fpdf("Note : rapport allege (dataset volumineux)."),
             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(5)
         
@@ -3769,7 +3751,7 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
             pdf.add_page()
             pdf.set_font("Helvetica", "B", 13)
             pdf.set_text_color(201, 168, 76)
-            pdf.cell(0, 10, "Resultats des tests",
+            pdf.cell(0, 10, _sanitize_for_fpdf("Resultats des tests"),
                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.ln(5)
             
@@ -3780,17 +3762,16 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
                 
                 pdf.set_font("Helvetica", "B", 10)
                 pdf.set_text_color(0, 0, 0)
-                pdf.cell(0, 6, test_name,
+                pdf.cell(0, 6, _sanitize_for_fpdf(test_name),
                         new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 
                 pdf.set_font("Helvetica", "", 9)
                 pdf.set_text_color(50, 50, 50)
-                pdf.cell(0, 5, f"p-value: {p_value}",
+                pdf.cell(0, 5, _sanitize_for_fpdf(f"p-value: {p_value}"),
                         new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 
                 if conclusion:
-                    conclusion_safe = conclusion.replace("\u2264", "<=").replace("\u2265", ">=")
-                    pdf.multi_cell(0, 5, conclusion_safe[:300])
+                    pdf.multi_cell(0, 5, _sanitize_for_fpdf(conclusion[:300]))
                 pdf.ln(3)
         
         return bytes(pdf.output())
