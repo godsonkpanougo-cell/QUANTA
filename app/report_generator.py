@@ -3641,21 +3641,28 @@ def _generate_fallback_pdf(analysis_result: dict[str, Any]) -> bytes:
 
 def _sanitize_for_fpdf(text: str) -> str:
     """Remplace les caractères Unicode non supportés par la police 
-    helvetica de fpdf2 par leurs équivalents ASCII, pour garantir que 
-    ce PDF de secours ne plante jamais quel que soit le contenu."""
+    core fpdf2 (helvetica) par des équivalents ASCII, pour garantir 
+    que ce fallback ne plante jamais."""
     if not isinstance(text, str):
         return text
     replacements = {
-        "→": "->", "←": "<-", "↔": "<->",
-        "≤": "<=", "≥": ">=", "±": "+/-",
-        "χ": "chi", "²": "2", "η": "eta", "ε": "epsilon",
-        "ρ": "rho", "α": "alpha", "–": "-", "—": "-",
-        "'": "'", "'": "'", """: '"', """: '"',
+        "→": "->",
+        "←": "<-",
+        "–": "-",
+        "—": "-",
+        "'": "'",
+        "'": "'",
+        """: '"',
+        """: '"',
         "…": "...",
+        "×": "x",
+        "≥": ">=",
+        "≤": "<=",
+        "≠": "!=",
     }
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-    # Filet de sécurité final : supprime tout caractère restant hors 
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+    # Filet de sécurité final : supprime tout caractère encore hors 
     # Latin-1 plutôt que de laisser fpdf2 planter dessus.
     return text.encode("latin-1", errors="replace").decode("latin-1")
 
