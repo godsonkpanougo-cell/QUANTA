@@ -26,11 +26,16 @@ def main():
         analysis_result = json.load(f)
     
     # Importer WeasyPrint uniquement dans ce processus
-    from app.report_generator import generate_pdf_report
-    
-    pdf_bytes = generate_pdf_report(
-        analysis_result, theme=theme
-    )
+    from app.report_generator import generate_pdf_chunked, generate_pdf_report
+
+    pdf_bytes = None
+    try:
+        pdf_bytes = generate_pdf_chunked(analysis_result, theme=theme)
+    except Exception as e:
+        print(f"generate_pdf_chunked a échoué, tentative avec generate_pdf_report: {e}")
+
+    if not pdf_bytes:
+        pdf_bytes = generate_pdf_report(analysis_result, theme=theme)
     
     if pdf_bytes:
         with open(output_path, 'wb') as f:
