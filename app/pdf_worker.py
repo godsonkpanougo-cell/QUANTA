@@ -9,13 +9,21 @@ import sys
 import json
 import os
 from pathlib import Path
+import resource
+
+def _rss_mo():
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+
+print(f"MEM CHECKPOINT [tout début fichier, avant sys.path.insert] : {_rss_mo():.1f} Mo", flush=True)
 
 # Ajouter le répertoire racine au PYTHONPATH pour les imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+print(f"MEM CHECKPOINT [après sys.path.insert] : {_rss_mo():.1f} Mo", flush=True)
+print(f"MODULES DEJA CHARGES : {sorted(m for m in sys.modules if m.split('.')[0] in ('pandas','numpy','matplotlib','scipy','statsmodels','sklearn','weasyprint'))}", flush=True)
+
 # Configuration pour sortie non tamponnée
 sys.stdout.reconfigure(line_buffering=True)
-import resource
 
 
 def _mem_checkpoint(label: str) -> None:
@@ -37,6 +45,8 @@ def main():
         analysis_result = json.load(f)
 
     _mem_checkpoint("après chargement JSON")
+
+    print(f"MODULES AVANT IMPORT REPORT_GENERATOR : {sorted(m for m in sys.modules if m.split('.')[0] in ('pandas','numpy','matplotlib','scipy','statsmodels','sklearn','weasyprint'))}", flush=True)
 
     # Importer WeasyPrint uniquement dans ce processus
     from app.report_generator import generate_pdf_chunked, generate_pdf_report
