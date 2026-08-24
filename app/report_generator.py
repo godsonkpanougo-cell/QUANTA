@@ -351,15 +351,23 @@ def _next_table_caption(table_counter: list[int], title: str) -> str:
 
 def _engine_versions_line() -> str:
     """Ligne de versioning moteur pour la page de garde."""
+    from importlib.metadata import version as _pkg_version
     import sys
 
-    import scipy
-    import statsmodels
+    try:
+        scipy_version = _pkg_version("scipy")
+    except Exception:
+        scipy_version = "?"
+
+    try:
+        statsmodels_version = _pkg_version("statsmodels")
+    except Exception:
+        statsmodels_version = "?"
 
     python_ver = sys.version.split()[0]
     return (
         f"QUANTA v0.1.0 · Python {python_ver} · "
-        f"scipy {scipy.__version__} · statsmodels {statsmodels.__version__}"
+        f"scipy {scipy_version} · statsmodels {statsmodels_version}"
     )
 
 
