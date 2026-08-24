@@ -1,5 +1,7 @@
 FROM python:3.11-slim
 
+ENV PYTHONUNBUFFERED=1
+
 RUN apt-get update && apt-get install -y \
     python3-cffi \
     python3-brotli \

@@ -107,51 +107,61 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
     Génère le PDF en chunks séparés pour éviter le dépassement mémoire.
     Divise le HTML en sections et génère chaque chunk séparément.
     """
+    def _mem_checkpoint(label: str) -> None:
+        try:
+            import resource
+            mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            print(f"MEM CHECKPOINT [{label}] : {mb:.1f} Mo", flush=True)
+        except Exception:
+            pass  # resource non disponible sur certaines plateformes
+
     try:
         import gc
         from pypdf import PdfWriter
         import io
-        
-        print("CHUNKED PDF - Début génération")
+
+        print("CHUNKED PDF - Début génération", flush=True)
         
         # Générer le HTML complet
         full_html = _build_html(analysis_result, theme)
-        print(f"CHUNKED PDF - HTML généré, longueur: {len(full_html)}")
-        
+        print(f"CHUNKED PDF - HTML généré, longueur: {len(full_html)}", flush=True)
+
         # Diviser en sections
         sections = _split_html_by_sections(full_html)
-        print(f"CHUNKED PDF - Sections trouvées: {len(sections)}")
-        
+        print(f"CHUNKED PDF - Sections trouvées: {len(sections)}", flush=True)
+
         if not sections:
-            print("CHUNKED PDF - ERREUR: Aucune section trouvée!")
+            print("CHUNKED PDF - ERREUR: Aucune section trouvée!", flush=True)
             return None
         
         writer = PdfWriter()
         
         # Générer chaque section comme un chunk séparé
         for i, section_html in enumerate(sections):
-            print(f"CHUNKED PDF - Traitement section {i+1}/{len(sections)}, longueur: {len(section_html)}")
-            
+            print(f"CHUNKED PDF - Traitement section {i+1}/{len(sections)}, longueur: {len(section_html)}", flush=True)
+
             # Limiter les graphiques dans le chunk 2 (analyses statistiques)
             if i == 1:  # Section 2 = analyses statistiques
                 section_html = _limit_charts_in_html(section_html, max_charts=1)
-                print(f"CHUNKED PDF - Graphiques limités dans section {i+1}")
-            
+                print(f"CHUNKED PDF - Graphiques limités dans section {i+1}", flush=True)
+
             # Envelopper dans un HTML complet
             wrapped_html = _wrap_section_in_html(section_html, theme)
-            print(f"CHUNKED PDF - HTML enveloppé pour section {i+1}, longueur: {len(wrapped_html)}")
-            
+            print(f"CHUNKED PDF - HTML enveloppé pour section {i+1}, longueur: {len(wrapped_html)}", flush=True)
+
             # Générer PDF pour ce chunk
+            _mem_checkpoint(f"avant WeasyPrint section {i+1}")
             pdf_chunk = _weasyprint_safe(wrapped_html)
+            _mem_checkpoint(f"après WeasyPrint section {i+1}")
             if pdf_chunk:
-                print(f"CHUNKED PDF - PDF chunk {i+1} généré, taille: {len(pdf_chunk)}")
+                print(f"CHUNKED PDF - PDF chunk {i+1} généré, taille: {len(pdf_chunk)}", flush=True)
                 from pypdf import PdfReader
                 reader = PdfReader(io.BytesIO(pdf_chunk))
-                print(f"CHUNKED PDF - Chunk {i+1} a {len(reader.pages)} pages")
+                print(f"CHUNKED PDF - Chunk {i+1} a {len(reader.pages)} pages", flush=True)
                 for page in reader.pages:
                     writer.add_page(page)
             else:
-                print(f"CHUNKED PDF - ERREUR: Chunk {i+1} échoué")
+                print(f"CHUNKED PDF - ERREUR: Chunk {i+1} échoué", flush=True)
             
             # Libérer la mémoire
             del pdf_chunk, wrapped_html, section_html
@@ -161,11 +171,11 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         output = io.BytesIO()
         writer.write(output)
         result = output.getvalue()
-        print(f"CHUNKED PDF - PDF final généré, taille: {len(result)}")
+        print(f"CHUNKED PDF - PDF final généré, taille: {len(result)}", flush=True)
         return result
-    
+
     except Exception as e:
-        print(f"CHUNKED PDF - Erreur: {e}")
+        print(f"CHUNKED PDF - Erreur: {e}", flush=True)
         import traceback
         traceback.print_exc()
         return None

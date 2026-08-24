@@ -13,20 +13,35 @@ from pathlib import Path
 # Ajouter le répertoire racine au PYTHONPATH pour les imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Configuration pour sortie non tamponnée
+sys.stdout.reconfigure(line_buffering=True)
+import resource
+
+
+def _mem_checkpoint(label: str) -> None:
+    mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    print(f"MEM CHECKPOINT [{label}] : {mb:.1f} Mo", flush=True)
+
 def main():
     if len(sys.argv) < 4:
         sys.exit(1)
-    
+
+    _mem_checkpoint("début main")
+
     input_path = sys.argv[1]
     output_path = sys.argv[2]
     theme = sys.argv[3]
-    
+
     # Charger les données
     with open(input_path, 'r', encoding='utf-8') as f:
         analysis_result = json.load(f)
-    
+
+    _mem_checkpoint("après chargement JSON")
+
     # Importer WeasyPrint uniquement dans ce processus
     from app.report_generator import generate_pdf_chunked, generate_pdf_report
+
+    _mem_checkpoint("après import report_generator")
 
     pdf_bytes = None
     try:
