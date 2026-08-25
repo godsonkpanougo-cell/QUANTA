@@ -150,10 +150,11 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         for i, section_html in enumerate(sections):
             print(f"CHUNKED PDF - Traitement section {i+1}/{len(sections)}, longueur: {len(section_html)}", flush=True)
 
-            # Limiter les graphiques dans le chunk 2 (analyses statistiques)
-            if i == 1:  # Section 2 = analyses statistiques
+            # Limiter les graphiques dans les sections volumineuses
+            if len(section_html) > 100_000:
+                taille_avant = len(section_html)
                 section_html = _limit_charts_in_html(section_html, max_charts=1)
-                print(f"CHUNKED PDF - Graphiques limités dans section {i+1}", flush=True)
+                print(f"CHUNKED PDF - Graphiques limités dans section {i+1} (taille avant: {taille_avant}, après: {len(section_html)})", flush=True)
 
             # Envelopper dans un HTML complet
             wrapped_html = _wrap_section_in_html(section_html, theme)
