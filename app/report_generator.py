@@ -150,9 +150,16 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
             print(f"CHUNKED PDF - HTML enveloppé pour section {i+1}, longueur: {len(wrapped_html)}", flush=True)
 
             # Générer PDF pour ce chunk
-            _mem_checkpoint(f"avant WeasyPrint section {i+1}")
+            import resource
+            section_id = section_html[:80].replace("\n", " ") if len(section_html) > 80 else section_html.replace("\n", " ")
+            mb_avant = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            print(f"CHUNKED PDF - Section {i+1} ({len(section_html)} car.) - ID: {section_id} - AVANT rendu : {mb_avant:.1f} Mo", flush=True)
+            
             pdf_chunk = _weasyprint_safe(wrapped_html)
-            _mem_checkpoint(f"après WeasyPrint section {i+1}")
+            
+            if pdf_chunk:
+                mb_apres = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+                print(f"CHUNKED PDF - Section {i+1} - APRÈS rendu : {mb_apres:.1f} Mo (delta: {mb_apres - mb_avant:.1f} Mo)", flush=True)
             if pdf_chunk:
                 print(f"CHUNKED PDF - PDF chunk {i+1} généré, taille: {len(pdf_chunk)}", flush=True)
                 from pypdf import PdfReader
