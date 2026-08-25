@@ -123,7 +123,14 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         print("CHUNKED PDF - Début génération", flush=True)
         
         # Générer le HTML complet
+        import resource
+        mb_avant_acm = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        print(f"CHUNKED PDF - AVANT construction HTML (incluant ACM) : {mb_avant_acm:.1f} Mo", flush=True)
+        
         full_html = _build_html(analysis_result, theme)
+        
+        mb_apres_acm = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        print(f"CHUNKED PDF - APRÈS construction HTML (incluant ACM) : {mb_apres_acm:.1f} Mo (delta: {mb_apres_acm - mb_avant_acm:.1f} Mo)", flush=True)
         print(f"CHUNKED PDF - HTML généré, longueur: {len(full_html)}", flush=True)
 
         # Diviser en sections
@@ -135,6 +142,9 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
             return None
         
         writer = PdfWriter()
+        
+        # Checkpoint avant boucle de rendu
+        print(f"CHUNKED PDF - AVANT boucle de rendu, {len(sections)} sections construites : {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.1f} Mo", flush=True)
         
         # Générer chaque section comme un chunk séparé
         for i, section_html in enumerate(sections):
