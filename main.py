@@ -50,11 +50,10 @@ from slowapi.util import get_remote_address
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import db
-from app.compute import compute
+from app.compute import upload_validation
 from app.compute import test_selector as ts
 from app.llm import brain
 from app.orchestrator import run_full_analysis
-from app.report_generator import generate_pdf_report
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -239,7 +238,7 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
         )
 
     filename = file.filename or "upload.bin"
-    diag = compute.load_and_diagnose(raw_bytes, filename)
+    diag = upload_validation.load_and_diagnose(raw_bytes, filename)
 
     if "error" in diag:
         raise HTTPException(status_code=400, detail=f"Impossible de lire le fichier : {diag['error']}")
@@ -307,7 +306,7 @@ def _run_analysis_core(analysis_id: str, file_id: str, query: str) -> None:
 
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext == "csv":
-        encoding = compute._detect_csv_encoding(file_bytes)
+        encoding = upload_validation._detect_csv_encoding(file_bytes)
     elif ext in {"xls", "xlsx", "dta", "sav"}:
         encoding = f"n/a ({ext})"
     else:
@@ -398,6 +397,39 @@ def _run_analysis_core(analysis_id: str, file_id: str, query: str) -> None:
     db.update_analysis(analysis_id, status="done", result=result, updated_at=_now())
 
 
+def _run_analysis_dispatch(analysis_id: str, file_id: str, query: str) -> None:
+    """
+    Tente d'abord l'exécution via le sous-processus analyze_worker.py.
+    En cas d'échec (timeout, erreur, ou statut pas "done" en base),
+    retombe sur l'exécution en mémoire via _run_analysis_core.
+    """
+    try:
+        proc = subprocess.run(
+            [sys.executable, "app/analyze_worker.py", analysis_id, file_id, query],
+            capture_output=True, text=True, timeout=150,
+        )
+        print(f"ANALYZE Worker - Returncode: {proc.returncode}", flush=True)
+        if proc.stdout:
+            print(f"ANALYZE Worker - Stdout: {proc.stdout[:2000]}", flush=True)
+        if proc.stderr:
+            print(f"ANALYZE Worker - Stderr: {proc.stderr[:2000]}", flush=True)
+
+        # Vérifier le statut en base pour confirmer le succès réel
+        analysis = db.get_analysis(analysis_id)
+        if proc.returncode == 0 and analysis and analysis.get("status") == "done":
+            print("ANALYZE Worker - Succès via sous-processus", flush=True)
+            return
+        else:
+            print("ANALYZE Worker - Échec (returncode non nul ou statut pas 'done' en base), fallback vers exécution en mémoire", flush=True)
+            _run_analysis_core(analysis_id, file_id, query)
+    except subprocess.TimeoutExpired:
+        print("ANALYZE Worker - Timeout, fallback vers exécution en mémoire", flush=True)
+        _run_analysis_core(analysis_id, file_id, query)
+    except Exception as e:
+        print(f"ANALYZE Worker - Erreur lors de l'exécution du sous-processus : {e}, fallback vers exécution en mémoire", flush=True)
+        _run_analysis_core(analysis_id, file_id, query)
+
+
 def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None:
     """
     Exécutée en arrière-plan par BackgroundTasks. Ne lève jamais d'exception
@@ -406,7 +438,7 @@ def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None
     """
     try:
         # Exécuter l'analyse avec un timeout de 5 minutes (300 secondes)
-        _run_with_timeout(_run_analysis_core, args=(analysis_id, file_id, query), timeout=300)
+        _run_with_timeout(_run_analysis_dispatch, args=(analysis_id, file_id, query), timeout=300)
     except TimeoutError as e:
         db.update_analysis(
             analysis_id, status="error",
