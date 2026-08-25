@@ -3204,21 +3204,21 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
     interp_main = _as_dict(interpretation.get("interpretation_principale"))
 
     # Logs diagnostic ACM
-    print(f"ACM DEBUG - analysis_result keys: {list(analysis_result.keys())}")
-    print(f"ACM DEBUG - analysis keys: {list(analysis.keys())}")
-    print(f"ACM DEBUG - test_result keys: {list(test_result.keys())}")
-    print(f"ACM DEBUG - 'acm' in test_result: {'acm' in test_result}")
-    print(f"ACM DEBUG - 'acm' in analysis: {'acm' in analysis}")
-    print(f"ACM DEBUG - 'acm' in analysis_result: {'acm' in analysis_result}")
+    print(f"ACM DEBUG - analysis_result: {len(analysis_result)} clés", flush=True)
+    print(f"ACM DEBUG - analysis: {len(analysis)} clés", flush=True)
+    print(f"ACM DEBUG - test_result: {len(test_result)} clés", flush=True)
+    print(f"ACM DEBUG - 'acm' in test_result: {'acm' in test_result}", flush=True)
+    print(f"ACM DEBUG - 'acm' in analysis: {'acm' in analysis}", flush=True)
+    print(f"ACM DEBUG - 'acm' in analysis_result: {'acm' in analysis_result}", flush=True)
     
     # Vérifier chemin multi-analyses
     if "analyses" in analysis_result:
-        print(f"ACM DEBUG - analyses found, count: {len(analysis_result['analyses'])}")
+        print(f"ACM DEBUG - analyses found, count: {len(analysis_result['analyses'])}", flush=True)
         for i, a in enumerate(analysis_result['analyses'][:3]):  # Vérifier les 3 premiers
-            print(f"ACM DEBUG - analysis[{i}] keys: {list(a.keys())}")
+            print(f"ACM DEBUG - analysis[{i}]: {len(a)} clés", flush=True)
             if 'result' in a:
-                print(f"ACM DEBUG - analysis[{i}]['result'] keys: {list(a['result'].keys())}")
-                print(f"ACM DEBUG - 'acm' in analysis[{i}]['result']: {'acm' in a['result']}")
+                print(f"ACM DEBUG - analysis[{i}]['result']: {len(a['result'])} clés", flush=True)
+                print(f"ACM DEBUG - 'acm' in analysis[{i}]['result']: {'acm' in a['result']}", flush=True)
 
     # Limiter les graphiques pour éviter crash mémoire WeasyPrint
     charts_source = "charts"

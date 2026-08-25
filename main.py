@@ -410,9 +410,9 @@ def _run_analysis_dispatch(analysis_id: str, file_id: str, query: str) -> None:
         )
         print(f"ANALYZE Worker - Returncode: {proc.returncode}", flush=True)
         if proc.stdout:
-            print(f"ANALYZE Worker - Stdout: {proc.stdout[:2000]}", flush=True)
+            print(f"ANALYZE Worker - Stdout: {proc.stdout[-6000:]}", flush=True)
         if proc.stderr:
-            print(f"ANALYZE Worker - Stderr: {proc.stderr[:2000]}", flush=True)
+            print(f"ANALYZE Worker - Stderr: {proc.stderr[-6000:]}", flush=True)
 
         # Vérifier le statut en base pour confirmer le succès réel
         analysis = db.get_analysis(analysis_id)
@@ -596,9 +596,9 @@ def get_report(
         
         print(f"PDF Worker - Returncode: {proc.returncode}")
         if proc.stdout:
-            print(f"PDF Worker - Stdout: {proc.stdout[:500]}")
+            print(f"PDF Worker - Stdout: {proc.stdout[-6000:]}")
         if proc.stderr:
-            print(f"PDF Worker - Stderr: {proc.stderr[:500]}")
+            print(f"PDF Worker - Stderr: {proc.stderr[-6000:]}")
         
         if proc.returncode != 0:
             logger.error(f"PDF Worker échoué, fallback PDF léger")
