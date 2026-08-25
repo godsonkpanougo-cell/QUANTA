@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 import resource
 
+print("PDF WORKER VERSION MARKER: v2-checkpoints-acm-134c1a3", flush=True)
+
 def _rss_mo():
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
 
