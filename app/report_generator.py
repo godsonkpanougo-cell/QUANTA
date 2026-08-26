@@ -2806,8 +2806,7 @@ def _html_multi_section2(
             hypotheses_block = ""
             detail_extra = f"<div class='card'><p>{_esc(fallback_msg)}</p></div>"
 
-        subsections.append(
-            f"""
+        bloc_html = f"""
             <h3>{i}. {_esc(_test_display_name(entry))}</h3>
             <div class="card">
               <p class="muted" style="margin-bottom:0.3em;">Justification de la sélection</p>
@@ -2824,7 +2823,8 @@ def _html_multi_section2(
             {apa_block}
             {charts_block}
             """
-        )
+        print(f"ACM DEBUG - Bloc analyse {i}: {len(bloc_html)} car.", flush=True)
+        subsections.append(bloc_html)
 
     return recap_table + "\n".join(subsections)
 
