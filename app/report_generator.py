@@ -1994,6 +1994,11 @@ def _html_posthoc(
         if not comparisons:
             return ""
 
+    # Diagnostic : compter les comparaisons et les groupes
+    nb_comparisons = len(comparisons) if comparisons else 0
+    nb_groups = len(set([c.get("group1") for c in comparisons] + [c.get("group2") for c in comparisons])) if comparisons else 0
+    print(f"ACM DEBUG - _html_posthoc: {nb_comparisons} comparaisons, {nb_groups} groupes", flush=True)
+
     method = str(posthoc.get("method") or "Comparaisons post-hoc")
     rows: list[str] = []
     for comp in comparisons:
@@ -2025,7 +2030,7 @@ def _html_posthoc(
         return ""
 
     caption = _next_table_caption(table_counter, "Comparaisons post-hoc")
-    return f"""
+    html_posthoc_final = f"""
     <h3 style="color:#00D4FF;">Comparaisons post-hoc</h3>
     <p class="muted" style="font-size:11px; margin-bottom:8px;">{_esc(method)}</p>
     {caption}
@@ -2044,6 +2049,8 @@ def _html_posthoc(
       </tbody>
     </table>
     """
+    print(f"ACM DEBUG - _html_posthoc HTML généré: {len(html_posthoc_final)} car.", flush=True)
+    return html_posthoc_final
 
 
 def _shapiro_pvalue(info: dict[str, Any]) -> float | None:
@@ -2352,7 +2359,7 @@ def _html_apa_results(
         apa_title = f"Résultats du {test_name}"
     caption = _next_table_caption(table_counter, apa_title)
 
-    return f"""
+    html_apa_final = f"""
     {caption}
     <table class="apa">
       <thead>
@@ -2364,6 +2371,8 @@ def _html_apa_results(
     </table>
     {_html_posthoc(data, table_counter)}
     """
+    print(f"ACM DEBUG - _html_apa_results HTML généré: {len(html_apa_final)} car.", flush=True)
+    return html_apa_final
 
 # Titres HTML pour les clés de graphiques du pipeline compute (jamais la clé brute).
 _CHART_SECTION_TITLES: dict[str, str] = {
