@@ -1999,6 +1999,16 @@ def _html_posthoc(
     nb_groups = len(set([c.get("group1") for c in comparisons] + [c.get("group2") for c in comparisons])) if comparisons else 0
     print(f"ACM DEBUG - _html_posthoc: {nb_comparisons} comparaisons, {nb_groups} groupes", flush=True)
 
+    # Plafond dur pour éviter OOM avec trop de groupes
+    MAX_POSTHOC_ROWS = 50
+    total_comparisons = len(comparisons) if comparisons else 0
+    if total_comparisons > MAX_POSTHOC_ROWS:
+        # Garder seulement les comparaisons les plus significatives (p_adj le plus petit)
+        comparisons = sorted(
+            comparisons,
+            key=lambda c: c.get("p_adj") if c.get("p_adj") is not None else 1.0
+        )[:MAX_POSTHOC_ROWS]
+
     method = str(posthoc.get("method") or "Comparaisons post-hoc")
     rows: list[str] = []
     for comp in comparisons:
@@ -2030,6 +2040,16 @@ def _html_posthoc(
         return ""
 
     caption = _next_table_caption(table_counter, "Comparaisons post-hoc")
+    
+    troncature_note = ""
+    if total_comparisons > MAX_POSTHOC_ROWS:
+        troncature_note = (
+            f'<p class="muted" style="font-size:10px; margin-top:4px;">'
+            f'Affichage limité aux {MAX_POSTHOC_ROWS} comparaisons les plus '
+            f'significatives sur {total_comparisons} au total '
+            f'(nombre de groupes trop élevé pour un affichage exhaustif).</p>'
+        )
+    
     html_posthoc_final = f"""
     <h3 style="color:#00D4FF;">Comparaisons post-hoc</h3>
     <p class="muted" style="font-size:11px; margin-bottom:8px;">{_esc(method)}</p>
@@ -2048,6 +2068,7 @@ def _html_posthoc(
         {''.join(rows)}
       </tbody>
     </table>
+    {troncature_note}
     """
     print(f"ACM DEBUG - _html_posthoc HTML généré: {len(html_posthoc_final)} car.", flush=True)
     return html_posthoc_final
