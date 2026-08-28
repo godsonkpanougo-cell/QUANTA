@@ -147,7 +147,11 @@ def _is_likely_id_column(series: pd.Series, col_name: str) -> bool:
     """
     name = col_name.lower().strip()
     name_parts = set(name.replace("-", "_").split("_")) | {name}
-    name_matches = any(hint in name_parts for hint in ID_COLUMN_NAME_HINTS)
+    name_matches = any(
+        part == hint or part.startswith(hint) or part.endswith(hint)
+        for part in name_parts
+        for hint in ID_COLUMN_NAME_HINTS
+    )
 
     if not name_matches:
         return False
@@ -169,6 +173,23 @@ def _is_likely_id_column(series: pd.Series, col_name: str) -> bool:
         return uniqueness_ratio >= 0.95
 
     return False
+
+
+def _is_likely_id_column_categorical(series: pd.Series, col_name: str) -> bool:
+    """
+    Détecte si une colonne catégorielle est probablement un identifiant,
+    uniquement par correspondance de nom (STRONG_HINTS seulement, pas de
+    vérification d'unicité car un identifiant catégoriel peut légitimement
+    avoir des doublons).
+    """
+    name = col_name.lower().strip()
+    name_parts = set(name.replace("-", "_").split("_")) | {name}
+    STRONG_HINTS = {"id", "identifiant", "identifier", "uuid", "guid", "matricule"}
+    return any(
+        part == hint or part.startswith(hint) or part.endswith(hint)
+        for part in name_parts
+        for hint in STRONG_HINTS
+    )
 
 
 def _build_diagnosis_descriptive_stats(
@@ -282,6 +303,10 @@ def load_and_diagnose(file_bytes: bytes, filename: str) -> dict[str, Any]:
     id_cols = []
     for col in raw_numeric_cols:
         if _is_likely_id_column(df[col], col):
+            id_cols.append(col)
+
+    for col in raw_cat_cols:
+        if _is_likely_id_column_categorical(df[col], col):
             id_cols.append(col)
 
     candidate_numeric_cols = [c for c in raw_numeric_cols if c not in id_cols]

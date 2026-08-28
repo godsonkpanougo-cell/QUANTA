@@ -837,6 +837,25 @@ def _select_and_run_test_impl(
             return {"result": result, "audit_log": audit_log, "validation_issues": all_issues,
                     "action_executed": "compare_groups_2"}
         else:
+            # Garde-fou statistique : vérifier cardinalité et taille d'échantillon par groupe
+            sub = df[[target_col, group_col]].dropna()
+            n_groups_final = sub[group_col].nunique()
+            avg_obs_per_group = len(sub) / n_groups_final if n_groups_final > 0 else 0
+            
+            if n_groups_final > 30 or avg_obs_per_group < 5:
+                audit_log.append({
+                    "etape": "fallback_action", "colonne": group_col,
+                    "decision": "descriptive_only", "valeur": f"{n_groups_final} groupes, {avg_obs_per_group:.1f} obs/groupe",
+                    "justification": (
+                        f"'{group_col}' a {n_groups_final} groupes (max 30 autorisés) "
+                        f"ou {avg_obs_per_group:.1f} observations/groupe en moyenne (min 5 requis) "
+                        f"-- comparaison multi-groupes non pertinente statistiquement."
+                    ),
+                })
+                return {"result": {"status": "skipped", "reason": f"'{group_col}' a {n_groups_final} groupes ou trop peu d'observations par groupe."},
+                        "audit_log": audit_log, "validation_issues": all_issues,
+                        "action_executed": "descriptive_only"}
+            
             result = run_multi_group_comparison(df, target_col, group_col, normality_results, audit_log)
             return {"result": result, "audit_log": audit_log, "validation_issues": all_issues,
                     "action_executed": "compare_groups_multi"}

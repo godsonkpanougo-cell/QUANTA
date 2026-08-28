@@ -416,13 +416,16 @@ def auto_intent(diagnosis: dict[str, Any]) -> list[ts.AnalysisIntent]:
     """
     numeric_cols = list(diagnosis.get("numeric_cols", []) or [])
     cat_cols = list(diagnosis.get("cat_cols", []) or [])
+    id_cols = list(diagnosis.get("id_cols", []) or [])
     intents: list[ts.AnalysisIntent] = []
 
     # Règle 1: une catégorielle + une ou plusieurs numériques
     # → comparaison de groupes pour chaque numérique
-    if len(cat_cols) >= 1 and len(numeric_cols) >= 1:
-        group_col = cat_cols[0]
-        for target in numeric_cols[:3]:
+    eligible_cat_cols = [c for c in cat_cols if c not in id_cols]
+    eligible_numeric_cols = [c for c in numeric_cols if c not in id_cols]
+    if len(eligible_cat_cols) >= 1 and len(eligible_numeric_cols) >= 1:
+        group_col = eligible_cat_cols[0]
+        for target in eligible_numeric_cols[:3]:
             intents.append(
                 ts.AnalysisIntent(
                     action="compare_groups",
