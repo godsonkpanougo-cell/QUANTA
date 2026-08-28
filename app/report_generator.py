@@ -1507,6 +1507,7 @@ def _css() -> str:
       font-family: Arial, Helvetica, sans-serif;
       font-size: 10.5pt;
       line-height: 1.55;
+      height: 100%;
     }
     h1, h2, h3 {
       font-family: Georgia, "Times New Roman", serif;
@@ -1538,7 +1539,7 @@ def _css() -> str:
       font-size: 9.5pt;
     }
     .cover {
-      min-height: 240mm;
+      height: 100%;
       display: flex;
       flex-direction: column;
       justify-content: center;
