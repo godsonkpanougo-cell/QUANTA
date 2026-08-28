@@ -362,7 +362,8 @@ def _next_table_caption(table_counter: list[int], title: str) -> str:
     """Incrémente le compteur et retourne la légende APA au-dessus du tableau."""
     table_counter[0] += 1
     return (
-        f'<p style="color:#FF0000; font-size:12px; font-weight:600; '
+        f'<p style="color:#C9A84C; font-size:12px; font-weight:700; '
+        f'text-transform:uppercase; letter-spacing:0.04em; '
         f'margin:16px 0 4px 0;">'
         f"Tableau {table_counter[0]}. {_esc(title)}"
         f"</p>"
@@ -1539,13 +1540,15 @@ def _css() -> str:
       font-size: 9.5pt;
     }
     .cover {
+      display: table;
+      width: 100%;
       height: 100%;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      text-align: center;
       page-break-after: always;
+    }
+    .cover-inner {
+      display: table-cell;
+      vertical-align: middle;
+      text-align: center;
     }
     .cover .subtitle {
       font-family: Georgia, "Times New Roman", serif;
@@ -3491,24 +3494,26 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
 
   <!-- PAGE DE GARDE -->
   <section class="cover">
-    <h1>QUANTA</h1>
-    <p class="subtitle">Rapport d'Analyse Statistique</p>
-    <div class="cover-meta">
-      <p><span class="muted">Fichier analysé</span><br/><strong>{_esc(filename)}</strong></p>
-      <p><span class="muted">Date de génération</span><br/>{_esc(generated_at)}</p>
-      <p style="color:#555563; font-size:10px; font-family:Courier New; text-align:center; margin-top:4px;">
-        {_esc(engine_versions)}
+    <div class="cover-inner">
+      <h1>QUANTA</h1>
+      <p class="subtitle">Rapport d'Analyse Statistique</p>
+      <div class="cover-meta">
+        <p><span class="muted">Fichier analysé</span><br/><strong>{_esc(filename)}</strong></p>
+        <p><span class="muted">Date de génération</span><br/>{_esc(generated_at)}</p>
+        <p style="color:#555563; font-size:10px; font-family:Courier New; text-align:center; margin-top:4px;">
+          {_esc(engine_versions)}
+        </p>
+        {file_hash_html}
+      </div>
+      <div class="score-badge">
+        <div class="label">Score de confiance</div>
+        <div class="value">{score_display}</div>
+      </div>
+      <p style="color:#555563; font-size:10px; font-style:italic; text-align:center; margin-top:8px;">
+        Le score reflète les propriétés statistiques mesurables. Il n'évalue pas la qualité du
+        design d'étude ni la validité externe.
       </p>
-      {file_hash_html}
     </div>
-    <div class="score-badge">
-      <div class="label">Score de confiance</div>
-      <div class="value">{score_display}</div>
-    </div>
-    <p style="color:#555563; font-size:10px; font-style:italic; text-align:center; margin-top:8px;">
-      Le score reflète les propriétés statistiques mesurables. Il n'évalue pas la qualité du
-      design d'étude ni la validité externe.
-    </p>
   </section>
 
   <!-- SECTION 1 -->
