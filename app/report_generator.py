@@ -1542,7 +1542,7 @@ def _css() -> str:
     .cover {
       display: table;
       width: 100%;
-      height: 100%;
+      height: 259mm;
       page-break-after: always;
     }
     .cover-inner {
