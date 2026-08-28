@@ -362,7 +362,7 @@ def _next_table_caption(table_counter: list[int], title: str) -> str:
     """Incrémente le compteur et retourne la légende APA au-dessus du tableau."""
     table_counter[0] += 1
     return (
-        f'<p style="color:#E8E8E8; font-size:12px; font-weight:600; '
+        f'<p style="color:#FF0000; font-size:12px; font-weight:600; '
         f'margin:16px 0 4px 0;">'
         f"Tableau {table_counter[0]}. {_esc(title)}"
         f"</p>"
