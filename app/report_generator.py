@@ -151,11 +151,11 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
             print(f"CHUNKED PDF - Traitement section {i+1}/{len(sections)}, longueur: {len(section_html)}", flush=True)
 
             # Limiter les graphiques dans les sections volumineuses
-            if len(section_html) > 100_000:
+            if len(section_html) > 500_000:
                 nb_images = section_html.count("data:image")
                 print(f"CHUNKED PDF - Section {i+1} contient {nb_images} images base64", flush=True)
                 taille_avant = len(section_html)
-                section_html = _limit_charts_in_html(section_html, max_charts=1)
+                section_html = _limit_charts_in_html(section_html, max_charts=3)
                 print(f"CHUNKED PDF - Graphiques limités dans section {i+1} (taille avant: {taille_avant}, après: {len(section_html)})", flush=True)
 
             # Envelopper dans un HTML complet
