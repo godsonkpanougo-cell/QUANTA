@@ -89,7 +89,7 @@ def _split_html_by_sections(full_html: str) -> list[str]:
 
 def _wrap_section_in_html(section_html: str, theme: str = "dark") -> str:
     """Enveloppe une section dans un HTML complet avec CSS."""
-    css = _css()
+    css = _css(theme)
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -1484,203 +1484,231 @@ def _conditions_application(analysis: dict[str, Any]) -> list[tuple[str, str, st
 # CONSTRUCTION HTML
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _css() -> str:
-    return """
-    @page {
+def _css(theme: str = "dark") -> str:
+    if theme == "light":
+        c_bg = "#FFFFFF"
+        c_bg_card = "#F4F4F6"
+        c_bg_code = "#F4F4F6"
+        c_text = "#1C1C22"
+        c_muted = "#6B6B76"
+        c_muted2 = "#55555F"
+        c_gold = "#96751E"
+        c_cyan = "#0077A8"
+        c_red = "#B23B3B"
+        c_border = "rgba(0,0,0,0.10)"
+        c_border_soft = "rgba(0,0,0,0.06)"
+        c_border_mid = "rgba(0,0,0,0.08)"
+        c_border_strong = "rgba(0,0,0,0.14)"
+        c_border_solid = "#33333A"
+    else:  # dark (défaut, comportement actuel inchangé)
+        c_bg = "#0A0A0F"
+        c_bg_card = "#13131A"
+        c_bg_code = "#0D0D0D"
+        c_text = "#E8E8E8"
+        c_muted = "#8A8A96"
+        c_muted2 = "#9A9AA8"
+        c_gold = "#C9A84C"
+        c_cyan = "#00D4FF"
+        c_red = "#E8A0A0"
+        c_border = "rgba(255,255,255,0.08)"
+        c_border_soft = "rgba(255,255,255,0.05)"
+        c_border_mid = "rgba(255,255,255,0.06)"
+        c_border_strong = "rgba(255,255,255,0.12)"
+        c_border_solid = "#E8E8E8"
+    
+    return f"""
+    @page {{
       size: A4;
       margin: 1.8cm 1.6cm 2.0cm 1.6cm;
-      @bottom-center {
+      @bottom-center {{
         content: "QUANTA — Rapport d'analyse statistique · page " counter(page);
         font-family: Arial, Helvetica, sans-serif;
         font-size: 8pt;
-        color: #8A8A96;
-      }
-    }
-    @page :first {
-      @bottom-center { content: none; }
-    }
-    * { box-sizing: border-box; }
-    html, body {
+        color: {c_muted};
+      }}
+    }}
+    @page :first {{
+      @bottom-center {{ content: none; }}
+    }}
+    * {{ box-sizing: border-box; }}
+    html, body {{
       margin: 0;
       padding: 0;
-      background: #0A0A0F;
-      color: #E8E8E8;
+      background: {c_bg};
+      color: {c_text};
       font-family: Arial, Helvetica, sans-serif;
       font-size: 10.5pt;
       line-height: 1.55;
       height: 100%;
-    }
-    h1, h2, h3 {
+    }}
+    h1, h2, h3 {{
       font-family: Georgia, "Times New Roman", serif;
       font-weight: normal;
-      color: #E8E8E8;
+      color: {c_text};
       margin: 0 0 0.6em 0;
-    }
-    h1 { font-size: 28pt; letter-spacing: 0.12em; color: #C9A84C; }
-    h2 {
+    }}
+    h1 {{ font-size: 28pt; letter-spacing: 0.12em; color: {c_gold}; }}
+    h2 {{
       font-size: 14pt;
-      color: #C9A84C;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+      color: {c_gold};
+      border-bottom: 1px solid {c_border};
       padding-bottom: 0.35em;
       margin-top: 0;
       margin-bottom: 1em;
-    }
-    h3 {
+    }}
+    h3 {{
       font-size: 11.5pt;
-      color: #00D4FF;
+      color: {c_cyan};
       margin-top: 1.2em;
       margin-bottom: 0.4em;
-    }
-    p { margin: 0 0 0.75em 0; }
-    .muted { color: #8A8A96; }
-    .gold { color: #C9A84C; }
-    .cyan { color: #00D4FF; }
-    .mono {
+    }}
+    p {{ margin: 0 0 0.75em 0; }}
+    .muted {{ color: {c_muted}; }}
+    .gold {{ color: {c_gold}; }}
+    .cyan {{ color: {c_cyan}; }}
+    .mono {{
       font-family: "Courier New", Courier, monospace;
       font-size: 9.5pt;
-    }
-    .cover {
-      display: table;
-      width: 100%;
+    }}
+    .cover {{
       height: 259mm;
       page-break-after: always;
-    }
-    .cover-inner {
-      display: table-cell;
-      vertical-align: middle;
       text-align: center;
-    }
-    .cover .subtitle {
+    }}
+    .cover-inner {{
+      padding-top: 80mm;
+    }}
+    .cover .subtitle {{
       font-family: Georgia, "Times New Roman", serif;
       font-size: 14pt;
-      color: #E8E8E8;
+      color: {c_text};
       margin: 0.4em 0 2.2em 0;
       letter-spacing: 0.04em;
-    }
-    .cover-meta {
+    }}
+    .cover-meta {{
       width: 78%;
-      border-top: 1px solid rgba(255,255,255,0.08);
-      border-bottom: 1px solid rgba(255,255,255,0.08);
+      border-top: 1px solid {c_border};
+      border-bottom: 1px solid {c_border};
       padding: 1.4em 0;
       margin-top: 1em;
-    }
-    .cover-meta p { margin: 0.45em 0; font-size: 11pt; }
-    .score-badge {
+    }}
+    .cover-meta p {{ margin: 0.45em 0; font-size: 11pt; }}
+    .score-badge {{
       margin-top: 2em;
-      background: #13131A;
-      border: 1px solid rgba(255,255,255,0.08);
+      background: {c_bg_card};
+      border: 1px solid {c_border};
       padding: 0.9em 1.4em;
       display: inline-block;
-    }
-    .score-badge .label {
+    }}
+    .score-badge .label {{
       font-size: 8.5pt;
-      color: #8A8A96;
+      color: {c_muted};
       text-transform: uppercase;
       letter-spacing: 0.08em;
       margin-bottom: 0.25em;
-    }
-    .score-badge .value {
+    }}
+    .score-badge .value {{
       font-family: Georgia, "Times New Roman", serif;
       font-size: 16pt;
-      color: #C9A84C;
-    }
-    .section { page-break-before: always; }
-    .section.first-content { page-break-before: auto; }
-    .card {
-      background: #13131A;
-      border: 1px solid rgba(255,255,255,0.08);
+      color: {c_gold};
+    }}
+    .section {{ page-break-before: always; }}
+    .section.first-content {{ page-break-before: auto; }}
+    .card {{
+      background: {c_bg_card};
+      border: 1px solid {c_border};
       padding: 0.9em 1.1em;
       margin: 0.8em 0 1.1em 0;
-    }
-    .kv { width: 100%; border-collapse: collapse; margin: 0.4em 0 1em 0; }
-    .kv td {
+    }}
+    .kv {{ width: 100%; border-collapse: collapse; margin: 0.4em 0 1em 0; }}
+    .kv td {{
       padding: 0.35em 0.5em;
       vertical-align: top;
-      border-bottom: 1px solid rgba(255,255,255,0.05);
-    }
-    .kv td:first-child {
+      border-bottom: 1px solid {c_border_soft};
+    }}
+    .kv td:first-child {{
       width: 38%;
-      color: #8A8A96;
+      color: {c_muted};
       font-size: 9.5pt;
-    }
-    .apa {
+    }}
+    .apa {{
       width: 100%;
       border-collapse: collapse;
       margin: 0.8em 0 1.2em 0;
       font-size: 10pt;
-    }
-    .apa th, .apa td {
+    }}
+    .apa th, .apa td {{
       padding: 0.45em 0.55em;
       border-left: none;
       border-right: none;
       border-top: none;
       border-bottom: none;
       text-align: left;
-    }
-    .apa thead th {
+    }}
+    .apa thead th {{
       font-family: Georgia, "Times New Roman", serif;
       font-weight: normal;
-      color: #C9A84C;
-      border-top: 1.5pt solid #E8E8E8;
-      border-bottom: 1pt solid #E8E8E8;
-    }
-    .apa tbody td {
+      color: {c_gold};
+      border-top: 1.5pt solid {c_border_solid};
+      border-bottom: 1pt solid {c_border_solid};
+    }}
+    .apa tbody td {{
       border-bottom: none;
-    }
-    .apa tbody tr:last-child td {
-      border-bottom: 1.5pt solid #E8E8E8;
-    }
-    .apa td.num, .apa th.num {
+    }}
+    .apa tbody tr:last-child td {{
+      border-bottom: 1.5pt solid {c_border_solid};
+    }}
+    .apa td.num, .apa th.num {{
       text-align: center;
       font-family: "Courier New", Courier, monospace;
       font-size: 9.5pt;
-    }
-    ul.plain {
+    }}
+    ul.plain {{
       margin: 0.3em 0 1em 1.1em;
       padding: 0;
-    }
-    ul.plain li { margin-bottom: 0.35em; }
-    .status-ok { color: #00D4FF; }
-    .status-ko { color: #E8A0A0; }
-    .status-partial { color: #C9A84C; }
-    .status-na { color: #8A8A96; }
-    pre.code {
-      background: #0D0D0D;
-      border: 1px solid rgba(255,255,255,0.08);
+    }}
+    ul.plain li {{ margin-bottom: 0.35em; }}
+    .status-ok {{ color: {c_cyan}; }}
+    .status-ko {{ color: {c_red}; }}
+    .status-partial {{ color: {c_gold}; }}
+    .status-na {{ color: {c_muted}; }}
+    pre.code {{
+      background: {c_bg_code};
+      border: 1px solid {c_border};
       padding: 0.9em 1em;
       font-family: "Courier New", Courier, monospace;
       font-size: 8pt;
       line-height: 1.4;
       white-space: pre-wrap;
       word-wrap: break-word;
-      color: #E8E8E8;
+      color: {c_text};
       page-break-inside: auto;
-    }
-    .audit-trail {
+    }}
+    .audit-trail {{
       width: 100%;
       border-collapse: collapse;
       margin: 0.8em 0 1.2em 0;
       font-family: "Courier New", Courier, monospace;
       font-size: 8.5pt;
-      background: #0D0D0D;
-      color: #9A9AA8;
-    }
-    .audit-trail th, .audit-trail td {
+      background: {c_bg_code};
+      color: {c_muted2};
+    }}
+    .audit-trail th, .audit-trail td {{
       padding: 0.45em 0.55em;
       text-align: left;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
+      border-bottom: 1px solid {c_border_mid};
       vertical-align: top;
-    }
-    .audit-trail thead th {
-      color: #C9A84C;
+    }}
+    .audit-trail thead th {{
+      color: {c_gold};
       font-weight: normal;
-      border-bottom: 1pt solid rgba(255,255,255,0.12);
-    }
-    .footnote {
+      border-bottom: 1pt solid {c_border_strong};
+    }}
+    .footnote {{
       font-size: 8.5pt;
-      color: #8A8A96;
+      color: {c_muted};
       margin-top: 1.5em;
-    }
+    }}
     """
 
 
@@ -3488,7 +3516,7 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
 <head>
   <meta charset="utf-8"/>
   <title>QUANTA — Rapport d'analyse</title>
-  <style>{_css()}</style>
+  <style>{_css(theme)}</style>
 </head>
 <body>
 

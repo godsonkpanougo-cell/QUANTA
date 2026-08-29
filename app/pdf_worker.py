@@ -9,12 +9,19 @@ import sys
 import json
 import os
 from pathlib import Path
-import resource
+try:
+    import resource
+    _HAS_RESOURCE = True
+except ImportError:
+    _HAS_RESOURCE = False
 
 print("PDF WORKER VERSION MARKER: v2-checkpoints-acm-134c1a3", flush=True)
 
 def _rss_mo():
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    if _HAS_RESOURCE:
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    else:
+        return 0.0
 
 print(f"MEM CHECKPOINT [tout début fichier, avant sys.path.insert] : {_rss_mo():.1f} Mo", flush=True)
 
@@ -29,8 +36,11 @@ sys.stdout.reconfigure(line_buffering=True)
 
 
 def _mem_checkpoint(label: str) -> None:
-    mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-    print(f"MEM CHECKPOINT [{label}] : {mb:.1f} Mo", flush=True)
+    if _HAS_RESOURCE:
+        mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        print(f"MEM CHECKPOINT [{label}] : {mb:.1f} Mo", flush=True)
+    else:
+        print(f"MEM CHECKPOINT [{label}] : (non disponible sur cette plateforme)", flush=True)
 
 def main():
     if len(sys.argv) < 4:
