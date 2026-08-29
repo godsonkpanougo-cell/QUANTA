@@ -1576,7 +1576,7 @@ def _css(theme: str = "dark") -> str:
       text-align: center;
     }}
     .cover-inner {{
-      padding-top: 80mm;
+      padding-top: 70mm;
     }}
     .cover .subtitle {{
       font-family: Georgia, "Times New Roman", serif;
