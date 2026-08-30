@@ -853,7 +853,14 @@ def analyze_with_brain(
         diagnosis_payload.setdefault("cat_cols", available_cat_cols)
 
         intents = auto_intent(diagnosis_payload)
-        analyses: list[dict[str, Any]] = [run_analysis_fn(intent) for intent in intents]
+        _t0 = time.monotonic()
+        analyses: list[dict[str, Any]] = []
+        for i, intent in enumerate(intents):
+            _t_avant = time.monotonic()
+            result = run_analysis_fn(intent)
+            _t_apres = time.monotonic()
+            print(f"TIMING - Intent {i+1}/{len(intents)} ({intent.action}) : {_t_apres - _t_avant:.1f}s (cumulé: {_t_apres - _t0:.1f}s)", flush=True)
+            analyses.append(result)
 
         primary_idx = _pick_most_significant_index(analyses)
         primary_intent = intents[primary_idx]

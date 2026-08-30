@@ -431,7 +431,7 @@ def _run_analysis_dispatch(analysis_id: str, file_id: str, query: str) -> None:
             print("ANALYZE Worker - Échec (returncode non nul ou statut pas 'done' en base), fallback vers exécution en mémoire", flush=True)
             _run_analysis_core(analysis_id, file_id, query)
     except subprocess.TimeoutExpired as e:
-        print("ANALYZE Worker - Timeout après 150s", flush=True)
+        print(f"ANALYZE Worker - Timeout après 200s", flush=True)
         if e.stdout:
             print(f"ANALYZE Worker - Stdout partiel avant timeout: {e.stdout[-3000:]}", flush=True)
         if e.stderr:
