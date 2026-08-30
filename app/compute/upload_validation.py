@@ -18,6 +18,9 @@ CATEGORICAL_CARDINALITY_THRESHOLD = 10
 # Taille minimale de l'échantillon pour activer le garde-fou catégoriel
 # (sous ce seuil, presque rien n'a de sens statistiquement de toute façon)
 CATEGORICAL_GUARD_MIN_N = 10
+# Ratio d'unicité au-dessus duquel une colonne catégorielle est considérée comme texte libre
+# (ex: > 50% de valeurs uniques → commentaires, réponses ouvertes, pas de vraie catégorie)
+FREETEXT_UNIQUENESS_RATIO = 0.5
 # Noms de colonnes (en minuscules, comparaison par mot entier ou via
 # séparateur _/-) considérés comme des identifiants potentiels
 ID_COLUMN_NAME_HINTS = ("id", "identifiant", "code", "uuid", "guid", "matricule")
@@ -311,6 +314,22 @@ def load_and_diagnose(file_bytes: bytes, filename: str) -> dict[str, Any]:
 
     candidate_numeric_cols = [c for c in raw_numeric_cols if c not in id_cols]
 
+    # ── Filtre texte libre (Fix #5) ─────────────────────────────────────────
+    # Sépare les colonnes catégorielles légitimes des colonnes de texte libre
+    # (commentaires, réponses ouvertes) basé sur le ratio d'unicité.
+    cat_cols_final = []
+    freetext_cols = []
+    for col in raw_cat_cols:
+        s = df[col].dropna()
+        if len(s) == 0:
+            cat_cols_final.append(col)
+            continue
+        uniqueness_ratio = s.nunique() / len(s)
+        if uniqueness_ratio > FREETEXT_UNIQUENESS_RATIO:
+            freetext_cols.append(col)
+        else:
+            cat_cols_final.append(col)
+
     # ── Garde-fou numérique-mais-catégoriel (Fix #3) ─────────────────────────
     # Une colonne numérique avec très peu de valeurs uniques (ex: code région
     # 1-12, échelle de Likert 1-5, binaire 0/1) est probablement catégorielle,
@@ -321,7 +340,7 @@ def load_and_diagnose(file_bytes: bytes, filename: str) -> dict[str, Any]:
     # continue avec un petit échantillon (ex: n=12, 11 valeurs uniques) soit
     # reclassée à tort simplement parce que n_unique < 10.
     numeric_cols = []
-    cat_cols = list(raw_cat_cols)
+    cat_cols = list(cat_cols_final)  # Utiliser cat_cols_final filtré
     reclassified_as_categorical = {}
 
     for col in candidate_numeric_cols:
@@ -388,6 +407,7 @@ def load_and_diagnose(file_bytes: bytes, filename: str) -> dict[str, Any]:
         "numeric_cols":   numeric_cols,
         "cat_cols":       cat_cols,
         "id_cols":        id_cols,
+        "freetext_cols":  freetext_cols,
         "date_cols":      date_cols,
         "reclassified_as_categorical": reclassified_as_categorical,
         "missing":        missing[missing > 0].to_dict(),

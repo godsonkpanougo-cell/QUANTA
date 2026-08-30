@@ -436,34 +436,34 @@ def auto_intent(diagnosis: dict[str, Any]) -> list[ts.AnalysisIntent]:
             )
 
     # Règle 2: 2+ numériques → corrélation entre toutes
-    if len(numeric_cols) >= 2:
+    if len(eligible_numeric_cols) >= 2:
         intents.append(
             ts.AnalysisIntent(
                 action="correlation",
-                target_col=numeric_cols[0],
-                group_col=numeric_cols[1],
+                target_col=eligible_numeric_cols[0],
+                group_col=eligible_numeric_cols[1],
                 raw_query="[auto]",
             )
         )
 
     # Règle 3: 2 catégorielles → association Chi-deux
-    if len(cat_cols) >= 2:
+    if len(eligible_cat_cols) >= 2:
         intents.append(
             ts.AnalysisIntent(
                 action="association",
-                target_col=cat_cols[0],
-                group_col=cat_cols[1],
+                target_col=eligible_cat_cols[0],
+                group_col=eligible_cat_cols[1],
                 raw_query="[auto]",
             )
         )
 
     # Règle 4: 3+ catégorielles → ACM (Analyse des Correspondances Multiples)
-    if len(cat_cols) >= 3:
+    if len(eligible_cat_cols) >= 3:
         intents.append(
             ts.AnalysisIntent(
                 action="association",
-                target_col=cat_cols[0],
-                group_col=cat_cols[1],
+                target_col=eligible_cat_cols[0],
+                group_col=eligible_cat_cols[1],
                 raw_query="[auto]",
             )
         )
