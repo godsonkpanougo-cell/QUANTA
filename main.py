@@ -414,7 +414,7 @@ def _run_analysis_dispatch(analysis_id: str, file_id: str, query: str) -> None:
     try:
         proc = subprocess.run(
             [sys.executable, "app/analyze_worker.py", analysis_id, file_id, query],
-            capture_output=True, text=True, timeout=150,
+            capture_output=True, text=True, timeout=200,
         )
         print(f"ANALYZE Worker - Returncode: {proc.returncode}", flush=True)
         if proc.stdout:
