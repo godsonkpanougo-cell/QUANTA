@@ -114,9 +114,17 @@ app.state.limiter = limiter
 
 # CORS : autoriser le frontend local pendant le développement. À restreindre
 # au domaine de production réel avant le déploiement (Jour 61 du programme).
+_default_origins = "http://localhost:3000"
+_allowed_origins_env = os.environ.get("ALLOWED_ORIGINS", "")
+allowed_origins = [
+    o.strip() for o in _allowed_origins_env.split(",") if o.strip()
+] or [_default_origins]
+
+print(f"CORS - Origines autorisées : {allowed_origins}", flush=True)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Temporairement autoriser tous les origines pour éviter erreur CORS sur 502
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
