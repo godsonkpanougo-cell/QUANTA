@@ -72,6 +72,10 @@ PALETTE = {
 # mais les extrêmes naturels d'un petit échantillon)
 WINSORIZATION_MIN_N = 30
 
+# Garde-fous pour l'ACP (Analyse en Composantes Principales)
+PCA_MIN_N_PER_VARIABLE = 5  # Minimum d'observations par variable
+PCA_MIN_N_ABSOLUTE = 30    # Minimum absolu d'observations
+
 def _apply_mpl_theme(theme: str = "dark") -> None:
     """
     Configure matplotlib / seaborn avant génération des graphiques.
@@ -1842,6 +1846,304 @@ def _generate_scree_plot(inertia_pct: list) -> str | None:
         buf.seek(0)
         import base64
         return base64.b64encode(buf.read()).decode()
+    
+    except Exception:
+        return None
+
+
+def run_acp(df: pd.DataFrame, 
+            numeric_cols: list[str],
+            n_components: int = 5) -> dict:
+    """
+    Analyse en Composantes Principales (ACP).
+    Uniquement sur les colonnes numériques.
+    Minimum 3 variables numériques requises.
+    """
+    try:
+        import prince
+        
+        # Préparer les données
+        df_num = df[numeric_cols].dropna()
+        n_rows = len(df_num)
+        
+        # Garde-fou variables
+        if len(numeric_cols) < 3:
+            return {
+                "status": "error", 
+                "error": "L'ACP nécessite au moins 3 variables numériques"
+            }
+        
+        # Garde-fou taille
+        min_required = max(PCA_MIN_N_ABSOLUTE, PCA_MIN_N_PER_VARIABLE * len(numeric_cols))
+        if n_rows < min_required:
+            return {
+                "status": "error",
+                "error": f"Pas assez d'observations pour l'ACP (minimum {min_required} pour {len(numeric_cols)} variables)"
+            }
+        
+        # Exclure les colonnes à variance quasi nulle
+        variance_ok_cols = [c for c in numeric_cols if df_num[c].std() > 1e-10]
+        if len(variance_ok_cols) < 3:
+            return {
+                "status": "error",
+                "error": f"L'ACP nécessite au moins 3 variables avec variance suffisante (trouvé {len(variance_ok_cols)})"
+            }
+        
+        df_num = df_num[variance_ok_cols]
+        
+        # Sampling pour éviter le crash sur grands datasets
+        sampling_note = None
+        if n_rows > 5000:
+            df_num = df_num.sample(n=5000, random_state=42)
+            n_rows = 5000
+            sampling_note = "Échantillon de 5000 lignes utilisé pour l'ACP (dataset > 5000 observations)"
+        
+        # Ajuster n_components
+        n_comp = min(n_components, len(variance_ok_cols), n_rows - 1)
+        
+        # Ajuster n_iter
+        n_iter = min(10, n_rows - 1)
+        
+        # Lancer l'ACP
+        acp = prince.PCA(
+            n_components=n_comp,
+            n_iter=n_iter,
+            random_state=42,
+            engine='sklearn',
+            rescale_with_mean=True,
+            rescale_with_std=True
+        )
+        acp = acp.fit(df_num)
+        
+        # Valeurs propres et inertie
+        eigenvalues = acp.eigenvalues_.tolist()
+        total_inertia = sum(eigenvalues)
+        inertia_pct = [round(v / total_inertia * 100, 2) for v in eigenvalues]
+        cumulative_inertia = []
+        cumul = 0
+        for v in inertia_pct:
+            cumul += v
+            cumulative_inertia.append(round(cumul, 2))
+        
+        # Critère de Kaiser
+        n_components_kaiser = sum(1 for e in eigenvalues if e > 1)
+        n_components_kaiser = max(1, n_components_kaiser)  # Au moins 1
+        
+        # Coordonnées des individus
+        individuals_coords_df = acp.row_coordinates(df_num)
+        individuals_coords = []
+        for idx, row in individuals_coords_df.iterrows():
+            individuals_coords.append({
+                "individual": str(idx),
+                "dim1": round(float(row.iloc[0]), 4),
+                "dim2": round(float(row.iloc[1]), 4) if len(row) > 1 else 0.0
+            })
+        
+        # Coordonnées des variables (corrélations)
+        correlations_df = acp.column_coordinates_
+        correlation_circle_coords = []
+        for idx, row in correlations_df.iterrows():
+            correlation_circle_coords.append({
+                "variable": str(idx),
+                "dim1": round(float(row.iloc[0]), 4),
+                "dim2": round(float(row.iloc[1]), 4) if len(row) > 1 else 0.0
+            })
+        
+        # Générer le scree plot (réutilise la fonction existante)
+        scree_plot = _generate_scree_plot(inertia_pct)
+        
+        # Générer le cercle des corrélations
+        correlation_circle = _generate_pca_correlation_circle(
+            correlation_circle_coords,
+            inertia_pct,
+            variance_ok_cols
+        )
+        
+        # Générer le plan des individus
+        individuals_plot = _generate_pca_individuals_plot(
+            individuals_coords,
+            inertia_pct
+        )
+        
+        result = {
+            "status": "ok",
+            "n_rows": n_rows,
+            "n_variables": len(variance_ok_cols),
+            "variables": variance_ok_cols,
+            "n_components": n_comp,
+            "n_components_kaiser": n_components_kaiser,
+            "eigenvalues": eigenvalues,
+            "inertia_pct": inertia_pct,
+            "cumulative_inertia": cumulative_inertia,
+            "individuals_coords": individuals_coords,
+            "correlation_circle_coords": correlation_circle_coords,
+            "scree_plot": scree_plot,
+            "correlation_circle": correlation_circle,
+            "individuals_plot": individuals_plot,
+            "interpretation_note": (
+                f"L'axe 1 explique {inertia_pct[0]}% "
+                f"de la variance totale. "
+                f"Les axes 1 et 2 ensemble expliquent "
+                f"{cumulative_inertia[1] if len(cumulative_inertia) > 1 else inertia_pct[0]}%. "
+                f"Selon le critère de Kaiser, {n_components_kaiser} composante(s) "
+                f"devraient être conservée(s) (valeur propre > 1)."
+            )
+        }
+        
+        if sampling_note:
+            result["sampling_note"] = sampling_note
+        
+        return result
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "error": str(e)}
+
+
+def _generate_pca_correlation_circle(variables_coords: list,
+                                      inertia_pct: list,
+                                      variable_names: list) -> str | None:
+    """Cercle des corrélations ACP — graphique signature."""
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use('Agg')
+        import numpy as np
+        
+        fig, ax = plt.subplots(figsize=(7, 7))
+        fig.patch.set_facecolor('#0A0A0F')
+        ax.set_facecolor('#13131A')
+        
+        # Cercle unité
+        circle = plt.Circle((0, 0), 1, color='#555563', fill=False, 
+                           linewidth=1.5, linestyle='--', alpha=0.5)
+        ax.add_artist(circle)
+        
+        # Grille
+        ax.grid(True, alpha=0.08, color='#555563', linestyle=':')
+        
+        # Limiter le nombre de variables si trop nombreuses
+        note_variables = ""
+        if len(variables_coords) > 25:
+            # Garder les 20 mieux représentées (norme la plus grande)
+            variables_with_norm = []
+            for v in variables_coords:
+                norm = (v["dim1"]**2 + v["dim2"]**2)**0.5
+                variables_with_norm.append((v, norm))
+            variables_with_norm.sort(key=lambda x: x[1], reverse=True)
+            variables_coords = [v[0] for v in variables_with_norm[:20]]
+            note_variables = " (20 variables les mieux représentées affichées)"
+        
+        # Flèches et étiquettes
+        for v in variables_coords:
+            var_name = v["variable"]
+            x = v["dim1"]
+            y = v["dim2"]
+            
+            # Flèche
+            ax.annotate(
+                '', xy=(x, y), xytext=(0, 0),
+                arrowprops=dict(
+                    arrowstyle='->',
+                    color='#C9A84C',
+                    linewidth=1.5,
+                    alpha=0.8
+                )
+            )
+            
+            # Étiquette au bout de la flèche
+            ax.annotate(
+                var_name, (x, y),
+                textcoords="offset points",
+                xytext=(5, 5),
+                fontsize=9,
+                color='#E8E8E8',
+                alpha=0.9,
+                fontweight='bold'
+            )
+        
+        # Axes centraux
+        ax.axhline(y=0, color='#555563', linewidth=0.5, linestyle='--')
+        ax.axvline(x=0, color='#555563', linewidth=0.5, linestyle='--')
+        
+        dim1_pct = inertia_pct[0] if inertia_pct else 0
+        dim2_pct = inertia_pct[1] if len(inertia_pct) > 1 else 0
+        
+        ax.set_xlabel(
+            f'Dimension 1 ({dim1_pct}%)',
+            color='#9A9AA8', fontsize=11
+        )
+        ax.set_ylabel(
+            f'Dimension 2 ({dim2_pct}%)',
+            color='#9A9AA8', fontsize=11
+        )
+        ax.set_title(
+            f'ACP — Cercle des Corrélations{note_variables}',
+            color='#E8E8E8', fontsize=13, pad=15
+        )
+        
+        # Limites du cercle unité avec marge
+        ax.set_xlim(-1.2, 1.2)
+        ax.set_ylim(-1.2, 1.2)
+        ax.set_aspect('equal')
+        
+        ax.tick_params(colors='#9A9AA8')
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#555563')
+        
+        return _fig_to_b64(fig, theme="dark")
+    
+    except Exception:
+        return None
+
+
+def _generate_pca_individuals_plot(individuals_coords: list,
+                                    inertia_pct: list) -> str | None:
+    """Plan des individus ACP — nuage de points."""
+    try:
+        import matplotlib.pyplot as plt
+        import matplotlib
+        matplotlib.use('Agg')
+        
+        fig, ax = plt.subplots(figsize=(7, 5))
+        fig.patch.set_facecolor('#0A0A0F')
+        ax.set_facecolor('#13131A')
+        
+        # Extraire coordonnées
+        x_coords = [ind["dim1"] for ind in individuals_coords]
+        y_coords = [ind["dim2"] for ind in individuals_coords]
+        
+        # Nuage de points
+        ax.scatter(x_coords, y_coords, color='#C9A84C', 
+                  s=40, alpha=0.6, edgecolors='#E8D5A3',
+                  linewidth=0.5)
+        
+        # Axes centraux
+        ax.axhline(y=0, color='#555563', linewidth=0.5, linestyle='--')
+        ax.axvline(x=0, color='#555563', linewidth=0.5, linestyle='--')
+        
+        dim1_pct = inertia_pct[0] if inertia_pct else 0
+        dim2_pct = inertia_pct[1] if len(inertia_pct) > 1 else 0
+        
+        ax.set_xlabel(
+            f'Dimension 1 ({dim1_pct}%)',
+            color='#9A9AA8', fontsize=11
+        )
+        ax.set_ylabel(
+            f'Dimension 2 ({dim2_pct}%)',
+            color='#9A9AA8', fontsize=11
+        )
+        ax.set_title(
+            f'ACP — Plan des Individus ({len(individuals_coords)} observations)',
+            color='#E8E8E8', fontsize=13, pad=15
+        )
+        ax.tick_params(colors='#9A9AA8')
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#555563')
+        ax.grid(True, alpha=0.08, color='#555563')
+        
+        return _fig_to_b64(fig, theme="dark")
     
     except Exception:
         return None

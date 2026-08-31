@@ -157,8 +157,31 @@ def _resolve_delegation(
                 f"(méthode : {base_correlation.get('method')})."
             ),
         })
-        return {"status": "ok", "method": base_correlation.get("method"),
-                "col1": col1, "col2": col2, **pair_result}
+        
+        # ACP : si 3+ variables numériques, ajouter l'analyse
+        acp_result = None
+        if len(numeric_cols) >= 3:
+            from app.compute.compute import run_acp
+            acp_result = run_acp(df, numeric_cols)
+            if acp_result.get("status") == "ok":
+                audit_log.append({
+                    "etape": "selection_test", "colonne": None,
+                    "decision": "ACP (Analyse en Composantes Principales)",
+                    "valeur": f"n_variables={len(numeric_cols)}",
+                    "justification": (
+                        f"{len(numeric_cols)} variables numériques détectées "
+                        f"-> ACP automatiquement ajoutée pour explorer "
+                        f"les structures de variance."
+                    ),
+                })
+            else:
+                acp_result = None  # ne pas inclure un résultat d'erreur silencieux
+        
+        result_final = {"status": "ok", "method": base_correlation.get("method"),
+                         "col1": col1, "col2": col2, **pair_result}
+        if acp_result:
+            result_final["acp"] = acp_result
+        return result_final
 
     # Pas de délégation -- résultat direct de test_selector
     return result

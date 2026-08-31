@@ -1,0 +1,11 @@
+Identifier,Region,Type_Sol,Culture,Groupe
+id-001,Est,Calcaire,Mais,A
+id-002,Sud,Humique,Mil,B
+id-003,Ouest,Sableux,Riz,C
+id-004,Nord,Argileux,Sorgho,A
+id-005,Est,Calcaire,Mais,B
+id-006,Sud,Humique,Mil,C
+id-007,Ouest,Sableux,Riz,A
+id-008,Nord,Argileux,Sorgho,B
+id-009,Est,Calcaire,Mais,C
+id-010,Sud,Humique,Mil,A
