@@ -3136,7 +3136,7 @@ def _html_en_resume(
   </section>
 """
 
-def _html_acm_section(acm_result: dict[str, Any], table_counter: list[int]) -> str:
+def _html_acm_section(acm_result: dict[str, Any], table_counter: list[int], theme: str = "dark") -> str:
     """Génère la section ACM du rapport PDF."""
     if not acm_result or acm_result.get("status") != "ok":
         return ""
@@ -3150,6 +3150,19 @@ def _html_acm_section(acm_result: dict[str, Any], table_counter: list[int]) -> s
     plan_factoriel = acm_result.get("plan_factoriel")
     scree_plot = acm_result.get("scree_plot")
     top_contributions = acm_result.get("top_contributions_dim1", [])
+    
+    # Régénérer les graphiques en mode light si nécessaire
+    if theme == "light" and acm_result.get("modalities_coords") and inertia_pct:
+        from app.compute.compute import _generate_acm_plot, _generate_scree_plot
+        regenerated_plan = _generate_acm_plot(
+            acm_result["modalities_coords"], inertia_pct,
+            acm_result.get("variables", []), theme="light"
+        )
+        if regenerated_plan:
+            plan_factoriel = regenerated_plan
+        regenerated_scree = _generate_scree_plot(inertia_pct, theme="light")
+        if regenerated_scree:
+            scree_plot = regenerated_scree
     
     # Tableau des valeurs propres
     eigenvalues_rows = ""
@@ -3256,6 +3269,186 @@ def _html_acm_section(acm_result: dict[str, Any], table_counter: list[int]) -> s
     
     <h3>Contributions à l'axe 1</h3>
     {contrib_table}
+  </section>
+"""
+
+def _html_acp_section(acp_result: dict[str, Any] | None, table_counter: list[int], theme: str = "dark") -> str:
+    """Génère la section ACP du rapport PDF."""
+    if not acp_result or acp_result.get("status") != "ok":
+        return ""
+    
+    n_rows = acp_result.get("n_rows", "—")
+    n_variables = acp_result.get("n_variables", "—")
+    variables = acp_result.get("variables", [])
+    inertia_pct = acp_result.get("inertia_pct", [])
+    cumulative_inertia = acp_result.get("cumulative_inertia", [])
+    interpretation_note = acp_result.get("interpretation_note", "")
+    scree_plot = acp_result.get("scree_plot")
+    correlation_circle = acp_result.get("correlation_circle")
+    individuals_plot = acp_result.get("individuals_plot")
+    correlation_circle_coords = acp_result.get("correlation_circle_coords", [])
+    sampling_note = acp_result.get("sampling_note")
+    
+    # Régénérer les graphiques en mode light si nécessaire
+    if theme == "light" and inertia_pct:
+        from app.compute.compute import _generate_scree_plot, _generate_pca_correlation_circle, _generate_pca_individuals_plot
+        regenerated_scree = _generate_scree_plot(inertia_pct, theme="light")
+        if regenerated_scree:
+            scree_plot = regenerated_scree
+        if correlation_circle_coords:
+            regenerated_circle = _generate_pca_correlation_circle(
+                correlation_circle_coords, inertia_pct,
+                acp_result.get("variables", []), theme="light"
+            )
+            if regenerated_circle:
+                correlation_circle = regenerated_circle
+        if acp_result.get("individuals_coords"):
+            regenerated_individuals = _generate_pca_individuals_plot(
+                acp_result["individuals_coords"], inertia_pct, theme="light"
+            )
+            if regenerated_individuals:
+                individuals_plot = regenerated_individuals
+    
+    # Tableau des valeurs propres
+    eigenvalues_rows = ""
+    for i, (inertia, cumul) in enumerate(zip(inertia_pct, cumulative_inertia), start=1):
+        eigenvalues_rows += f"""
+        <tr>
+          <td class="num">{i}</td>
+          <td class="num">{_fmt_number(inertia, 2)}%</td>
+          <td class="num">{_fmt_number(cumul, 2)}%</td>
+        </tr>
+        """
+    
+    eigenvalues_caption = _next_table_caption(
+        table_counter,
+        "Valeurs propres et variance expliquée par dimension — ACP"
+    )
+    eigenvalues_table = f"""
+    {eigenvalues_caption}
+    <table class="apa">
+      <thead>
+        <tr>
+          <th class="num">Dimension</th>
+          <th class="num">% variance</th>
+          <th class="num">% cumulé</th>
+        </tr>
+      </thead>
+      <tbody>
+        {eigenvalues_rows}
+      </tbody>
+    </table>
+    """
+    
+    # Tableau des variables les mieux représentées (triées par norme)
+    sorted_coords = sorted(
+        correlation_circle_coords,
+        key=lambda x: x["dim1"]**2 + x["dim2"]**2,
+        reverse=True
+    )
+    top_10 = sorted_coords[:10]
+    
+    var_rows = ""
+    for var in top_10:
+        var_name = var.get("variable", "—")
+        dim1 = var.get("dim1", 0)
+        dim2 = var.get("dim2", 0)
+        var_rows += f"""
+        <tr>
+          <td>{_esc(var_name)}</td>
+          <td class="num">{_fmt_number(dim1, 4)}</td>
+          <td class="num">{_fmt_number(dim2, 4)}</td>
+        </tr>
+        """
+    
+    var_note = ""
+    if len(correlation_circle_coords) > 10:
+        var_note = f"<p class='muted' style='font-size:10px; font-style:italic;'>10 variables les mieux représentées sur {len(correlation_circle_coords)} affichées</p>"
+    
+    var_caption = _next_table_caption(
+        table_counter,
+        "Variables les mieux représentées sur les axes 1 et 2 — ACP"
+    )
+    var_table = f"""
+    {var_caption}
+    <table class="apa">
+      <thead>
+        <tr>
+          <th>Variable</th>
+          <th class="num">Dimension 1</th>
+          <th class="num">Dimension 2</th>
+        </tr>
+      </thead>
+      <tbody>
+        {var_rows}
+      </tbody>
+    </table>
+    {var_note}
+    """
+    
+    # Graphiques
+    scree_plot_img = ""
+    if scree_plot:
+        scree_plot_img = f"""
+    <div style="text-align:center; margin:16px 0;">
+      <img src="data:image/png;base64,{scree_plot}" 
+           alt="Scree plot ACP" 
+           style="max-width:100%; height:auto; border-radius:8px;"/>
+    </div>
+        """
+    
+    correlation_circle_img = ""
+    if correlation_circle:
+        correlation_circle_img = f"""
+    <div style="text-align:center; margin:16px 0;">
+      <img src="data:image/png;base64,{correlation_circle}" 
+           alt="Cercle des corrélations ACP" 
+           style="max-width:100%; height:auto; border-radius:8px;"/>
+    </div>
+        """
+    
+    individuals_plot_img = ""
+    if individuals_plot:
+        individuals_plot_img = f"""
+    <div style="text-align:center; margin:16px 0;">
+      <img src="data:image/png;base64,{individuals_plot}" 
+           alt="Plan des individus ACP" 
+           style="max-width:100%; height:auto; border-radius:8px;"/>
+    </div>
+        """
+    
+    sampling_note_html = ""
+    if sampling_note:
+        sampling_note_html = f"""
+    <p class="muted" style="font-size:10px; font-style:italic;">
+      {_esc(sampling_note)}
+    </p>
+        """
+    
+    return f"""
+  <section class="section">
+    <h2>Analyse en Composantes Principales (ACP)</h2>
+    <p class="muted">
+      L'ACP explore les structures de variance entre {n_variables} variables numériques
+      sur {n_rows} observations.
+    </p>
+    
+    <h3>Note d'interprétation</h3>
+    <div class="card">
+      <p>{_esc(interpretation_note)}</p>
+    </div>
+    
+    <h3>Valeurs propres</h3>
+    {scree_plot_img}
+    {eigenvalues_table}
+    
+    <h3>Cercle des corrélations</h3>
+    {correlation_circle_img}
+    {var_table}
+    
+    <h3>Plan des individus</h3>
+    {individuals_plot_img}
+    {sampling_note_html}
   </section>
 """
 
@@ -3566,7 +3759,10 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
   </section>
 
   <!-- SECTION ACM -->
-  {_html_acm_section(test_result.get("acm") if test_result else None, table_counter)}
+  {_html_acm_section(test_result.get("acm") if test_result else None, table_counter, theme)}
+
+  <!-- SECTION ACP -->
+  {_html_acp_section(test_result.get("acp") if test_result else None, table_counter, theme)}
 
   <!-- SECTION 3 -->
   <section class="section">

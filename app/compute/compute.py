@@ -1719,7 +1719,8 @@ def run_acm(df: pd.DataFrame,
 
 def _generate_acm_plot(modalities_coords: list,
                         inertia_pct: list,
-                        cat_cols: list) -> str | None:
+                        cat_cols: list,
+                        theme: str = "dark") -> str | None:
     """Plan factoriel ACM — graphique signature."""
     try:
         import matplotlib.pyplot as plt
@@ -1727,12 +1728,30 @@ def _generate_acm_plot(modalities_coords: list,
         matplotlib.use('Agg')
         import numpy as np
         
+        # Palette selon le thème
+        if theme == "light":
+            bg_color = '#FFFFFF'
+            ax_bg_color = '#F4F4F6'
+            text_color = '#1C1C22'
+            axis_color = '#6B6B76'
+            grid_color = '#33333A'
+            accent_or = '#96751E'
+            accent_cyan = '#0077A8'
+        else:
+            bg_color = '#0A0A0F'
+            ax_bg_color = '#13131A'
+            text_color = '#E8E8E8'
+            axis_color = '#9A9AA8'
+            grid_color = '#555563'
+            accent_or = '#C9A84C'
+            accent_cyan = '#00D4FF'
+        
         fig, ax = plt.subplots(figsize=(7, 4))
-        fig.patch.set_facecolor('#0A0A0F')
-        ax.set_facecolor('#13131A')
+        fig.patch.set_facecolor(bg_color)
+        ax.set_facecolor(ax_bg_color)
         
         # Couleurs par variable
-        colors = ['#C9A84C', '#00D4FF', '#2ECC71', 
+        colors = [accent_or, accent_cyan, '#2ECC71', 
                   '#E74C3C', '#9B59B6', '#F39C12',
                   '#1ABC9C', '#E67E22']
         
@@ -1742,7 +1761,7 @@ def _generate_acm_plot(modalities_coords: list,
             y = mod["dim2"]
             
             # Détecter la variable parente
-            var_color = '#C9A84C'
+            var_color = accent_or
             for j, col in enumerate(cat_cols):
                 if label.startswith(col):
                     var_color = colors[j % len(colors)]
@@ -1755,14 +1774,14 @@ def _generate_acm_plot(modalities_coords: list,
                 textcoords="offset points",
                 xytext=(5, 5),
                 fontsize=8,
-                color='#E8E8E8',
+                color=text_color,
                 alpha=0.9
             )
         
         # Axes centraux
-        ax.axhline(y=0, color='#555563', 
+        ax.axhline(y=0, color=grid_color, 
                    linewidth=0.5, linestyle='--')
-        ax.axvline(x=0, color='#555563', 
+        ax.axvline(x=0, color=grid_color, 
                    linewidth=0.5, linestyle='--')
         
         dim1_pct = inertia_pct[0] if inertia_pct else 0
@@ -1770,25 +1789,25 @@ def _generate_acm_plot(modalities_coords: list,
         
         ax.set_xlabel(
             f'Dimension 1 ({dim1_pct}%)',
-            color='#9A9AA8', fontsize=11
+            color=axis_color, fontsize=11
         )
         ax.set_ylabel(
             f'Dimension 2 ({dim2_pct}%)',
-            color='#9A9AA8', fontsize=11
+            color=axis_color, fontsize=11
         )
         ax.set_title(
             'ACM — Plan Factoriel (Dimensions 1 et 2)',
-            color='#E8E8E8', fontsize=13, pad=15
+            color=text_color, fontsize=13, pad=15
         )
-        ax.tick_params(colors='#9A9AA8')
+        ax.tick_params(colors=axis_color)
         for spine in ax.spines.values():
-            spine.set_edgecolor('#555563')
-        ax.grid(True, alpha=0.08, color='#555563')
+            spine.set_edgecolor(axis_color)
+        ax.grid(True, alpha=0.08, color=grid_color)
         
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=80,
                     bbox_inches='tight',
-                    facecolor='#0A0A0F')
+                    facecolor=bg_color)
         plt.close()
         buf.seek(0)
         import base64
@@ -1798,7 +1817,7 @@ def _generate_acm_plot(modalities_coords: list,
         return None
 
 
-def _generate_scree_plot(inertia_pct: list) -> str | None:
+def _generate_scree_plot(inertia_pct: list, theme: str = "dark") -> str | None:
     """Graphique des valeurs propres (scree plot)."""
     try:
         import matplotlib.pyplot as plt
@@ -1806,42 +1825,62 @@ def _generate_scree_plot(inertia_pct: list) -> str | None:
         matplotlib.use('Agg')
         import numpy as np
         
+        # Palette selon le thème
+        if theme == "light":
+            bg_color = '#FFFFFF'
+            ax_bg_color = '#F4F4F6'
+            text_color = '#1C1C22'
+            axis_color = '#6B6B76'
+            grid_color = '#33333A'
+            accent_or = '#96751E'
+            accent_cyan = '#0077A8'
+            accent_or_edge = '#C9A84C'
+        else:
+            bg_color = '#0A0A0F'
+            ax_bg_color = '#13131A'
+            text_color = '#E8E8E8'
+            axis_color = '#9A9AA8'
+            grid_color = '#555563'
+            accent_or = '#C9A84C'
+            accent_cyan = '#00D4FF'
+            accent_or_edge = '#E8D5A3'
+        
         fig, ax = plt.subplots(figsize=(7, 4))
-        fig.patch.set_facecolor('#0A0A0F')
-        ax.set_facecolor('#13131A')
+        fig.patch.set_facecolor(bg_color)
+        ax.set_facecolor(ax_bg_color)
         
         axes = [f'Dim {i+1}' for i in range(len(inertia_pct))]
         bars = ax.bar(axes, inertia_pct, 
-                     color='#C9A84C', alpha=0.8,
-                     edgecolor='#E8D5A3')
+                     color=accent_or, alpha=0.8,
+                     edgecolor=accent_or_edge)
         
         # Courbe cumulative
         cumul = np.cumsum(inertia_pct)
         ax2 = ax.twinx()
         ax2.plot(axes, cumul, 
-                color='#00D4FF', linewidth=2,
+                color=accent_cyan, linewidth=2,
                 marker='o', markersize=6)
         ax2.set_ylabel('Inertie cumulée (%)', 
-                      color='#00D4FF')
-        ax2.tick_params(colors='#00D4FF')
+                      color=accent_cyan)
+        ax2.tick_params(colors=accent_cyan)
         ax2.set_ylim(0, 105)
         
         ax.set_title('Inertie expliquée par dimension',
-                    color='#E8E8E8', fontsize=12, pad=15)
-        ax.set_xlabel('Dimensions', color='#9A9AA8')
-        ax.set_ylabel('% d\'inertie', color='#9A9AA8')
-        ax.tick_params(colors='#9A9AA8')
+                    color=text_color, fontsize=12, pad=15)
+        ax.set_xlabel('Dimensions', color=axis_color)
+        ax.set_ylabel('% d\'inertie', color=axis_color)
+        ax.tick_params(colors=axis_color)
         for spine in ax.spines.values():
-            spine.set_edgecolor('#555563')
+            spine.set_edgecolor(axis_color)
         ax.grid(True, alpha=0.08, axis='y', 
-               color='#555563')
+               color=grid_color)
         
-        fig.patch.set_facecolor('#0A0A0F')
+        fig.patch.set_facecolor(bg_color)
         
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=80,
                     bbox_inches='tight',
-                    facecolor='#0A0A0F')
+                    facecolor=bg_color)
         plt.close()
         buf.seek(0)
         import base64
@@ -2003,7 +2042,8 @@ def run_acp(df: pd.DataFrame,
 
 def _generate_pca_correlation_circle(variables_coords: list,
                                       inertia_pct: list,
-                                      variable_names: list) -> str | None:
+                                      variable_names: list,
+                                      theme: str = "dark") -> str | None:
     """Cercle des corrélations ACP — graphique signature."""
     try:
         import matplotlib.pyplot as plt
@@ -2011,17 +2051,33 @@ def _generate_pca_correlation_circle(variables_coords: list,
         matplotlib.use('Agg')
         import numpy as np
         
+        # Palette selon le thème
+        if theme == "light":
+            bg_color = '#FFFFFF'
+            ax_bg_color = '#F4F4F6'
+            text_color = '#1C1C22'
+            axis_color = '#6B6B76'
+            grid_color = '#33333A'
+            accent_or = '#96751E'
+        else:
+            bg_color = '#0A0A0F'
+            ax_bg_color = '#13131A'
+            text_color = '#E8E8E8'
+            axis_color = '#9A9AA8'
+            grid_color = '#555563'
+            accent_or = '#C9A84C'
+        
         fig, ax = plt.subplots(figsize=(7, 7))
-        fig.patch.set_facecolor('#0A0A0F')
-        ax.set_facecolor('#13131A')
+        fig.patch.set_facecolor(bg_color)
+        ax.set_facecolor(ax_bg_color)
         
         # Cercle unité
-        circle = plt.Circle((0, 0), 1, color='#555563', fill=False, 
+        circle = plt.Circle((0, 0), 1, color=grid_color, fill=False, 
                            linewidth=1.5, linestyle='--', alpha=0.5)
         ax.add_artist(circle)
         
         # Grille
-        ax.grid(True, alpha=0.08, color='#555563', linestyle=':')
+        ax.grid(True, alpha=0.08, color=grid_color, linestyle=':')
         
         # Limiter le nombre de variables si trop nombreuses
         note_variables = ""
@@ -2046,7 +2102,7 @@ def _generate_pca_correlation_circle(variables_coords: list,
                 '', xy=(x, y), xytext=(0, 0),
                 arrowprops=dict(
                     arrowstyle='->',
-                    color='#C9A84C',
+                    color=accent_or,
                     linewidth=1.5,
                     alpha=0.8
                 )
@@ -2058,29 +2114,29 @@ def _generate_pca_correlation_circle(variables_coords: list,
                 textcoords="offset points",
                 xytext=(5, 5),
                 fontsize=9,
-                color='#E8E8E8',
+                color=text_color,
                 alpha=0.9,
                 fontweight='bold'
             )
         
         # Axes centraux
-        ax.axhline(y=0, color='#555563', linewidth=0.5, linestyle='--')
-        ax.axvline(x=0, color='#555563', linewidth=0.5, linestyle='--')
+        ax.axhline(y=0, color=grid_color, linewidth=0.5, linestyle='--')
+        ax.axvline(x=0, color=grid_color, linewidth=0.5, linestyle='--')
         
         dim1_pct = inertia_pct[0] if inertia_pct else 0
         dim2_pct = inertia_pct[1] if len(inertia_pct) > 1 else 0
         
         ax.set_xlabel(
             f'Dimension 1 ({dim1_pct}%)',
-            color='#9A9AA8', fontsize=11
+            color=axis_color, fontsize=11
         )
         ax.set_ylabel(
             f'Dimension 2 ({dim2_pct}%)',
-            color='#9A9AA8', fontsize=11
+            color=axis_color, fontsize=11
         )
         ax.set_title(
             f'ACP — Cercle des Corrélations{note_variables}',
-            color='#E8E8E8', fontsize=13, pad=15
+            color=text_color, fontsize=13, pad=15
         )
         
         # Limites du cercle unité avec marge
@@ -2088,62 +2144,81 @@ def _generate_pca_correlation_circle(variables_coords: list,
         ax.set_ylim(-1.2, 1.2)
         ax.set_aspect('equal')
         
-        ax.tick_params(colors='#9A9AA8')
+        ax.tick_params(colors=axis_color)
         for spine in ax.spines.values():
-            spine.set_edgecolor('#555563')
+            spine.set_edgecolor(axis_color)
         
-        return _fig_to_b64(fig, theme="dark")
+        return _fig_to_b64(fig, theme=theme)
     
     except Exception:
         return None
 
 
 def _generate_pca_individuals_plot(individuals_coords: list,
-                                    inertia_pct: list) -> str | None:
+                                    inertia_pct: list,
+                                    theme: str = "dark") -> str | None:
     """Plan des individus ACP — nuage de points."""
     try:
         import matplotlib.pyplot as plt
         import matplotlib
         matplotlib.use('Agg')
         
+        # Palette selon le thème
+        if theme == "light":
+            bg_color = '#FFFFFF'
+            ax_bg_color = '#F4F4F6'
+            text_color = '#1C1C22'
+            axis_color = '#6B6B76'
+            grid_color = '#33333A'
+            accent_or = '#96751E'
+            accent_or_edge = '#C9A84C'
+        else:
+            bg_color = '#0A0A0F'
+            ax_bg_color = '#13131A'
+            text_color = '#E8E8E8'
+            axis_color = '#9A9AA8'
+            grid_color = '#555563'
+            accent_or = '#C9A84C'
+            accent_or_edge = '#E8D5A3'
+        
         fig, ax = plt.subplots(figsize=(7, 5))
-        fig.patch.set_facecolor('#0A0A0F')
-        ax.set_facecolor('#13131A')
+        fig.patch.set_facecolor(bg_color)
+        ax.set_facecolor(ax_bg_color)
         
         # Extraire coordonnées
         x_coords = [ind["dim1"] for ind in individuals_coords]
         y_coords = [ind["dim2"] for ind in individuals_coords]
         
         # Nuage de points
-        ax.scatter(x_coords, y_coords, color='#C9A84C', 
-                  s=40, alpha=0.6, edgecolors='#E8D5A3',
+        ax.scatter(x_coords, y_coords, color=accent_or, 
+                  s=40, alpha=0.6, edgecolors=accent_or_edge,
                   linewidth=0.5)
         
         # Axes centraux
-        ax.axhline(y=0, color='#555563', linewidth=0.5, linestyle='--')
-        ax.axvline(x=0, color='#555563', linewidth=0.5, linestyle='--')
+        ax.axhline(y=0, color=grid_color, linewidth=0.5, linestyle='--')
+        ax.axvline(x=0, color=grid_color, linewidth=0.5, linestyle='--')
         
         dim1_pct = inertia_pct[0] if inertia_pct else 0
         dim2_pct = inertia_pct[1] if len(inertia_pct) > 1 else 0
         
         ax.set_xlabel(
             f'Dimension 1 ({dim1_pct}%)',
-            color='#9A9AA8', fontsize=11
+            color=axis_color, fontsize=11
         )
         ax.set_ylabel(
             f'Dimension 2 ({dim2_pct}%)',
-            color='#9A9AA8', fontsize=11
+            color=axis_color, fontsize=11
         )
         ax.set_title(
             f'ACP — Plan des Individus ({len(individuals_coords)} observations)',
-            color='#E8E8E8', fontsize=13, pad=15
+            color=text_color, fontsize=13, pad=15
         )
-        ax.tick_params(colors='#9A9AA8')
+        ax.tick_params(colors=axis_color)
         for spine in ax.spines.values():
-            spine.set_edgecolor('#555563')
-        ax.grid(True, alpha=0.08, color='#555563')
+            spine.set_edgecolor(axis_color)
+        ax.grid(True, alpha=0.08, color=grid_color)
         
-        return _fig_to_b64(fig, theme="dark")
+        return _fig_to_b64(fig, theme=theme)
     
     except Exception:
         return None
