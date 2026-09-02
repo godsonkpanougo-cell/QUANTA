@@ -38,6 +38,8 @@ _lock = threading.Lock()
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -156,10 +158,11 @@ def update_analysis(
     result: dict[str, Any] | None = None,
     error: str | None = None,
     updated_at: str = "",
-) -> None:
+) -> bool:
     with _get_conn() as conn:
-        conn.execute(
-            "UPDATE analyses SET status = ?, result = ?, error = ?, updated_at = ? WHERE analysis_id = ?",
+        cursor = conn.execute(
+            "UPDATE analyses SET status = ?, result = ?, error = ?, updated_at = ? "
+            "WHERE analysis_id = ? AND status != 'done'",
             (
                 status,
                 json.dumps(result, ensure_ascii=False) if result is not None else None,
@@ -168,6 +171,14 @@ def update_analysis(
                 analysis_id,
             ),
         )
+        if cursor.rowcount == 0:
+            print(
+                f"DB - update_analysis IGNORÉ pour {analysis_id} : "
+                f"statut déjà 'done' (définitif), tentative d'écriture '{status}' bloquée.",
+                flush=True,
+            )
+            return False
+        return True
 
 
 def get_analysis(analysis_id: str) -> dict[str, Any] | None:
