@@ -416,6 +416,14 @@ python -m tests.test_selector_trap
 6. **Frontend** : mono-page ; pas d’historique navigable côté UI malgré `/history` API.
 7. **Puissance MW** : approximation via `|r|` sous `TTestIndPower` (pas un modèle MW dédié).
 8. **Legacy** : `/legacy` est référence figée — ne pas y développer.
+9. **Race conditions — état au 2 septembre 2026** :
+   - **Résolu :**
+     - SQLite configuré en mode WAL + busy_timeout=5000ms (db.py) — élimine les erreurs "database is locked" sous accès concurrents rapprochés, confirmé par test de charge (10 requêtes rapprochées sans erreur, contre échecs systématiques avant).
+     - Le statut 'done' d'une analyse ne peut plus jamais être écrasé une fois écrit (update_analysis() dans db.py retourne False et ignore l'écriture si le statut actuel est déjà 'done').
+   - **Limite connue, acceptée pour l'instant :**
+     - `_run_with_timeout()` dans main.py utilise un thread Python qui ne peut pas être tué à l'expiration du timeout (limitation du langage). Si le timeout global déclenche un statut 'error', puis que ce thread orphelin termine son travail plus tard avec succès, il peut encore écrire 'done' par-dessus 'error' (l'inverse — done écrasé — est bloqué, mais pas error écrasé par un done tardif).
+     - Impact réel : faible probabilité (nécessite un calcul qui dépasse le timeout global tout en continuant en arrière-plan jusqu'à réussir), impact limité (l'utilisateur verrait une analyse passer de "erreur" à "terminée" de façon inattendue, mais sans perte de données ni corruption).
+     - Vraie solution si ça devient un problème réel : remplacer le thread non-tuable de _run_with_timeout par une isolation en sous-processus (même pattern que analyze_worker.py et pdf_worker.py), qui peut être tué proprement à l'expiration du timeout via subprocess.terminate()/kill().
 
 ---
 
