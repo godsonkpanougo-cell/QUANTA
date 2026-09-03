@@ -1727,6 +1727,16 @@ def _html_variables_table(
         rows.append(
             f"<tr><td>{_esc(col)}</td><td>Catégorielle</td></tr>"
         )
+    freetext = _as_list(diagnosis.get("freetext_cols"))
+    id_columns = _as_list(diagnosis.get("id_cols"))
+    for col in freetext:
+        rows.append(
+            f"<tr><td>{_esc(col)}</td><td>Texte libre (exclue de l'analyse)</td></tr>"
+        )
+    for col in id_columns:
+        rows.append(
+            f"<tr><td>{_esc(col)}</td><td>Identifiant (exclue de l'analyse)</td></tr>"
+        )
     if not rows:
         rows.append("<tr><td colspan='2'>Aucune variable typée disponible.</td></tr>")
     body = "\n".join(rows)
