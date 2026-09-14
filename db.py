@@ -58,8 +58,29 @@ def init_db() -> None:
     """Crée les tables si elles n'existent pas. Appelée au démarrage de main.py."""
     with _get_conn() as conn:
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id      TEXT PRIMARY KEY,
+                google_sub   TEXT UNIQUE NOT NULL,
+                email        TEXT UNIQUE NOT NULL,
+                name         TEXT,
+                picture_url  TEXT,
+                created_at   TEXT NOT NULL,
+                last_login_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_token TEXT PRIMARY KEY,
+                user_id       TEXT NOT NULL,
+                created_at    TEXT NOT NULL,
+                expires_at    TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS uploads (
                 file_id      TEXT PRIMARY KEY,
+                user_id      TEXT NOT NULL,
                 path         TEXT NOT NULL,
                 filename     TEXT NOT NULL,
                 numeric_cols TEXT NOT NULL,
@@ -68,12 +89,14 @@ def init_db() -> None:
                 n_rows       INTEGER NOT NULL,
                 n_cols       INTEGER NOT NULL,
                 dataset_type TEXT,
-                uploaded_at  TEXT NOT NULL
+                uploaded_at  TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
             )
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS analyses (
                 analysis_id TEXT PRIMARY KEY,
+                user_id     TEXT NOT NULL,
                 file_id     TEXT NOT NULL,
                 query       TEXT NOT NULL,
                 status      TEXT NOT NULL,
@@ -81,7 +104,8 @@ def init_db() -> None:
                 error       TEXT,
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL,
-                FOREIGN KEY (file_id) REFERENCES uploads(file_id)
+                FOREIGN KEY (file_id) REFERENCES uploads(file_id),
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_analyses_created ON analyses(created_at DESC)")
@@ -98,15 +122,15 @@ def clear_all() -> None:
 # UPLOADS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def save_upload(file_id: str, data: dict[str, Any]) -> None:
+def save_upload(file_id: str, user_id: str, data: dict[str, Any]) -> None:
     with _get_conn() as conn:
         conn.execute(
             """INSERT INTO uploads
-               (file_id, path, filename, numeric_cols, cat_cols, id_cols,
+               (file_id, user_id, path, filename, numeric_cols, cat_cols, id_cols,
                 n_rows, n_cols, dataset_type, uploaded_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                file_id, data["path"], data["filename"],
+                file_id, user_id, data["path"], data["filename"],
                 json.dumps(data["numeric_cols"]), json.dumps(data["cat_cols"]),
                 json.dumps(data["id_cols"]), data["n_rows"], data["n_cols"],
                 data.get("dataset_type"), data["uploaded_at"],
@@ -142,13 +166,13 @@ def upload_exists(file_id: str) -> bool:
 # ANALYSES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def create_analysis(analysis_id: str, file_id: str, query: str, created_at: str) -> None:
+def create_analysis(analysis_id: str, user_id: str, file_id: str, query: str, created_at: str) -> None:
     with _get_conn() as conn:
         conn.execute(
             """INSERT INTO analyses
-               (analysis_id, file_id, query, status, result, error, created_at, updated_at)
-               VALUES (?, ?, ?, 'pending', NULL, NULL, ?, ?)""",
-            (analysis_id, file_id, query, created_at, created_at),
+               (analysis_id, user_id, file_id, query, status, result, error, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'pending', NULL, NULL, ?, ?)""",
+            (analysis_id, user_id, file_id, query, created_at, created_at),
         )
 
 
@@ -198,12 +222,12 @@ def get_analysis(analysis_id: str) -> dict[str, Any] | None:
     }
 
 
-def list_analyses(limit: int = 100) -> list[dict[str, Any]]:
+def list_analyses(user_id: str, limit: int = 100) -> list[dict[str, Any]]:
     with _get_conn() as conn:
         rows = conn.execute(
             "SELECT analysis_id, status, query, created_at, updated_at FROM analyses "
-            "ORDER BY created_at DESC LIMIT ?",
-            (limit,),
+            "WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, limit),
         ).fetchall()
     return [
         {"analysis_id": r["analysis_id"], "status": r["status"],
@@ -216,3 +240,148 @@ def delete_analysis(analysis_id: str) -> None:
     """Supprime une analyse de la base de données."""
     with _get_conn() as conn:
         conn.execute("DELETE FROM analyses WHERE analysis_id = ?", (analysis_id,))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# USERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def create_or_update_user(
+    google_sub: str,
+    email: str,
+    name: str | None,
+    picture_url: str | None,
+) -> str:
+    """
+    Crée l'utilisateur s'il n'existe pas (par google_sub), sinon
+    met à jour last_login_at, name, picture_url. Retourne user_id.
+    """
+    import uuid
+    from datetime import datetime
+
+    now = datetime.utcnow().isoformat() + "Z"
+
+    with _get_conn() as conn:
+        # Chercher par google_sub
+        existing = conn.execute(
+            "SELECT user_id FROM users WHERE google_sub = ?", (google_sub,)
+        ).fetchone()
+
+        if existing:
+            user_id = existing["user_id"]
+            # Mettre à jour last_login_at et potentiellement name/picture_url
+            conn.execute(
+                """UPDATE users
+                   SET last_login_at = ?, name = ?, picture_url = ?
+                   WHERE user_id = ?""",
+                (now, name, picture_url, user_id),
+            )
+            return user_id
+        else:
+            # Créer nouvel utilisateur
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                """INSERT INTO users
+                   (user_id, google_sub, email, name, picture_url, created_at, last_login_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (user_id, google_sub, email, name, picture_url, now, now),
+            )
+            return user_id
+
+
+def get_user_by_id(user_id: str) -> dict[str, Any] | None:
+    """Récupère un utilisateur par son user_id."""
+    with _get_conn() as conn:
+        row = conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+    if row is None:
+        return None
+    return {
+        "user_id": row["user_id"],
+        "google_sub": row["google_sub"],
+        "email": row["email"],
+        "name": row["name"],
+        "picture_url": row["picture_url"],
+        "created_at": row["created_at"],
+        "last_login_at": row["last_login_at"],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SESSIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def create_session(user_id: str, ttl_hours: int = 24 * 7) -> str:
+    """
+    Crée une session, retourne le session_token (secrets.token_urlsafe(32)).
+    """
+    import secrets
+    from datetime import datetime, timedelta
+
+    session_token = secrets.token_urlsafe(32)
+    now = datetime.utcnow()
+    created_at = now.isoformat() + "Z"
+    expires_at = (now + timedelta(hours=ttl_hours)).isoformat() + "Z"
+
+    with _get_conn() as conn:
+        conn.execute(
+            """INSERT INTO sessions
+               (session_token, user_id, created_at, expires_at)
+               VALUES (?, ?, ?, ?)""",
+            (session_token, user_id, created_at, expires_at),
+        )
+
+    return session_token
+
+
+def get_session(session_token: str) -> dict[str, Any] | None:
+    """
+    Récupère une session par son token. Retourne None si le token
+    n'existe pas OU si expires_at est dépassé.
+    """
+    from datetime import datetime
+
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM sessions WHERE session_token = ?", (session_token,)
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    # Vérifier expiration
+    expires_at = row["expires_at"]
+    now = datetime.utcnow().isoformat() + "Z"
+
+    if expires_at < now:
+        # Session expirée, la supprimer et retourner None
+        delete_session(session_token)
+        return None
+
+    return {
+        "session_token": row["session_token"],
+        "user_id": row["user_id"],
+        "created_at": row["created_at"],
+        "expires_at": row["expires_at"],
+    }
+
+
+def delete_session(session_token: str) -> None:
+    """Supprime une session (déconnexion)."""
+    with _get_conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE session_token = ?", (session_token,))
+
+
+def cleanup_expired_sessions() -> int:
+    """
+    Supprime toutes les sessions expirées, retourne le nombre
+    supprimé (utile pour un nettoyage périodique).
+    """
+    from datetime import datetime
+
+    now = datetime.utcnow().isoformat() + "Z"
+
+    with _get_conn() as conn:
+        cursor = conn.execute(
+            "DELETE FROM sessions WHERE expires_at < ?", (now,)
+        )
+        return cursor.rowcount

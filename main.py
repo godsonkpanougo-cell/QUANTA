@@ -41,9 +41,11 @@ print("=" * 60)
 print("QUANTA STARTUP - VERSION WITH MATPLOTLIB FIX")
 print("Matplotlib backend forced: Agg")
 print("=" * 60)
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import Response
+from fastapi import Cookie, Depends
 from pydantic import BaseModel, field_validator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -54,6 +56,7 @@ from app.compute import upload_validation
 from app.compute import test_selector as ts
 from app.llm import brain
 from app.orchestrator import run_full_analysis
+from authlib.integrations.starlette_client import OAuth
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -128,6 +131,22 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+)
+
+# SessionMiddleware pour OAuth (stockage du paramètre state CSRF)
+session_secret_key = os.environ.get("SESSION_SECRET_KEY", "")
+if not session_secret_key:
+    print("ATTENTION : SESSION_SECRET_KEY non defini - protection CSRF du flux OAuth affaiblie", flush=True)
+app.add_middleware(SessionMiddleware, secret_key=session_secret_key)
+
+# Configuration OAuth Google
+oauth = OAuth()
+oauth.register(
+    name="google",
+    client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+    client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
 )
 
 db.init_db()
@@ -225,8 +244,123 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "quanta-api", "version": app.version}
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTHENTIFICATION OAUTH GOOGLE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_current_user(session_token: str | None = Cookie(default=None)) -> dict[str, Any]:
+    """
+    Dépendance d'authentification : valide le session_token et retourne l'utilisateur.
+    Lève HTTPException 401 si non authentifié ou session invalide.
+    """
+    if session_token is None:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+
+    session = db.get_session(session_token)
+    if session is None:
+        raise HTTPException(status_code=401, detail="Session invalide ou expirée")
+
+    user = db.get_user_by_id(session["user_id"])
+    if user is None:
+        raise HTTPException(status_code=401, detail="Utilisateur introuvable")
+
+    return user
+
+
+@app.get("/auth/google")
+async def auth_google(request: Request) -> Response:
+    """
+    Redirige vers Google OAuth pour l'authentification.
+    """
+    redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI")
+    print(f"DEBUG - GOOGLE_REDIRECT_URI = {redirect_uri}", flush=True)
+    if not redirect_uri:
+        raise HTTPException(status_code=500, detail="GOOGLE_REDIRECT_URI non configuré")
+
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request) -> Response:
+    """
+    Callback OAuth Google : reçoit le token, crée/màj l'utilisateur, crée la session,
+    et redirige vers le frontend avec un cookie de session.
+    """
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+    try:
+        token = await oauth.google.authorize_access_token(request)
+    except Exception as e:
+        print(f"AUTH ERROR - Échec authorize_access_token : {e}", flush=True)
+        return Response(status_code=302, headers={"Location": f"{frontend_url}?error=oauth_failed"})
+
+    user_info = token.get("userinfo")
+    if not user_info:
+        print(f"AUTH ERROR - userinfo absent dans token", flush=True)
+        return Response(status_code=302, headers={"Location": f"{frontend_url}?error=no_userinfo"})
+
+    # Vérifier les champs retournés par Google
+    google_sub = user_info.get("sub")
+    email = user_info.get("email")
+    name = user_info.get("name")
+    picture_url = user_info.get("picture")
+
+    if not google_sub or not email:
+        print(f"AUTH ERROR - missing_user_data : sub={google_sub}, email={email}", flush=True)
+        return Response(status_code=302, headers={"Location": f"{frontend_url}?error=missing_user_data"})
+
+    user_id = db.create_or_update_user(
+        google_sub=google_sub,
+        email=email,
+        name=name,
+        picture_url=picture_url,
+    )
+
+    session_token = db.create_session(user_id)
+
+    response = Response(status_code=302, headers={"Location": frontend_url})
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        max_age=60 * 60 * 24 * 7,  # 7 jours
+    )
+    return response
+
+
+@app.post("/auth/logout")
+def logout(session_token: str | None = Cookie(default=None)) -> Response:
+    """
+    Déconnexion : supprime la session et efface le cookie.
+    """
+    if session_token:
+        db.delete_session(session_token)
+
+    response = Response(content='{"message": "Déconnecté"}', media_type="application/json")
+    response.delete_cookie("session_token")
+    return response
+
+
+@app.get("/auth/me")
+def auth_me(current_user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    """
+    Retourne les informations de l'utilisateur connecté.
+    """
+    return {
+        "user_id": current_user["user_id"],
+        "email": current_user["email"],
+        "name": current_user["name"],
+        "picture_url": current_user["picture_url"],
+    }
+
+
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+) -> dict[str, Any]:
     """
     Reçoit un fichier (CSV/Excel/Stata/SPSS), le sauvegarde temporairement,
     et retourne un diagnostic léger (colonnes disponibles par type) --
@@ -263,7 +397,7 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     with open(saved_path, "wb") as f:
         f.write(raw_bytes)
 
-    db.save_upload(file_id, {
+    db.save_upload(file_id, current_user["user_id"], {
         "path": saved_path,
         "filename": filename,
         "numeric_cols": diag["numeric_cols"],
@@ -469,7 +603,11 @@ def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None
 
 
 @app.post("/analyze")
-def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
+def analyze(
+    request: AnalyzeRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
+) -> dict[str, str]:
     """
     Lance une analyse en arrière-plan et retourne immédiatement un
     analysis_id. Le frontend doit ensuite poller GET /status/{analysis_id}
@@ -482,7 +620,7 @@ def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks) -> dict[
         )
 
     analysis_id = str(uuid.uuid4())
-    db.create_analysis(analysis_id, request.file_id, request.query, _now())
+    db.create_analysis(analysis_id, current_user["user_id"], request.file_id, request.query, _now())
 
     background_tasks.add_task(_run_analysis_background, analysis_id, request.file_id, request.query)
 
@@ -490,7 +628,10 @@ def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks) -> dict[
 
 
 @app.get("/status/{analysis_id}")
-def get_status(analysis_id: str) -> dict[str, Any]:
+def get_status(
+    analysis_id: str,
+    current_user: dict = Depends(get_current_user)
+) -> dict[str, Any]:
     """
     Statut d'une analyse en cours ou terminée. Le frontend poll cet
     endpoint toutes les 2-3 secondes (Jour 28 du programme).
@@ -498,6 +639,9 @@ def get_status(analysis_id: str) -> dict[str, Any]:
     analysis = db.get_analysis(analysis_id)
     if analysis is None:
         raise HTTPException(status_code=404, detail=f"analysis_id '{analysis_id}' introuvable.")
+
+    if analysis["user_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Accès refusé à cette analyse")
 
     response: dict[str, Any] = {
         "analysis_id": analysis_id,
@@ -514,13 +658,13 @@ def get_status(analysis_id: str) -> dict[str, Any]:
 
 
 @app.get("/history")
-def get_history() -> dict[str, Any]:
+def get_history(current_user: dict = Depends(get_current_user)) -> dict[str, Any]:
     """
     Liste légère des analyses passées (sans le détail complet des résultats)
     -- maintenant persistée via SQLite (db.py), survit aux redémarrages
     du serveur.
     """
-    items = db.list_analyses(limit=100)
+    items = db.list_analyses(current_user["user_id"], limit=100)
     return {"count": len(items), "analyses": items}
 
 
@@ -528,6 +672,7 @@ def get_history() -> dict[str, Any]:
 def get_report(
     analysis_id: str,
     theme: str = "dark",
+    current_user: dict = Depends(get_current_user)
 ) -> Response:
     """
     Télécharge le rapport PDF d'une analyse terminée.
@@ -550,6 +695,9 @@ def get_report(
                 f"avant de demander le rapport PDF."
             ),
         )
+
+    if analysis["user_id"] != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Accès refusé à cette analyse")
 
     theme_norm = (theme or "dark").strip().lower()
     if theme_norm not in {"dark", "light"}:
