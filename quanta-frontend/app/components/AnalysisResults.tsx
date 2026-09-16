@@ -148,9 +148,12 @@ export function AnalysisResults({
       try {
         const response = await fetch(
           `${baseUrl}/report/${analysisId}?theme=${theme}`,
-          { method: "GET" },
+          { method: "GET", credentials: "include" },
         );
 
+        if (response.status === 401) {
+          throw new Error("Connectez-vous pour continuer.");
+        }
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }

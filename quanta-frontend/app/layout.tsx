@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/app/context/AuthContext";
 
 const geist = Geist({
   subsets: ["latin"],
@@ -34,7 +35,7 @@ export default function RootLayout({
       <body
         className={`${geist.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} bg-quanta-void text-quanta-primary antialiased`}
       >
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

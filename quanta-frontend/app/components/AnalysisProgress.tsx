@@ -74,8 +74,13 @@ async function fetchAnalysisStatus(
     throw new Error("NEXT_PUBLIC_API_URL n'est pas configurée.");
   }
 
-  const response = await fetch(`${baseUrl}/status/${analysisId}`);
+  const response = await fetch(`${baseUrl}/status/${analysisId}`, {
+    credentials: "include",
+  });
 
+  if (response.status === 401) {
+    throw new Error("Connectez-vous pour continuer.");
+  }
   if (!response.ok) {
     throw new Error(
       `Impossible de récupérer le statut (HTTP ${response.status}).`,

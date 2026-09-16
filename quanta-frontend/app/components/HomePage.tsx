@@ -5,6 +5,8 @@ import { useCallback, useState } from "react";
 import { AnalysisProgress } from "@/app/components/AnalysisProgress";
 import { AnalysisResults } from "@/app/components/AnalysisResults";
 import { UploadZone } from "@/app/components/UploadZone";
+import { AuthButton } from "@/app/components/AuthButton";
+import { useAuth } from "@/app/context/AuthContext";
 
 const QUERY_EXAMPLES = [
   "Comparer le revenu entre régions",
@@ -53,6 +55,7 @@ async function parseErrorResponse(response: Response): Promise<string> {
 }
 
 export function HomePage() {
+  const { isAuthenticated, isLoading } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [query, setQuery] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
@@ -98,8 +101,12 @@ export function HomePage() {
       const uploadResponse = await fetch(`${baseUrl}/upload`, {
         method: "POST",
         body: formData,
+        credentials: "include",
       });
 
+      if (uploadResponse.status === 401) {
+        throw new Error("Connectez-vous pour continuer.");
+      }
       if (!uploadResponse.ok) {
         throw new Error(await parseErrorResponse(uploadResponse));
       }
@@ -111,8 +118,12 @@ export function HomePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ file_id: fileId, query: query.trim() }),
+        credentials: "include",
       });
 
+      if (analyzeResponse.status === 401) {
+        throw new Error("Connectez-vous pour continuer.");
+      }
       if (!analyzeResponse.ok) {
         throw new Error(await parseErrorResponse(analyzeResponse));
       }
@@ -156,6 +167,9 @@ export function HomePage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-quanta-void">
       <div className="w-full space-y-8 px-6 text-center">
+        <div className="flex justify-end">
+          <AuthButton />
+        </div>
         <h1 className="font-display text-5xl font-light tracking-widest text-quanta-gold">
           QUANTA
         </h1>
