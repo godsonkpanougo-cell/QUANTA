@@ -122,10 +122,8 @@ def clear_all() -> None:
 # UPLOADS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def save_upload(file_id: str, data: dict[str, Any]) -> None:
-    """Sauvegarde les métadonnées d'un upload (temporairement sans user_id)."""
-    # Temporairement : user_id vide car endpoints non protégés (STOP POINT)
-    user_id = ""
+def save_upload(file_id: str, user_id: str, data: dict[str, Any]) -> None:
+    """Sauvegarde les métadonnées d'un upload avec user_id."""
     with _get_conn() as conn:
         conn.execute(
             """INSERT INTO uploads
@@ -141,9 +139,13 @@ def save_upload(file_id: str, data: dict[str, Any]) -> None:
         )
 
 
-def get_upload(file_id: str) -> dict[str, Any] | None:
+def get_upload(file_id: str, user_id: str) -> dict[str, Any] | None:
+    """Récupère un upload si l'utilisateur est le propriétaire."""
     with _get_conn() as conn:
-        row = conn.execute("SELECT * FROM uploads WHERE file_id = ?", (file_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM uploads WHERE file_id = ? AND user_id = ?",
+            (file_id, user_id)
+        ).fetchone()
     if row is None:
         return None
     return {
@@ -159,9 +161,13 @@ def get_upload(file_id: str) -> dict[str, Any] | None:
     }
 
 
-def upload_exists(file_id: str) -> bool:
+def upload_exists(file_id: str, user_id: str) -> bool:
+    """Vérifie si un upload existe et appartient à l'utilisateur."""
     with _get_conn() as conn:
-        row = conn.execute("SELECT 1 FROM uploads WHERE file_id = ?", (file_id,)).fetchone()
+        row = conn.execute(
+            "SELECT 1 FROM uploads WHERE file_id = ? AND user_id = ?",
+            (file_id, user_id)
+        ).fetchone()
     return row is not None
 
 
@@ -169,10 +175,8 @@ def upload_exists(file_id: str) -> bool:
 # ANALYSES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def create_analysis(analysis_id: str, file_id: str, query: str, created_at: str) -> None:
-    """Crée une analyse (temporairement sans user_id)."""
-    # Temporairement : user_id vide car endpoints non protégés (STOP POINT)
-    user_id = ""
+def create_analysis(analysis_id: str, user_id: str, file_id: str, query: str, created_at: str) -> None:
+    """Crée une analyse avec user_id."""
     with _get_conn() as conn:
         conn.execute(
             """INSERT INTO analyses
@@ -188,37 +192,46 @@ def update_analysis(
     result: dict[str, Any] | None = None,
     error: str | None = None,
     updated_at: str = "",
+    user_id: str = "",
 ) -> bool:
+    """Met à jour une analyse si l'utilisateur est le propriétaire."""
     with _get_conn() as conn:
         cursor = conn.execute(
             "UPDATE analyses SET status = ?, result = ?, error = ?, updated_at = ? "
-            "WHERE analysis_id = ? AND status != 'done'",
+            "WHERE analysis_id = ? AND user_id = ? AND status != 'done'",
             (
                 status,
                 json.dumps(result, ensure_ascii=False) if result is not None else None,
                 error,
                 updated_at,
                 analysis_id,
+                user_id,
             ),
         )
         if cursor.rowcount == 0:
             print(
                 f"DB - update_analysis IGNORÉ pour {analysis_id} : "
-                f"statut déjà 'done' (définitif), tentative d'écriture '{status}' bloquée.",
+                f"statut déjà 'done' (définitif) OU utilisateur non propriétaire, "
+                f"tentative d'écriture '{status}' bloquée.",
                 flush=True,
             )
             return False
         return True
 
 
-def get_analysis(analysis_id: str) -> dict[str, Any] | None:
+def get_analysis(analysis_id: str, user_id: str) -> dict[str, Any] | None:
+    """Récupère une analyse si l'utilisateur est le propriétaire."""
     with _get_conn() as conn:
-        row = conn.execute("SELECT * FROM analyses WHERE analysis_id = ?", (analysis_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM analyses WHERE analysis_id = ? AND user_id = ?",
+            (analysis_id, user_id)
+        ).fetchone()
     if row is None:
         return None
     return {
         "analysis_id": row["analysis_id"],
         "file_id": row["file_id"],
+        "user_id": row["user_id"],
         "query": row["query"],
         "status": row["status"],
         "result": json.loads(row["result"]) if row["result"] else None,
@@ -228,14 +241,13 @@ def get_analysis(analysis_id: str) -> dict[str, Any] | None:
     }
 
 
-def list_analyses(limit: int = 100) -> list[dict[str, Any]]:
-    """Liste les analyses (temporairement sans filtre user_id)."""
-    # Temporairement : pas de filtre user_id car endpoints non protégés (STOP POINT)
+def list_analyses(user_id: str, limit: int = 100) -> list[dict[str, Any]]:
+    """Liste les analyses d'un utilisateur."""
     with _get_conn() as conn:
         rows = conn.execute(
             "SELECT analysis_id, status, query, created_at, updated_at FROM analyses "
-            "ORDER BY created_at DESC LIMIT ?",
-            (limit,),
+            "WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, limit),
         ).fetchall()
     return [
         {"analysis_id": r["analysis_id"], "status": r["status"],
@@ -244,10 +256,13 @@ def list_analyses(limit: int = 100) -> list[dict[str, Any]]:
     ]
 
 
-def delete_analysis(analysis_id: str) -> None:
-    """Supprime une analyse de la base de données."""
+def delete_analysis(analysis_id: str, user_id: str) -> None:
+    """Supprime une analyse si l'utilisateur est le propriétaire."""
     with _get_conn() as conn:
-        conn.execute("DELETE FROM analyses WHERE analysis_id = ?", (analysis_id,))
+        conn.execute(
+            "DELETE FROM analyses WHERE analysis_id = ? AND user_id = ?",
+            (analysis_id, user_id)
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

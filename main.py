@@ -238,7 +238,10 @@ def health() -> dict[str, str]:
 
 
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(auth.get_current_user)
+) -> dict[str, Any]:
     """
     Reçoit un fichier (CSV/Excel/Stata/SPSS), le sauvegarde temporairement,
     et retourne un diagnostic léger (colonnes disponibles par type) --
@@ -275,7 +278,7 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     with open(saved_path, "wb") as f:
         f.write(raw_bytes)
 
-    db.save_upload(file_id, {
+    db.save_upload(file_id, current_user["user_id"], {
         "path": saved_path,
         "filename": filename,
         "numeric_cols": diag["numeric_cols"],
@@ -298,19 +301,20 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, Any]:
     }
 
 
-def _run_analysis_core(analysis_id: str, file_id: str, query: str) -> None:
+def _run_analysis_core(analysis_id: str, user_id: str, file_id: str, query: str) -> None:
     """
     Logique principale d'analyse, exécutée avec timeout.
     """
-    db.update_analysis(analysis_id, status="running", updated_at=_now())
+    db.update_analysis(analysis_id, status="running", updated_at=_now(), user_id=user_id)
     audit_trail: list[dict[str, str]] = []
 
-    upload_info = db.get_upload(file_id)
+    upload_info = db.get_upload(file_id, user_id)
     if upload_info is None:
         db.update_analysis(
             analysis_id, status="error",
             error=f"file_id '{file_id}' introuvable -- le fichier a peut-être expiré ou n'a jamais été uploadé.",
             updated_at=_now(),
+            user_id=user_id,
         )
         return
 
@@ -414,10 +418,10 @@ def _run_analysis_core(analysis_id: str, file_id: str, query: str) -> None:
     })
     result["audit_trail"] = audit_trail
 
-    db.update_analysis(analysis_id, status="done", result=result, updated_at=_now())
+    db.update_analysis(analysis_id, status="done", result=result, updated_at=_now(), user_id=user_id)
 
 
-def _run_analysis_dispatch(analysis_id: str, file_id: str, query: str) -> None:
+def _run_analysis_dispatch(analysis_id: str, user_id: str, file_id: str, query: str) -> None:
     """
     Tente d'abord l'exécution via le sous-processus analyze_worker.py.
     En cas d'échec (timeout, erreur, ou statut pas "done" en base),
@@ -435,13 +439,13 @@ def _run_analysis_dispatch(analysis_id: str, file_id: str, query: str) -> None:
             print(f"ANALYZE Worker - Stderr: {proc.stderr[-6000:]}", flush=True)
 
         # Vérifier le statut en base pour confirmer le succès réel
-        analysis = db.get_analysis(analysis_id)
+        analysis = db.get_analysis(analysis_id, user_id)
         if proc.returncode == 0 and analysis and analysis.get("status") == "done":
             print("ANALYZE Worker - Succès via sous-processus", flush=True)
             return
         else:
             print("ANALYZE Worker - Échec (returncode non nul ou statut pas 'done' en base), fallback vers exécution en mémoire", flush=True)
-            _run_analysis_core(analysis_id, file_id, query)
+            _run_analysis_core(analysis_id, user_id, file_id, query)
     except subprocess.TimeoutExpired as e:
         print(f"ANALYZE Worker - Timeout après 200s", flush=True)
         if e.stdout:
@@ -449,13 +453,13 @@ def _run_analysis_dispatch(analysis_id: str, file_id: str, query: str) -> None:
         if e.stderr:
             print(f"ANALYZE Worker - Stderr partiel avant timeout: {e.stderr[-3000:]}", flush=True)
         print("ANALYZE Worker - Fallback vers exécution en mémoire", flush=True)
-        _run_analysis_core(analysis_id, file_id, query)
+        _run_analysis_core(analysis_id, user_id, file_id, query)
     except Exception as e:
         print(f"ANALYZE Worker - Erreur lors de l'exécution du sous-processus : {e}, fallback vers exécution en mémoire", flush=True)
-        _run_analysis_core(analysis_id, file_id, query)
+        _run_analysis_core(analysis_id, user_id, file_id, query)
 
 
-def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None:
+def _run_analysis_background(analysis_id: str, user_id: str, file_id: str, query: str) -> None:
     """
     Exécutée en arrière-plan par BackgroundTasks. Ne lève jamais d'exception
     vers l'extérieur -- toute erreur est capturée et stockée dans l'état de
@@ -463,12 +467,13 @@ def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None
     """
     try:
         # Exécuter l'analyse avec un timeout de 5 minutes (300 secondes)
-        _run_with_timeout(_run_analysis_dispatch, args=(analysis_id, file_id, query), timeout=300)
+        _run_with_timeout(_run_analysis_dispatch, args=(analysis_id, user_id, file_id, query), timeout=300)
     except TimeoutError as e:
         db.update_analysis(
             analysis_id, status="error",
             error=f"Timeout: {str(e)}",
             updated_at=_now(),
+            user_id=user_id,
         )
     except Exception as e:
         # Filet de sécurité ultime : même une erreur totalement imprévue ne
@@ -477,37 +482,46 @@ def _run_analysis_background(analysis_id: str, file_id: str, query: str) -> None
             analysis_id, status="error",
             error=f"Erreur inattendue pendant l'analyse : {e}",
             updated_at=_now(),
+            user_id=user_id,
         )
 
 
 @app.post("/analyze")
-def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
+def analyze(
+    request: AnalyzeRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(auth.get_current_user)
+) -> dict[str, str]:
     """
     Lance une analyse en arrière-plan et retourne immédiatement un
     analysis_id. Le frontend doit ensuite poller GET /status/{analysis_id}
     jusqu'à obtenir le statut "done" ou "error".
     """
-    if not db.upload_exists(request.file_id):
+    if not db.upload_exists(request.file_id, current_user["user_id"]):
         raise HTTPException(
             status_code=404,
             detail=f"file_id '{request.file_id}' introuvable. Uploadez d'abord un fichier via /upload.",
         )
 
     analysis_id = str(uuid.uuid4())
-    db.create_analysis(analysis_id, request.file_id, request.query, _now())
+    user_id = current_user["user_id"]
+    db.create_analysis(analysis_id, user_id, request.file_id, request.query, _now())
 
-    background_tasks.add_task(_run_analysis_background, analysis_id, request.file_id, request.query)
+    background_tasks.add_task(_run_analysis_background, analysis_id, user_id, request.file_id, request.query)
 
     return {"analysis_id": analysis_id, "status": "pending"}
 
 
 @app.get("/status/{analysis_id}")
-def get_status(analysis_id: str) -> dict[str, Any]:
+def get_status(
+    analysis_id: str,
+    current_user: dict = Depends(auth.get_current_user)
+) -> dict[str, Any]:
     """
     Statut d'une analyse en cours ou terminée. Le frontend poll cet
     endpoint toutes les 2-3 secondes (Jour 28 du programme).
     """
-    analysis = db.get_analysis(analysis_id)
+    analysis = db.get_analysis(analysis_id, current_user["user_id"])
     if analysis is None:
         raise HTTPException(status_code=404, detail=f"analysis_id '{analysis_id}' introuvable.")
 
@@ -526,13 +540,13 @@ def get_status(analysis_id: str) -> dict[str, Any]:
 
 
 @app.get("/history")
-def get_history() -> dict[str, Any]:
+def get_history(current_user: dict = Depends(auth.get_current_user)) -> dict[str, Any]:
     """
     Liste légère des analyses passées (sans le détail complet des résultats)
     -- maintenant persistée via SQLite (db.py), survit aux redémarrages
     du serveur.
     """
-    items = db.list_analyses(limit=100)
+    items = db.list_analyses(current_user["user_id"], limit=100)
     return {"count": len(items), "analyses": items}
 
 
@@ -540,13 +554,14 @@ def get_history() -> dict[str, Any]:
 def get_report(
     analysis_id: str,
     theme: str = "dark",
+    current_user: dict = Depends(auth.get_current_user)
 ) -> Response:
     """
     Télécharge le rapport PDF d'une analyse terminée.
     Query param optionnel : theme=dark|light (défaut dark).
     Exemple : /report/{id}?theme=light
     """
-    analysis = db.get_analysis(analysis_id)
+    analysis = db.get_analysis(analysis_id, current_user["user_id"])
     if analysis is None:
         raise HTTPException(
             status_code=404,
