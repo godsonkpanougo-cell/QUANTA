@@ -122,7 +122,10 @@ def clear_all() -> None:
 # UPLOADS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def save_upload(file_id: str, user_id: str, data: dict[str, Any]) -> None:
+def save_upload(file_id: str, data: dict[str, Any]) -> None:
+    """Sauvegarde les métadonnées d'un upload (temporairement sans user_id)."""
+    # Temporairement : user_id vide car endpoints non protégés (STOP POINT)
+    user_id = ""
     with _get_conn() as conn:
         conn.execute(
             """INSERT INTO uploads
@@ -166,7 +169,10 @@ def upload_exists(file_id: str) -> bool:
 # ANALYSES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def create_analysis(analysis_id: str, user_id: str, file_id: str, query: str, created_at: str) -> None:
+def create_analysis(analysis_id: str, file_id: str, query: str, created_at: str) -> None:
+    """Crée une analyse (temporairement sans user_id)."""
+    # Temporairement : user_id vide car endpoints non protégés (STOP POINT)
+    user_id = ""
     with _get_conn() as conn:
         conn.execute(
             """INSERT INTO analyses
@@ -222,12 +228,14 @@ def get_analysis(analysis_id: str) -> dict[str, Any] | None:
     }
 
 
-def list_analyses(user_id: str, limit: int = 100) -> list[dict[str, Any]]:
+def list_analyses(limit: int = 100) -> list[dict[str, Any]]:
+    """Liste les analyses (temporairement sans filtre user_id)."""
+    # Temporairement : pas de filtre user_id car endpoints non protégés (STOP POINT)
     with _get_conn() as conn:
         rows = conn.execute(
             "SELECT analysis_id, status, query, created_at, updated_at FROM analyses "
-            "WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-            (user_id, limit),
+            "ORDER BY created_at DESC LIMIT ?",
+            (limit,),
         ).fetchall()
     return [
         {"analysis_id": r["analysis_id"], "status": r["status"],
