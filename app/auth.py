@@ -17,6 +17,8 @@ from typing import Any
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from fastapi.responses import Response as FastAPIResponse
 from authlib.integrations.starlette_client import OAuth
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 import db
 
@@ -39,6 +41,9 @@ oauth.register(
 
 # Router FastAPI pour les routes d'authentification
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Rate limiting pour les endpoints d'authentification (limite par IP)
+auth_limiter = Limiter(key_func=get_remote_address)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -78,6 +83,7 @@ def get_current_user(session_token: str | None = Cookie(default=None)) -> dict[s
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/google")
+@auth_limiter.limit("20/minute")
 async def auth_google(request: Request) -> Response:
     """
     Initie le flow OAuth Google en redirigeant l'utilisateur vers la page de connexion Google.
@@ -137,7 +143,7 @@ async def auth_callback(request: Request) -> Response:
     picture_url = user_info.get("picture")
 
     if not google_sub or not email:
-        print(f"AUTH ERROR - missing_user_data : sub={google_sub}, email={email}", flush=True)
+        print(f"AUTH ERROR - missing_user_data : sub={google_sub}", flush=True)
         return FastAPIResponse(status_code=302, headers={"Location": f"{frontend_url}?error=missing_user_data"})
 
     # Créer ou mettre à jour l'utilisateur en base

@@ -49,6 +49,7 @@ from fastapi import Cookie, Depends
 from pydantic import BaseModel, field_validator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import db
@@ -112,8 +113,29 @@ def _run_with_timeout(func, args=(), kwargs={}, timeout=300):
 app = FastAPI(title="QUANTA API", version="0.1.0")
 
 # Rate limiting pour protéger contre les abus
-limiter = Limiter(key_func=get_remote_address)
+def _get_rate_limit_key(request: Request) -> str:
+    """
+    Clé de rate limiting : utilise user_id si authentifié, sinon IP.
+    Permet de limiter /analyze par utilisateur plutôt que par IP.
+    """
+    session_token = request.cookies.get("session_token")
+    if session_token:
+        session = db.get_session(session_token)
+        if session:
+            return f"user:{session['user_id']}"
+    return get_remote_address(request)
+
+limiter = Limiter(key_func=_get_rate_limit_key)
 app.state.limiter = limiter
+
+# Handler personnalisé pour les erreurs de rate limiting (message propre)
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+    return Response(
+        content='{"detail": "Trop de requêtes. Veuillez réessayer dans quelques minutes."}',
+        status_code=429,
+        media_type="application/json"
+    )
 
 # CORS : autoriser le frontend local pendant le développement. À restreindre
 # au domaine de production réel avant le déploiement (Jour 61 du programme).
@@ -137,7 +159,11 @@ app.add_middleware(
 session_secret_key = os.environ.get("SESSION_SECRET_KEY", "")
 if not session_secret_key:
     print("ATTENTION : SESSION_SECRET_KEY non defini - protection CSRF du flux OAuth affaiblie", flush=True)
-app.add_middleware(SessionMiddleware, secret_key=session_secret_key)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=session_secret_key,
+    max_age=60 * 60 * 24 * 7,  # 7 jours, cohérent avec le cookie de session
+)
 
 # Inclure le router d'authentification
 app.include_router(auth.router)
@@ -238,7 +264,9 @@ def health() -> dict[str, str]:
 
 
 @app.post("/upload")
+@limiter.limit("10/minute")
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
     current_user: dict = Depends(auth.get_current_user)
 ) -> dict[str, Any]:
@@ -251,17 +279,40 @@ async def upload_file(
     Ne lance PAS l'analyse complète ici -- seulement le chargement et la
     classification des colonnes (rapide), pour donner un retour immédiat.
     """
-    raw_bytes = await file.read()
+    # Vérification précoce via Content-Length si disponible
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            size = int(content_length)
+            if size > MAX_FILE_SIZE_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Fichier trop volumineux ({size / 1e6:.1f} Mo). "
+                            f"Limite actuelle : {MAX_FILE_SIZE_BYTES / 1e6:.0f} Mo.",
+                )
+        except ValueError:
+            pass  # Content-Length invalide, on continue avec la lecture chunked
 
-    if len(raw_bytes) > MAX_FILE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Fichier trop volumineux ({len(raw_bytes) / 1e6:.1f} Mo). "
-                    f"Limite actuelle : {MAX_FILE_SIZE_BYTES / 1e6:.0f} Mo.",
-        )
+    # Lecture par chunks pour éviter de charger tout en mémoire
+    CHUNK_SIZE = 64 * 1024  # 64 KB
+    raw_bytes = bytearray()
+    total_read = 0
+
+    while True:
+        chunk = await file.read(CHUNK_SIZE)
+        if not chunk:
+            break
+        total_read += len(chunk)
+        if total_read > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Fichier trop volumineux ({total_read / 1e6:.1f} Mo). "
+                        f"Limite actuelle : {MAX_FILE_SIZE_BYTES / 1e6:.0f} Mo.",
+            )
+        raw_bytes.extend(chunk)
 
     filename = file.filename or "upload.bin"
-    diag = upload_validation.load_and_diagnose(raw_bytes, filename)
+    diag = upload_validation.load_and_diagnose(bytes(raw_bytes), filename)
 
     if "error" in diag:
         raise HTTPException(status_code=400, detail=f"Impossible de lire le fichier : {diag['error']}")
@@ -276,7 +327,7 @@ async def upload_file(
     file_id = str(uuid.uuid4())
     saved_path = os.path.join(UPLOAD_DIR, f"{file_id}_{filename}")
     with open(saved_path, "wb") as f:
-        f.write(raw_bytes)
+        f.write(bytes(raw_bytes))
 
     db.save_upload(file_id, current_user["user_id"], {
         "path": saved_path,
@@ -487,8 +538,10 @@ def _run_analysis_background(analysis_id: str, user_id: str, file_id: str, query
 
 
 @app.post("/analyze")
+@limiter.limit("5/minute")
 def analyze(
-    request: AnalyzeRequest,
+    request: Request,
+    analyze_request: AnalyzeRequest,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(auth.get_current_user)
 ) -> dict[str, str]:
@@ -497,17 +550,17 @@ def analyze(
     analysis_id. Le frontend doit ensuite poller GET /status/{analysis_id}
     jusqu'à obtenir le statut "done" ou "error".
     """
-    if not db.upload_exists(request.file_id, current_user["user_id"]):
+    if not db.upload_exists(analyze_request.file_id, current_user["user_id"]):
         raise HTTPException(
             status_code=404,
-            detail=f"file_id '{request.file_id}' introuvable. Uploadez d'abord un fichier via /upload.",
+            detail=f"file_id '{analyze_request.file_id}' introuvable. Uploadez d'abord un fichier via /upload.",
         )
 
     analysis_id = str(uuid.uuid4())
     user_id = current_user["user_id"]
-    db.create_analysis(analysis_id, user_id, request.file_id, request.query, _now())
+    db.create_analysis(analysis_id, user_id, analyze_request.file_id, analyze_request.query, _now())
 
-    background_tasks.add_task(_run_analysis_background, analysis_id, user_id, request.file_id, request.query)
+    background_tasks.add_task(_run_analysis_background, analysis_id, user_id, analyze_request.file_id, analyze_request.query)
 
     return {"analysis_id": analysis_id, "status": "pending"}
 
@@ -591,19 +644,19 @@ def get_report(
 
     upload_dir = os.environ.get("QUANTA_UPLOAD_DIR", "/data/uploads")
     os.makedirs(upload_dir, exist_ok=True)
-    
-    print(f"DEBUG REPORT - analysis_id: {analysis_id}, theme: {theme_norm}")
-    
+
+    logger.debug("PDF Report generation", analysis_id=analysis_id, theme=theme_norm)
+
     # Chercher PDF déjà généré
     pdf_path = os.path.join(upload_dir, f"report_{analysis_id}_{theme_norm}.pdf")
-    
+
     # Supprimer PDF existant pour forcer régénération avec PDF Worker
     if os.path.exists(pdf_path):
-        print(f"DEBUG - Suppression PDF existant: {pdf_path}")
+        logger.debug("Deleting existing PDF", pdf_path=pdf_path)
         os.unlink(pdf_path)
-    
-    print(f"DEBUG - Lancement PDF Worker")
-    
+
+    logger.debug("Launching PDF Worker")
+
     # Toujours lancer le PDF Worker
     # Écrire le JSON d'entrée dans un fichier temp
     try:
@@ -611,37 +664,37 @@ def get_report(
             mode='w', suffix='.json',
             delete=False, encoding='utf-8'
         ) as tmp:
-            print(f"DEBUG - Création fichier temp: {tmp.name}")
+            logger.debug("Creating temp file", temp_file=tmp.name)
             json.dump(result, tmp, ensure_ascii=False)
             input_path = tmp.name
-            print(f"DEBUG - JSON écrit, input_path: {input_path}")
+            logger.debug("JSON written to temp file", input_path=input_path)
     except Exception as e:
-        print(f"DEBUG - Erreur création fichier temp: {e}")
+        logger.error("Error creating temp file", error=str(e))
         raise
-    
-    print(f"DEBUG - Entrée bloc try subprocess")
-    
+
+    logger.debug("Entering subprocess try block")
+
     try:
         # Lancer le subprocess PDF Worker
         # Timeout 300s (5 minutes)
-        logger.info(f"PDF Worker - Lancement subprocess pour {analysis_id}")
-        print(f"DEBUG - Avant subprocess.run")
+        logger.info("PDF Worker - Launching subprocess", analysis_id=analysis_id)
+        logger.debug("Before subprocess.run")
         proc = subprocess.run(
             [sys.executable, "app/pdf_worker.py", input_path, pdf_path, theme_norm],
             timeout=300,
             capture_output=True,
             text=True
         )
-        print(f"DEBUG - Après subprocess.run, returncode: {proc.returncode}")
-        
-        print(f"PDF Worker - Returncode: {proc.returncode}")
+        logger.debug("After subprocess.run", returncode=proc.returncode)
+
+        logger.info("PDF Worker - Returncode", returncode=proc.returncode)
         if proc.stdout:
-            print(f"PDF Worker - Stdout: {proc.stdout[-6000:]}")
+            logger.debug("PDF Worker - Stdout", stdout=proc.stdout[-6000:])
         if proc.stderr:
-            print(f"PDF Worker - Stderr: {proc.stderr[-6000:]}")
-        
+            logger.debug("PDF Worker - Stderr", stderr=proc.stderr[-6000:])
+
         if proc.returncode != 0:
-            logger.error(f"PDF Worker échoué, fallback PDF léger")
+            logger.error("PDF Worker failed, using fallback lightweight PDF")
             # Fallback PDF léger
             from app.report_generator import generate_lightweight_pdf
             pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm)
@@ -659,12 +712,10 @@ def get_report(
                 )
             raise HTTPException(status_code=500, detail="Erreur génération PDF")
         
-        logger.info(f"PDF Worker - Succès, PDF généré: {pdf_path}")
-    
+        logger.info("PDF Worker - Success, PDF generated", pdf_path=pdf_path)
+
     except Exception as e:
-        print(f"DEBUG - Exception subprocess: {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("Subprocess exception", exception_type=type(e).__name__, error=str(e))
         raise
     
     except subprocess.TimeoutExpired:

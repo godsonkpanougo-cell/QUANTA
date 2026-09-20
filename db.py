@@ -242,18 +242,50 @@ def get_analysis(analysis_id: str, user_id: str) -> dict[str, Any] | None:
 
 
 def list_analyses(user_id: str, limit: int = 100) -> list[dict[str, Any]]:
-    """Liste les analyses d'un utilisateur."""
+    """
+    Liste les analyses d'un utilisateur avec nom de fichier et score de confiance.
+    
+    Approche choisie : JOIN avec la table uploads pour le filename,
+    et parsing JSON en Python pour le score (score_global) quand status="done".
+    C'est plus simple que les fonctions JSON de SQLite et cohérent avec le style existant.
+    """
     with _get_conn() as conn:
         rows = conn.execute(
-            "SELECT analysis_id, status, query, created_at, updated_at FROM analyses "
-            "WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            """SELECT a.analysis_id, a.status, a.query, a.created_at, a.updated_at, a.result,
+                      u.filename
+               FROM analyses a
+               JOIN uploads u ON a.file_id = u.file_id
+               WHERE a.user_id = ? ORDER BY a.created_at DESC LIMIT ?""",
             (user_id, limit),
         ).fetchall()
-    return [
-        {"analysis_id": r["analysis_id"], "status": r["status"],
-         "query": r["query"], "created_at": r["created_at"], "updated_at": r["updated_at"]}
-        for r in rows
-    ]
+    
+    analyses = []
+    for r in rows:
+        analysis = {
+            "analysis_id": r["analysis_id"],
+            "status": r["status"],
+            "query": r["query"],
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+            "filename": r["filename"],
+        }
+        
+        # Extraire le score de confiance uniquement si status="done"
+        if r["status"] == "done" and r["result"]:
+            try:
+                result = json.loads(r["result"])
+                # Le score est dans result.confidence.score_global
+                confidence = result.get("confidence", {})
+                analysis["confidence_score"] = confidence.get("score_global")
+            except (json.JSONDecodeError, KeyError, TypeError):
+                # En cas d'erreur de parsing, pas de score
+                analysis["confidence_score"] = None
+        else:
+            analysis["confidence_score"] = None
+        
+        analyses.append(analysis)
+    
+    return analyses
 
 
 def delete_analysis(analysis_id: str, user_id: str) -> None:
