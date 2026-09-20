@@ -55,7 +55,8 @@ def main():
 
     try:
         # Récupérer l'analyse pour obtenir le user_id (isolation des données)
-        analysis = db.get_analysis(analysis_id, "")
+        # Utilisation de get_analysis_internal car le worker n'a pas encore le user_id
+        analysis = db.get_analysis_internal(analysis_id)
         if analysis is None:
             db.update_analysis(
                 analysis_id, status="error",

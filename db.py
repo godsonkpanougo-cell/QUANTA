@@ -18,6 +18,7 @@ import json
 import os
 import sqlite3
 import threading
+import uuid
 from contextlib import contextmanager
 from typing import Any
 
@@ -65,9 +66,20 @@ def init_db() -> None:
                 name         TEXT,
                 picture_url  TEXT,
                 created_at   TEXT NOT NULL,
-                last_login_at TEXT
+                last_login_at TEXT,
+                analyses_count INTEGER DEFAULT 0,
+                quota_renewal_at TEXT NOT NULL
             )
         """)
+        # Migration pour les utilisateurs existants : ajouter les colonnes si elles n'existent pas
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN analyses_count INTEGER DEFAULT 0")
+        except:
+            pass  # La colonne existe déjà
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN quota_renewal_at TEXT NOT NULL DEFAULT ''")
+        except:
+            pass  # La colonne existe déjà
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 session_token TEXT PRIMARY KEY,
@@ -116,6 +128,8 @@ def clear_all() -> None:
     with _get_conn() as conn:
         conn.execute("DELETE FROM analyses")
         conn.execute("DELETE FROM uploads")
+        conn.execute("DELETE FROM sessions")
+        conn.execute("DELETE FROM users")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -241,6 +255,36 @@ def get_analysis(analysis_id: str, user_id: str) -> dict[str, Any] | None:
     }
 
 
+def get_analysis_internal(analysis_id: str) -> dict[str, Any] | None:
+    """
+    Récupère une analyse sans vérification de propriétaire.
+    
+    Réservée aux workers de confiance (ex: analyze_worker.py) qui ont besoin
+    d'accéder aux métadonnées d'une analyse pour effectuer des opérations
+    système (timeout, génération de rapport, etc.).
+    
+    NE PAS utiliser dans les endpoints publics HTTP.
+    """
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM analyses WHERE analysis_id = ?",
+            (analysis_id,)
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "analysis_id": row["analysis_id"],
+        "file_id": row["file_id"],
+        "user_id": row["user_id"],
+        "query": row["query"],
+        "status": row["status"],
+        "result": json.loads(row["result"]) if row["result"] else None,
+        "error": row["error"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
 def list_analyses(user_id: str, limit: int = 100) -> list[dict[str, Any]]:
     """
     Liste les analyses d'un utilisateur avec nom de fichier et score de confiance.
@@ -304,17 +348,17 @@ def delete_analysis(analysis_id: str, user_id: str) -> None:
 def create_or_update_user(
     google_sub: str,
     email: str,
-    name: str | None,
-    picture_url: str | None,
+    name: str,
+    picture_url: str,
 ) -> str:
     """
-    Crée l'utilisateur s'il n'existe pas (par google_sub), sinon
-    met à jour last_login_at, name, picture_url. Retourne user_id.
+    Crée ou met à jour un utilisateur via Google OAuth.
+    Retourne le user_id.
     """
-    import uuid
-    from datetime import datetime
+    from datetime import datetime, timedelta, timezone
 
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    renewal_date = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat().replace("+00:00", "Z")
 
     with _get_conn() as conn:
         # Chercher par google_sub
@@ -325,21 +369,28 @@ def create_or_update_user(
         if existing:
             user_id = existing["user_id"]
             # Mettre à jour last_login_at et potentiellement name/picture_url
+            # Initialiser les colonnes de quota si elles sont NULL
             conn.execute(
                 """UPDATE users
-                   SET last_login_at = ?, name = ?, picture_url = ?
+                   SET last_login_at = ?, name = ?, picture_url = ?,
+                       analyses_count = COALESCE(analyses_count, 0),
+                       quota_renewal_at = CASE 
+                           WHEN quota_renewal_at IS NULL OR quota_renewal_at = '' 
+                           THEN ? 
+                           ELSE quota_renewal_at 
+                       END
                    WHERE user_id = ?""",
-                (now, name, picture_url, user_id),
+                (now, name, picture_url, renewal_date, user_id),
             )
             return user_id
         else:
-            # Créer nouvel utilisateur
+            # Créer nouvel utilisateur avec quota initialisé
             user_id = str(uuid.uuid4())
             conn.execute(
                 """INSERT INTO users
-                   (user_id, google_sub, email, name, picture_url, created_at, last_login_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (user_id, google_sub, email, name, picture_url, now, now),
+                   (user_id, google_sub, email, name, picture_url, created_at, last_login_at, analyses_count, quota_renewal_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+                (user_id, google_sub, email, name, picture_url, now, now, renewal_date),
             )
             return user_id
 
@@ -358,6 +409,127 @@ def get_user_by_id(user_id: str) -> dict[str, Any] | None:
         "picture_url": row["picture_url"],
         "created_at": row["created_at"],
         "last_login_at": row["last_login_at"],
+        "analyses_count": row.get("analyses_count", 0),
+        "quota_renewal_at": row.get("quota_renewal_at", ""),
+    }
+
+
+def check_and_increment_quota(user_id: str, monthly_limit: int = 15) -> tuple[bool, int, str]:
+    """
+    Vérifie et incrémente le quota d'analyses de manière atomique.
+    
+    Retourne (allowed, remaining, renewal_date):
+    - allowed: True si l'analyse est autorisée, False si quota dépassé
+    - remaining: nombre d'analyses restantes après incrémentation (si allowed=True)
+                 ou 0 (si allowed=False)
+    - renewal_date: date de renouvellement du quota (ISO 8601)
+    
+    Transaction atomique pour éviter les race conditions.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    with _get_conn() as conn:
+        # Récupérer le quota actuel
+        row = conn.execute(
+            "SELECT analyses_count, quota_renewal_at FROM users WHERE user_id = ?",
+            (user_id,)
+        ).fetchone()
+        
+        if row is None:
+            return False, 0, ""
+        
+        current_count = row["analyses_count"] or 0
+        renewal_at_str = row["quota_renewal_at"] or ""
+        
+        # Vérifier si le quota doit être renouvelé (plus d'un mois calendrier)
+        now = datetime.now(timezone.utc)
+        if renewal_at_str:
+            try:
+                # Nettoyer la date: remplacer Z par +00:00 et éviter les doublons
+                date_to_parse = renewal_at_str.replace("Z", "+00:00")
+                if date_to_parse.endswith("+00:00+00:00"):
+                    date_to_parse = date_to_parse.replace("+00:00+00:00", "+00:00")
+                renewal_at = datetime.fromisoformat(date_to_parse)
+                # S'assurer que renewal_at est timezone-aware
+                if renewal_at.tzinfo is None:
+                    renewal_at = renewal_at.replace(tzinfo=timezone.utc)
+                # Comparer les dates
+                if now >= renewal_at:
+                    # Renouvellement : remettre à 0 et nouvelle date
+                    new_renewal = (now + timedelta(days=30)).isoformat().replace("+00:00", "Z")
+                    conn.execute(
+                        """UPDATE users
+                           SET analyses_count = 0, quota_renewal_at = ?
+                           WHERE user_id = ?""",
+                        (new_renewal, user_id)
+                    )
+                    current_count = 0
+                    renewal_at_str = new_renewal
+            except ValueError as e:
+                # Date invalide, ignorer et utiliser la valeur actuelle
+                import sys
+                print(f"Erreur parsing date renouvellement: {e}", file=sys.stderr)
+                pass
+        
+        # Vérifier le quota
+        if current_count >= monthly_limit:
+            return False, 0, renewal_at_str
+        
+        # Incrémenter le compteur
+        new_count = current_count + 1
+        conn.execute(
+            "UPDATE users SET analyses_count = ? WHERE user_id = ?",
+            (new_count, user_id)
+        )
+        
+        remaining = monthly_limit - new_count
+        return True, remaining, renewal_at_str
+
+
+def get_quota_info(user_id: str, monthly_limit: int = 15) -> dict[str, Any] | None:
+    """
+    Récupère les informations de quota d'un utilisateur.
+    Retourne None si l'utilisateur n'existe pas.
+    """
+    from datetime import datetime, timezone
+
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT analyses_count, quota_renewal_at FROM users WHERE user_id = ?",
+            (user_id,)
+        ).fetchone()
+    
+    if row is None:
+        return None
+    
+    current_count = row["analyses_count"] or 0
+    renewal_at_str = row["quota_renewal_at"] or ""
+    
+    # Vérifier si le quota doit être renouvelé (lecture seule)
+    now = datetime.now(timezone.utc)
+    if renewal_at_str:
+        try:
+            # Nettoyer la date: remplacer Z par +00:00 et éviter les doublons
+            date_to_parse = renewal_at_str.replace("Z", "+00:00")
+            if date_to_parse.endswith("+00:00+00:00"):
+                date_to_parse = date_to_parse.replace("+00:00+00:00", "+00:00")
+            renewal_at = datetime.fromisoformat(date_to_parse)
+            # S'assurer que renewal_at est timezone-aware
+            if renewal_at.tzinfo is None:
+                renewal_at = renewal_at.replace(tzinfo=timezone.utc)
+            if now >= renewal_at:
+                # Le quota est expiré mais non renouvelé (lecture seule)
+                current_count = 0
+        except ValueError:
+            pass
+    
+    remaining = max(0, monthly_limit - current_count)
+    
+    return {
+        "limit": monthly_limit,
+        "used": current_count,
+        "remaining": remaining,
+        "renewal_at": renewal_at_str,
     }
 
 

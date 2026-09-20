@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 
 import { AnalysisProgress } from "@/app/components/AnalysisProgress";
 import { AnalysisResults } from "@/app/components/AnalysisResults";
@@ -22,6 +22,13 @@ interface UploadResponse {
 
 interface AnalyzeResponse {
   analysis_id: string;
+}
+
+interface QuotaInfo {
+  limit: number;
+  used: number;
+  remaining: number;
+  renewal_at: string;
 }
 
 function getApiBaseUrl(): string {
@@ -62,9 +69,32 @@ export function HomePage() {
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [result, setResult] = useState<unknown | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [quota, setQuota] = useState<QuotaInfo | null>(null);
 
-  const canAnalyze = selectedFile !== null;
+  const canAnalyze = selectedFile !== null && (quota === null || quota.remaining > 0);
   const isUploading = phase === "uploading";
+
+  const fetchQuota = async () => {
+    if (!isAuthenticated) return;
+    
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/quota`, {
+        credentials: "include",
+      });
+      
+      if (response.ok) {
+        const data = (await response.json()) as QuotaInfo;
+        setQuota(data);
+      }
+    } catch (error) {
+      console.error("Erreur chargement quota:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchQuota();
+  }, [isAuthenticated]);
 
   const resetAll = useCallback(() => {
     setPhase("idle");
@@ -124,6 +154,12 @@ export function HomePage() {
       if (analyzeResponse.status === 401) {
         throw new Error("Connectez-vous pour continuer.");
       }
+      if (analyzeResponse.status === 403) {
+        // Quota dépassé
+        const errorData = await analyzeResponse.json().catch(() => ({}));
+        const renewalDate = errorData.detail?.match(/le (.+)$/)?.[1] || "prochainement";
+        throw new Error(`Quota mensuel atteint. Renouvellement le ${renewalDate}.`);
+      }
       if (!analyzeResponse.ok) {
         throw new Error(await parseErrorResponse(analyzeResponse));
       }
@@ -131,6 +167,9 @@ export function HomePage() {
       const analyzeData = (await analyzeResponse.json()) as AnalyzeResponse;
       setAnalysisId(analyzeData.analysis_id);
       setPhase("analyzing");
+      
+      // Rafraîchir le quota après analyse réussie
+      void fetchQuota();
     } catch (error) {
       const message =
         error instanceof Error
@@ -279,6 +318,22 @@ export function HomePage() {
                   </div>
 
                   <div className="text-center">
+                    {quota && (
+                      <p className="mb-3 font-sans text-xs">
+                        Analyses restantes:{" "}
+                        <span
+                          className={
+                            quota.remaining >= 6
+                              ? "text-quanta-gold"
+                              : quota.remaining >= 1
+                                ? "text-quanta-warning"
+                                : "text-quanta-error"
+                          }
+                        >
+                          {quota.remaining} / {quota.limit}
+                        </span>
+                      </p>
+                    )}
                     <button
                       type="button"
                       disabled={!canAnalyze || isUploading}
@@ -290,6 +345,13 @@ export function HomePage() {
                     >
                       {isUploading ? "Envoi..." : "Analyser"}
                     </button>
+                    
+                    {quota && quota.remaining === 0 && (
+                      <p className="mt-3 font-sans text-xs text-quanta-error">
+                        Quota mensuel atteint. Renouvellement le{" "}
+                        {quota.renewal_at ? new Date(quota.renewal_at).toLocaleDateString("fr-FR") : "prochainement"}.
+                      </p>
+                    )}
                   </div>
                 </>
               ) : null}
