@@ -179,100 +179,122 @@ export function HomePage() {
         <div className="mx-auto h-px w-16 bg-quanta-gold opacity-30" />
 
         <div className="mx-auto w-full max-w-xl space-y-4 text-left">
-          {phase === "analyzing" && analysisId ? (
-            <AnalysisProgress
-              analysisId={analysisId}
-              onComplete={(res) => {
-                setResult(res);
-                setPhase("done");
-              }}
-              onError={(msg) => {
-                setErrorMessage(msg);
-                setPhase("error");
-              }}
-            />
-          ) : null}
-
-          {phase === "done" && result !== null && analysisId ? (
-            <AnalysisResults
-              result={result}
-              analysisId={analysisId}
-              onNewAnalysis={resetAll}
-            />
-          ) : null}
-
-          {phase === "error" ? (
-            <div className="space-y-4 text-center">
-              <p className="font-sans text-sm text-quanta-error">
-                {errorMessage ?? "Une erreur est survenue."}
+          {!isAuthenticated && !isLoading ? (
+            <div className="flex min-h-[400px] flex-col items-center justify-center space-y-6 text-center">
+              <p className="font-sans text-base text-quanta-primary">
+                Connectez-vous pour analyser vos données
               </p>
-              <button
-                type="button"
-                onClick={retry}
-                className="rounded-quanta bg-quanta-gold px-8 py-3 font-sans text-sm font-medium text-quanta-void"
-              >
-                Réessayer
-              </button>
+              <p className="font-sans text-sm text-quanta-muted">
+                Une connexion Google est requise pour utiliser QUANTA
+              </p>
+              <AuthButton />
             </div>
-          ) : null}
-
-          {phase === "idle" || phase === "uploading" ? (
+          ) : (
             <>
-              <UploadZone
-                selectedFile={selectedFile}
-                onFileSelect={setSelectedFile}
-              />
-
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleLoadSample();
+              {phase === "analyzing" && analysisId ? (
+                <AnalysisProgress
+                  analysisId={analysisId}
+                  onComplete={(res) => {
+                    setResult(res);
+                    setPhase("done");
                   }}
-                  className="font-sans text-xs text-quanta-muted transition-colors hover:text-quanta-cyan cursor-pointer"
-                >
-                  Pas de fichier ? Tester avec un exemple →
-                </button>
-              </div>
+                  onError={(msg) => {
+                    setErrorMessage(msg);
+                    setPhase("error");
+                  }}
+                />
+              ) : null}
 
-              <textarea
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                rows={3}
-                placeholder={
-                  "Optionnel — Ex: comparer le revenu entre régions...\n" +
-                  "Si vide, QUANTA analyse automatiquement."
-                }
-                className="w-full resize-none rounded-quanta border border-quanta-border-subtle bg-quanta-elevated px-4 py-3 font-sans text-sm text-quanta-primary placeholder:text-quanta-muted focus:border-quanta-cyan focus:shadow-[0_0_0_3px_rgba(0,212,255,0.08)] focus:outline-none"
-              />
+              {phase === "done" && result !== null && analysisId ? (
+                <AnalysisResults
+                  result={result}
+                  analysisId={analysisId}
+                  onNewAnalysis={resetAll}
+                />
+              ) : null}
 
-              <div className="flex flex-wrap justify-center gap-2">
-                {QUERY_EXAMPLES.map((example) => (
+              {phase === "error" ? (
+                <div className="space-y-4 text-center">
+                  <p className="font-sans text-sm text-quanta-error">
+                    {errorMessage ?? "Une erreur est survenue."}
+                  </p>
                   <button
-                    key={example}
                     type="button"
-                    onClick={() => setQuery(example)}
-                    className="cursor-pointer rounded-full border border-quanta-border-subtle bg-quanta-surface px-3 py-1 font-sans text-xs text-quanta-muted"
+                    onClick={retry}
+                    aria-label="Réessayer l'analyse"
+                    className="rounded-quanta bg-quanta-gold px-8 py-3 font-sans text-sm font-medium text-quanta-void"
                   >
-                    {example}
+                    Réessayer
                   </button>
-                ))}
-              </div>
+                </div>
+              ) : null}
 
-              <div className="text-center">
-                <button
-                  type="button"
-                  disabled={!canAnalyze || isUploading}
-                  onClick={() => {
-                    void handleAnalyze();
-                  }}
-                  className="rounded-quanta bg-quanta-gold px-8 py-3 font-sans text-sm font-medium text-quanta-void transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isUploading ? "Envoi..." : "Analyser"}
-                </button>
-              </div>
+              {phase === "idle" || phase === "uploading" ? (
+                <>
+                  <UploadZone
+                    selectedFile={selectedFile}
+                    onFileSelect={setSelectedFile}
+                  />
+
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleLoadSample();
+                      }}
+                      aria-label="Charger un fichier d'exemple"
+                      className="font-sans text-xs text-quanta-muted transition-colors hover:text-quanta-cyan cursor-pointer"
+                    >
+                      Pas de fichier ? Tester avec un exemple →
+                    </button>
+                  </div>
+
+                  <label htmlFor="query-input" className="sr-only">
+                    Requête d'analyse (optionnel)
+                  </label>
+                  <textarea
+                    id="query-input"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    rows={3}
+                    placeholder={
+                      "Optionnel — Ex: comparer le revenu entre régions...\n" +
+                      "Si vide, QUANTA analyse automatiquement."
+                    }
+                    className="w-full resize-none rounded-quanta border border-quanta-border-subtle bg-quanta-elevated px-4 py-3 font-sans text-sm text-quanta-primary placeholder:text-quanta-muted focus:border-quanta-cyan focus:shadow-[0_0_0_3px_rgba(0,212,255,0.08)] focus:outline-none"
+                  />
+
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {QUERY_EXAMPLES.map((example) => (
+                      <button
+                        key={example}
+                        type="button"
+                        onClick={() => setQuery(example)}
+                        aria-label={`Utiliser l'exemple: ${example}`}
+                        className="cursor-pointer rounded-full border border-quanta-border-subtle bg-quanta-surface px-3 py-1 font-sans text-xs text-quanta-muted"
+                      >
+                        {example}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      disabled={!canAnalyze || isUploading}
+                      onClick={() => {
+                        void handleAnalyze();
+                      }}
+                      aria-label={isUploading ? "Envoi en cours" : "Analyser le fichier"}
+                      className="rounded-quanta bg-quanta-gold px-8 py-3 font-sans text-sm font-medium text-quanta-void transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {isUploading ? "Envoi..." : "Analyser"}
+                    </button>
+                  </div>
+                </>
+              ) : null}
             </>
-          ) : null}
+          )}
         </div>
       </div>
     </main>
