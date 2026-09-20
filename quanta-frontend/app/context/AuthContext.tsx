@@ -42,13 +42,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
-      } else {
-        // 401 ou autre erreur = utilisateur non connecté (état normal)
+      } else if (response.status === 401) {
+        // 401 explicite = utilisateur non connecté (déconnexion normale)
         setUser(null);
       }
+      // Autres erreurs (500, 502, etc.) = erreur serveur temporaire, on ne déconnecte pas
+      // L'utilisateur reste connecté avec l'état précédent
     } catch {
-      // Erreur réseau = utilisateur non connecté
-      setUser(null);
+      // Erreur réseau = on ne déconnecte pas, l'utilisateur reste connecté avec l'état précédent
+      // Le cookie est peut-être encore valide
     } finally {
       setIsLoading(false);
     }
