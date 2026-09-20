@@ -54,16 +54,29 @@ def main():
     _mem_checkpoint("début main")
 
     try:
+        # Récupérer l'analyse pour obtenir le user_id (isolation des données)
+        analysis = db.get_analysis(analysis_id, "")
+        if analysis is None:
+            db.update_analysis(
+                analysis_id, status="error",
+                error=f"analysis_id '{analysis_id}' introuvable.",
+                updated_at=_now(),
+            )
+            sys.exit(1)
+
+        user_id = analysis["user_id"]
+
         # Marquer le statut "running" en base
-        db.update_analysis(analysis_id, status="running", updated_at=_now())
+        db.update_analysis(analysis_id, status="running", updated_at=_now(), user_id=user_id)
         audit_trail: list[dict[str, str]] = []
 
-        upload_info = db.get_upload(file_id)
+        upload_info = db.get_upload(file_id, user_id)
         if upload_info is None:
             db.update_analysis(
                 analysis_id, status="error",
                 error=f"file_id '{file_id}' introuvable -- le fichier a peut-être expiré ou n'a jamais été uploadé.",
                 updated_at=_now(),
+                user_id=user_id,
             )
             sys.exit(1)
 
@@ -166,7 +179,7 @@ def main():
         result["audit_trail"] = audit_trail
 
         # Marquer le statut "done" en base
-        db.update_analysis(analysis_id, status="done", result=result, updated_at=_now())
+        db.update_analysis(analysis_id, status="done", result=result, updated_at=_now(), user_id=user_id)
 
         print(f"ANALYZE Worker - Succès : analysis_id={analysis_id}", flush=True)
         sys.exit(0)

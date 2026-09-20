@@ -714,10 +714,6 @@ def get_report(
         
         logger.info("PDF Worker - Success, PDF generated", pdf_path=pdf_path)
 
-    except Exception as e:
-        logger.exception("Subprocess exception", exception_type=type(e).__name__, error=str(e))
-        raise
-    
     except subprocess.TimeoutExpired:
         # Timeout 5min dépassé = très grand dataset
         # Retourner PDF léger
@@ -736,6 +732,10 @@ def get_report(
                 }
             )
         raise HTTPException(status_code=504, detail="Timeout génération PDF")
+
+    except Exception as e:
+        logger.exception("Subprocess exception", exception_type=type(e).__name__, error=str(e))
+        raise
     
     finally:
         # Nettoyer le fichier JSON temporaire
