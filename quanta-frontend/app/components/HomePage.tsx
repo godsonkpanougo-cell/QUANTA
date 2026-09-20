@@ -24,12 +24,6 @@ interface AnalyzeResponse {
   analysis_id: string;
 }
 
-interface QuotaInfo {
-  limit: number;
-  used: number;
-  remaining: number;
-  renewal_at: string;
-}
 
 function getApiBaseUrl(): string {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -69,32 +63,9 @@ export function HomePage() {
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [result, setResult] = useState<unknown | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [quota, setQuota] = useState<QuotaInfo | null>(null);
 
-  const canAnalyze = selectedFile !== null && (quota === null || quota.remaining > 0);
+  const canAnalyze = selectedFile !== null;
   const isUploading = phase === "uploading";
-
-  const fetchQuota = async () => {
-    if (!isAuthenticated) return;
-    
-    try {
-      const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/quota`, {
-        credentials: "include",
-      });
-      
-      if (response.ok) {
-        const data = (await response.json()) as QuotaInfo;
-        setQuota(data);
-      }
-    } catch (error) {
-      console.error("Erreur chargement quota:", error);
-    }
-  };
-
-  useEffect(() => {
-    fetchQuota();
-  }, [isAuthenticated]);
 
   const resetAll = useCallback(() => {
     setPhase("idle");
@@ -168,8 +139,10 @@ export function HomePage() {
       setAnalysisId(analyzeData.analysis_id);
       setPhase("analyzing");
       
-      // Rafraîchir le quota après analyse réussie
-      void fetchQuota();
+      // Rafraîchir le quota après analyse réussie (via window.refreshQuota exposé par AuthButton)
+      if (typeof window !== "undefined" && (window as any).refreshQuota) {
+        void (window as any).refreshQuota();
+      }
     } catch (error) {
       const message =
         error instanceof Error
@@ -318,22 +291,6 @@ export function HomePage() {
                   </div>
 
                   <div className="text-center">
-                    {quota && (
-                      <p className="mb-3 font-sans text-xs">
-                        Analyses restantes:{" "}
-                        <span
-                          className={
-                            quota.remaining >= 6
-                              ? "text-quanta-gold"
-                              : quota.remaining >= 1
-                                ? "text-quanta-warning"
-                                : "text-quanta-error"
-                          }
-                        >
-                          {quota.remaining} / {quota.limit}
-                        </span>
-                      </p>
-                    )}
                     <button
                       type="button"
                       disabled={!canAnalyze || isUploading}
@@ -345,13 +302,6 @@ export function HomePage() {
                     >
                       {isUploading ? "Envoi..." : "Analyser"}
                     </button>
-                    
-                    {quota && quota.remaining === 0 && (
-                      <p className="mt-3 font-sans text-xs text-quanta-error">
-                        Quota mensuel atteint. Renouvellement le{" "}
-                        {quota.renewal_at ? new Date(quota.renewal_at).toLocaleDateString("fr-FR") : "prochainement"}.
-                      </p>
-                    )}
                   </div>
                 </>
               ) : null}

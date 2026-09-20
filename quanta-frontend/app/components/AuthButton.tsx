@@ -1,7 +1,8 @@
 "use client";
 
-import { LogOut, History } from "lucide-react";
+import { LogOut, History, Loader2 } from "lucide-react";
 import { useAuth } from "@/app/context/AuthContext";
+import { useEffect, useState } from "react";
 
 function getApiBaseUrl(): string {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -11,8 +12,50 @@ function getApiBaseUrl(): string {
   return baseUrl.replace(/\/$/, "");
 }
 
+interface QuotaInfo {
+  limit: number;
+  used: number;
+  remaining: number;
+  renewal_at: string;
+}
+
 export function AuthButton() {
   const { user, isLoading, isAuthenticated, logout } = useAuth();
+  const [quota, setQuota] = useState<QuotaInfo | null>(null);
+  const [isLoadingQuota, setIsLoadingQuota] = useState(false);
+
+  const fetchQuota = async () => {
+    if (!isAuthenticated) return;
+    
+    try {
+      setIsLoadingQuota(true);
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/quota`, {
+        credentials: "include",
+      });
+      
+      if (response.ok) {
+        const data = (await response.json()) as QuotaInfo;
+        setQuota(data);
+        console.log("Quota chargé dans AuthButton:", data);
+      }
+    } catch (error) {
+      console.error("Erreur chargement quota:", error);
+    } finally {
+      setIsLoadingQuota(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchQuota();
+  }, [isAuthenticated]);
+
+  // Exposer fetchQuota globalement pour rafraîchissement après analyse
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      (window as any).refreshQuota = fetchQuota;
+    }
+  }, [fetchQuota]);
 
   const handleLogin = () => {
     const baseUrl = getApiBaseUrl();
@@ -21,6 +64,12 @@ export function AuthButton() {
 
   const handleLogout = async () => {
     await logout();
+  };
+
+  const getQuotaColor = (remaining: number): string => {
+    if (remaining >= 6) return "text-quanta-gold";
+    if (remaining >= 1) return "text-quanta-warning";
+    return "text-quanta-error";
   };
 
   if (isLoading) {
@@ -72,6 +121,20 @@ export function AuthButton() {
           <p className="font-sans text-xs text-quanta-muted">{user?.email}</p>
         </div>
       </div>
+      
+      {/* Affichage du quota */}
+      {quota !== null && (
+        <div className="flex items-center gap-2">
+          {isLoadingQuota ? (
+            <Loader2 strokeWidth={1.5} className="size-4 animate-spin text-quanta-muted" />
+          ) : (
+            <span className={`font-sans text-sm font-medium ${getQuotaColor(quota.remaining)}`}>
+              {quota.remaining}/15
+            </span>
+          )}
+        </div>
+      )}
+      
       <div className="flex items-center gap-2">
         <a
           href="/history"
