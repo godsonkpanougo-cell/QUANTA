@@ -409,8 +409,8 @@ def get_user_by_id(user_id: str) -> dict[str, Any] | None:
         "picture_url": row["picture_url"],
         "created_at": row["created_at"],
         "last_login_at": row["last_login_at"],
-        "analyses_count": row.get("analyses_count", 0),
-        "quota_renewal_at": row.get("quota_renewal_at", ""),
+        "analyses_count": row["analyses_count"] if "analyses_count" in row.keys() else 0,
+        "quota_renewal_at": row["quota_renewal_at"] if "quota_renewal_at" in row.keys() else "",
     }
 
 
