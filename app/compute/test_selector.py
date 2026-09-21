@@ -226,14 +226,14 @@ def run_two_group_comparison(
             ),
         })
         if is_normal:
-            effect_size = _cohens_d(g1, g2)
+            effect_size, ci_lower, ci_upper = _cohens_d_with_ci(g1, g2)
             effect_size_name = "Cohen's d"
         else:
-            effect_size = _rank_biserial(g1, g2)
+            effect_size, ci_lower, ci_upper = _rank_biserial_with_ci(g1, g2)
             effect_size_name = "r (rang bisériel)"
         return _format_two_group_result(
             test_name, stat, p, g1, g2, levels, effect_size, paired=True, df=df_val,
-            effect_size_name=effect_size_name,
+            effect_size_name=effect_size_name, ci_lower=ci_lower, ci_upper=ci_upper,
         )
 
     equal_var, levene_stat, levene_p = _levene_equal_variance([g1, g2])
@@ -252,7 +252,7 @@ def run_two_group_comparison(
             # Welch : ddl de Satterthwaite fourni par scipy
             df_val = float(t_res.df) if hasattr(t_res, "df") else None
             test_name = "t-test de Welch (variances inégales)"
-        effect_size = _cohens_d(g1, g2)
+        effect_size, ci_lower, ci_upper = _cohens_d_with_ci(g1, g2)
         effect_size_name = "Cohen's d"
     else:
         u_stat, p = stats.mannwhitneyu(g1, g2, alternative="two-sided")
@@ -264,6 +264,7 @@ def run_two_group_comparison(
             round(float(1 - (2 * u_stat) / denom), 4) if denom > 0 else float("nan")
         )
         effect_size_name = "r (rang bisériel)"
+        effect_size, ci_lower, ci_upper = _rank_biserial_with_ci(g1, g2)
 
     audit_log.append({
         "etape": "selection_test", "colonne": target_col,
@@ -279,7 +280,7 @@ def run_two_group_comparison(
 
     result = _format_two_group_result(
         test_name, stat, p, g1, g2, levels, effect_size, paired=False, df=df_val,
-        effect_size_name=effect_size_name,
+        effect_size_name=effect_size_name, ci_lower=ci_lower, ci_upper=ci_upper,
         levene={"statistic": round(levene_stat, 4) if not np.isnan(levene_stat) else None,
                 "p_value": round(levene_p, 5) if not np.isnan(levene_p) else None,
                 "equal_variance": equal_var},
@@ -341,11 +342,14 @@ def run_multi_group_comparison(
     if is_normal and equal_var:
         f_stat, p = stats.f_oneway(*groups)
         test_name = "ANOVA à un facteur (variances égales)"
+        eta2, ci_lower, ci_upper = _eta_squared_with_ci(groups, f_stat)
         result.update({
             "test": test_name, "statistic": round(float(f_stat), 4), "p_value": round(float(p), 6),
             "df_between": int(df_between),
             "df_within": int(df_within),
-            "eta_squared": _eta_squared(groups, f_stat),
+            "eta_squared": eta2,
+            "eta_squared_ci_lower": ci_lower if not np.isnan(ci_lower) else None,
+            "eta_squared_ci_upper": ci_upper if not np.isnan(ci_upper) else None,
         })
         if p < 0.05:
             result["posthoc"] = _tukey_hsd(sub, target_col, group_col)
@@ -357,13 +361,16 @@ def run_multi_group_comparison(
     elif is_normal and not equal_var:
         f_stat, p, df_num, df_den = _welch_anova(sub, target_col, group_col, groups)
         test_name = "Welch ANOVA (correction Brown-Forsythe)"
+        eta2, ci_lower, ci_upper = _eta_squared_with_ci(groups, f_stat)
         result.update({
             "test": test_name,
             "statistic": round(float(f_stat), 4),
             "p_value": round(float(p), 6),
             "df_between": int(df_num) if float(df_num).is_integer() else round(float(df_num), 4),
             "df_within": round(float(df_den), 4),
-            "eta_squared": _eta_squared(groups, f_stat),
+            "eta_squared": eta2,
+            "eta_squared_ci_lower": ci_lower if not np.isnan(ci_lower) else None,
+            "eta_squared_ci_upper": ci_upper if not np.isnan(ci_upper) else None,
             "note": (
                 "Degrés de liberté dénominateur non-entier — "
                 "correction de Welch pour variances inégales"
@@ -380,11 +387,14 @@ def run_multi_group_comparison(
     else:
         h_stat, p = stats.kruskal(*groups)
         test_name = "Kruskal-Wallis (non-paramétrique)"
+        eps2, ci_lower, ci_upper = _epsilon_squared_with_ci(groups, h_stat)
         result.update({
             "test": test_name, "statistic": round(float(h_stat), 4), "p_value": round(float(p), 6),
             # Kruskal-Wallis : H ~ chi2 sous H0 avec ddl = k - 1
             "df": int(k_groups - 1),
-            "epsilon_squared": _epsilon_squared(h_stat, sum(len(g) for g in groups)),
+            "epsilon_squared": eps2,
+            "epsilon_squared_ci_lower": ci_lower if not np.isnan(ci_lower) else None,
+            "epsilon_squared_ci_upper": ci_upper if not np.isnan(ci_upper) else None,
         })
         if p < 0.05:
             result["posthoc"] = _dunn_test(sub, target_col, group_col)
@@ -423,6 +433,46 @@ def _cohens_d(g1: np.ndarray, g2: np.ndarray) -> float:
     return round(float((np.mean(g1) - np.mean(g2)) / pooled_std), 4)
 
 
+def _cohens_d_with_ci(g1: np.ndarray, g2: np.ndarray, n_bootstrap: int = 1000, ci_level: float = 0.95, seed: int = 42) -> tuple[float, float, float]:
+    """
+    Calcule Cohen's d avec intervalle de confiance bootstrap percentile.
+    
+    Returns:
+        (d, ci_lower, ci_upper): Cohen's d et ses bornes IC
+    """
+    import time
+    d = _cohens_d(g1, g2)
+    
+    # Bootstrap pour l'IC
+    n1, n2 = len(g1), len(g2)
+    if n1 + n2 < 10:
+        return d, float("nan"), float("nan")
+    
+    t_bootstrap_start = time.monotonic()
+    np.random.seed(seed)
+    bootstrap_ds = np.zeros(n_bootstrap)
+    
+    for i in range(n_bootstrap):
+        # Échantillonnage avec remplacement dans chaque groupe
+        g1_boot = np.random.choice(g1, size=n1, replace=True)
+        g2_boot = np.random.choice(g2, size=n2, replace=True)
+        bootstrap_ds[i] = _cohens_d(g1_boot, g2_boot)
+    
+    t_bootstrap_end = time.monotonic()
+    print(f"TIMING - Bootstrap CI (Cohen's d): {t_bootstrap_end - t_bootstrap_start:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
+    
+    # Méthode percentile
+    bootstrap_ds_sorted = np.sort(bootstrap_ds)
+    alpha = 1 - ci_level
+    lower_idx = int((alpha / 2) * n_bootstrap)
+    upper_idx = int((1 - alpha / 2) * n_bootstrap)
+    
+    ci_lower = float(bootstrap_ds_sorted[lower_idx])
+    ci_upper = float(bootstrap_ds_sorted[upper_idx])
+    
+    return d, round(ci_lower, 4), round(ci_upper, 4)
+
+
 def _rank_biserial(g1: np.ndarray, g2: np.ndarray) -> float:
     """Taille d'effet pour Mann-Whitney/Wilcoxon (corrélation rang-bisériale)."""
     n1, n2 = len(g1), len(g2)
@@ -431,6 +481,44 @@ def _rank_biserial(g1: np.ndarray, g2: np.ndarray) -> float:
         return round(float(1 - (2 * u_stat) / (n1 * n2)), 4)
     except Exception:
         return float("nan")
+
+
+def _rank_biserial_with_ci(g1: np.ndarray, g2: np.ndarray, n_bootstrap: int = 1000, ci_level: float = 0.95, seed: int = 42) -> tuple[float, float, float]:
+    """
+    Calcule r (rang bisériel) avec intervalle de confiance bootstrap percentile.
+    
+    Returns:
+        (r, ci_lower, ci_upper): r et ses bornes IC
+    """
+    import time
+    r = _rank_biserial(g1, g2)
+    
+    # Bootstrap pour l'IC
+    n1, n2 = len(g1), len(g2)
+    if n1 + n2 < 10:
+        return r, float("nan"), float("nan")
+    
+    t_bootstrap_start = time.monotonic()
+    np.random.seed(seed)
+    bootstrap_rs = np.zeros(n_bootstrap)
+    
+    for i in range(n_bootstrap):
+        g1_boot = np.random.choice(g1, size=n1, replace=True)
+        g2_boot = np.random.choice(g2, size=n2, replace=True)
+        bootstrap_rs[i] = _rank_biserial(g1_boot, g2_boot)
+    
+    t_bootstrap_end = time.monotonic()
+    print(f"TIMING - Bootstrap CI (rank biserial): {t_bootstrap_end - t_bootstrap_start:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
+    
+    bootstrap_rs_sorted = np.sort(bootstrap_rs)
+    alpha = 1 - ci_level
+    lower_idx = int((alpha / 2) * n_bootstrap)
+    upper_idx = int((1 - alpha / 2) * n_bootstrap)
+    
+    ci_lower = float(bootstrap_rs_sorted[lower_idx])
+    ci_upper = float(bootstrap_rs_sorted[upper_idx])
+    
+    return r, round(ci_lower, 4), round(ci_upper, 4)
 
 
 def _eta_squared(groups: list[np.ndarray], f_stat: float) -> float:
@@ -443,10 +531,100 @@ def _eta_squared(groups: list[np.ndarray], f_stat: float) -> float:
     return round(float((f_stat * df_between) / (f_stat * df_between + df_within)), 4)
 
 
+def _eta_squared_with_ci(groups: list[np.ndarray], f_stat: float, n_bootstrap: int = 1000, ci_level: float = 0.95, seed: int = 42) -> tuple[float, float, float]:
+    """
+    Calcule η² avec intervalle de confiance bootstrap percentile.
+    
+    Returns:
+        (eta2, ci_lower, ci_upper): η² et ses bornes IC
+    """
+    import time
+    eta2 = _eta_squared(groups, f_stat)
+    
+    n = sum(len(g) for g in groups)
+    if n < 10:
+        return eta2, float("nan"), float("nan")
+    
+    t_bootstrap_start = time.monotonic()
+    np.random.seed(seed)
+    bootstrap_eta2s = np.zeros(n_bootstrap)
+    
+    for i in range(n_bootstrap):
+        # Échantillonnage avec remplacement dans chaque groupe
+        groups_boot = [np.random.choice(g, size=len(g), replace=True) for g in groups]
+        # Recalculer F et η² sur l'échantillon bootstrap
+        # Pour simplifier, on utilise une approximation basée sur la variance
+        means_boot = [np.mean(g) for g in groups_boot]
+        overall_mean = np.mean(np.concatenate(groups_boot))
+        ss_between = sum(len(g) * (m - overall_mean)**2 for g, m in zip(groups_boot, means_boot))
+        ss_total = sum(np.sum((g - overall_mean)**2) for g in groups_boot)
+        if ss_total == 0:
+            bootstrap_eta2s[i] = 0.0
+        else:
+            bootstrap_eta2s[i] = ss_between / ss_total
+    
+    t_bootstrap_end = time.monotonic()
+    print(f"TIMING - Bootstrap CI (eta_squared): {t_bootstrap_end - t_bootstrap_start:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
+    
+    bootstrap_eta2s_sorted = np.sort(bootstrap_eta2s)
+    alpha = 1 - ci_level
+    lower_idx = int((alpha / 2) * n_bootstrap)
+    upper_idx = int((1 - alpha / 2) * n_bootstrap)
+    
+    ci_lower = float(bootstrap_eta2s_sorted[lower_idx])
+    ci_upper = float(bootstrap_eta2s_sorted[upper_idx])
+    
+    return eta2, round(ci_lower, 4), round(ci_upper, 4)
+
+
 def _epsilon_squared(h_stat: float, n: int) -> float:
     if n <= 1:
         return 0.0
     return round(float(h_stat / (n - 1)), 4)
+
+
+def _epsilon_squared_with_ci(groups: list[np.ndarray], h_stat: float, n_bootstrap: int = 1000, ci_level: float = 0.95, seed: int = 42) -> tuple[float, float, float]:
+    """
+    Calcule ε² avec intervalle de confiance bootstrap percentile.
+    
+    Returns:
+        (eps2, ci_lower, ci_upper): ε² et ses bornes IC
+    """
+    import time
+    eps2 = _epsilon_squared(h_stat, sum(len(g) for g in groups))
+    
+    n = sum(len(g) for g in groups)
+    if n < 10:
+        return eps2, float("nan"), float("nan")
+    
+    t_bootstrap_start = time.monotonic()
+    np.random.seed(seed)
+    bootstrap_eps2s = np.zeros(n_bootstrap)
+    
+    for i in range(n_bootstrap):
+        groups_boot = [np.random.choice(g, size=len(g), replace=True) for g in groups]
+        # Approximation de ε² basée sur la variance (similaire à η²)
+        means_boot = [np.mean(g) for g in groups_boot]
+        overall_mean = np.mean(np.concatenate(groups_boot))
+        ss_between = sum(len(g) * (m - overall_mean)**2 for g, m in zip(groups_boot, means_boot))
+        ss_total = sum(np.sum((g - overall_mean)**2) for g in groups_boot)
+        if ss_total == 0:
+            bootstrap_eps2s[i] = 0.0
+        else:
+            bootstrap_eps2s[i] = ss_between / ss_total
+    
+    t_bootstrap_end = time.monotonic()
+    print(f"TIMING - Bootstrap CI (epsilon_squared): {t_bootstrap_end - t_bootstrap_start:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
+    
+    bootstrap_eps2s_sorted = np.sort(bootstrap_eps2s)
+    alpha = 1 - ci_level
+    lower_idx = int((alpha / 2) * n_bootstrap)
+    upper_idx = int((1 - alpha / 2) * n_bootstrap)
+    
+    ci_lower = float(bootstrap_eps2s_sorted[lower_idx])
+    ci_upper = float(bootstrap_eps2s_sorted[upper_idx])
+    
+    return eps2, round(ci_lower, 4), round(ci_upper, 4)
 
 
 def _posthoc_comparisons_from_matrix(
@@ -562,6 +740,8 @@ def _format_two_group_result(
     levene=None,
     df: float | None = None,
     effect_size_name: str | None = None,
+    ci_lower: float | None = None,
+    ci_upper: float | None = None,
 ) -> dict:
     out: dict[str, Any] = {
         "status": "ok",
@@ -579,6 +759,10 @@ def _format_two_group_result(
     }
     if effect_size_name is not None:
         out["effect_size_name"] = effect_size_name
+    if ci_lower is not None and not np.isnan(ci_lower):
+        out["effect_size_ci_lower"] = ci_lower
+    if ci_upper is not None and not np.isnan(ci_upper):
+        out["effect_size_ci_upper"] = ci_upper
     if df is not None and not (isinstance(df, float) and np.isnan(df)):
         # Student : entier exact ; Welch : peut être non-entier (Satterthwaite)
         out["df"] = int(df) if float(df).is_integer() else round(float(df), 4)
@@ -608,13 +792,12 @@ def run_categorical_association(
     all_cells_ok = min_expected >= 5
 
     n = table.values.sum()
-    cramers_v = _cramers_v(chi2, n, table.shape)
+    cramers_v, ci_lower, ci_upper = _cramers_v_with_ci(sub, col1, col2)
 
     result: dict[str, Any] = {
         "status": "ok",
         "contingency_table": table.to_dict(),
         "min_expected_count": round(min_expected, 2),
-        "n_observations": int(n),
     }
 
     # ddl Chi-deux = (n_lignes - 1) * (n_cols - 1), déjà fourni par chi2_contingency
@@ -628,6 +811,8 @@ def run_categorical_association(
             "df": chi2_dof,
             "dof": chi2_dof,
             "cramers_v": cramers_v,
+            "cramers_v_ci_lower": ci_lower if not np.isnan(ci_lower) else None,
+            "cramers_v_ci_upper": ci_upper if not np.isnan(ci_upper) else None,
             "significant": bool(p_chi2 < 0.05),
         })
     elif table.shape == (2, 2):
@@ -637,6 +822,8 @@ def run_categorical_association(
             "test": test_name, "odds_ratio": round(float(odds_ratio), 4),
             "p_value": round(float(p_fisher), 6),
             "cramers_v": cramers_v,
+            "cramers_v_ci_lower": ci_lower if not np.isnan(ci_lower) else None,
+            "cramers_v_ci_upper": ci_upper if not np.isnan(ci_upper) else None,
             "significant": bool(p_fisher < 0.05),
             "chi2_indicatif": {
                 "statistic": round(float(chi2), 4),
@@ -646,18 +833,19 @@ def run_categorical_association(
             },
         })
     else:
-        test_name = "Chi-deux d'indépendance (avec réserve)"
+        test_name = "Chi-deux d'indépendance (avec avertissement effectifs attendus < 5)"
         result.update({
             "test": test_name, "statistic": round(float(chi2), 4),
             "p_value": round(float(p_chi2), 6),
             "df": chi2_dof,
             "dof": chi2_dof,
             "cramers_v": cramers_v,
+            "cramers_v_ci_lower": ci_lower if not np.isnan(ci_lower) else None,
+            "cramers_v_ci_upper": ci_upper if not np.isnan(ci_upper) else None,
             "significant": bool(p_chi2 < 0.05),
             "avertissement": (
                 f"Effectif attendu minimal = {min_expected:.2f} (< 5) dans une table "
-                f"{table.shape[0]}x{table.shape[1]} -- Fisher exact non disponible nativement "
-                f"au-delà de 2x2. Résultat du Chi-deux à interpréter avec prudence."
+                f"{table.shape[0]}x{table.shape[1]} — Chi-deux potentiellement non fiable"
             ),
         })
 
@@ -682,6 +870,73 @@ def _cramers_v(chi2: float, n: int, shape: tuple[int, int]) -> float:
     if denom == 0:
         return 0.0
     return round(float(np.sqrt(chi2 / denom)), 4)
+
+
+def _cramers_v_with_ci(
+    df: pd.DataFrame, col1: str, col2: str,
+    n_bootstrap: int = 1000, ci_level: float = 0.95, seed: int = 42
+) -> tuple[float, float, float]:
+    """
+    Calcule le V de Cramér avec intervalle de confiance bootstrap percentile.
+    
+    Bootstrap en rééchantillonnant les LIGNES du DataFrame source,
+    recalculant le tableau de contingence et le V de Cramér à chaque réplication.
+    
+    Args:
+        df: DataFrame source avec les 2 colonnes catégorielles
+        col1: Première colonne catégorielle
+        col2: Deuxième colonne catégorielle
+        n_bootstrap: Nombre de réplications bootstrap (défaut 1000)
+        ci_level: Niveau de confiance (défaut 0.95 pour IC 95%)
+        seed: Seed pour la reproductibilité
+    
+    Returns:
+        (cramers_v, ci_lower, ci_upper): V de Cramér et ses bornes IC
+    """
+    import time
+    sub = df[[col1, col2]].dropna()
+    n = len(sub)
+    if n < 10:
+        return 0.0, float("nan"), float("nan")
+    
+    # Calculer V de Cramér sur les données originales
+    contingency = pd.crosstab(sub[col1], sub[col2])
+    chi2, _, _, _ = stats.chi2_contingency(contingency)
+    cramers_v = _cramers_v(chi2, n, contingency.shape)
+    
+    # Bootstrap
+    t_bootstrap_start = time.monotonic()
+    bootstrap_vs = np.zeros(n_bootstrap)
+    
+    for i in range(n_bootstrap):
+        # Rééchantillonner les lignes avec remplacement
+        sample = sub.sample(n=n, replace=True, random_state=seed + i if seed else None)
+        
+        # Recalculer le tableau de contingence
+        sample_table = pd.crosstab(sample[col1], sample[col2])
+        
+        # Recalculer le Chi-deux et le V de Cramér
+        sample_chi2, _, _, _ = stats.chi2_contingency(sample_table)
+        sample_n = sample_table.values.sum()
+        
+        if sample_n > 0:
+            bootstrap_vs[i] = _cramers_v(sample_chi2, sample_n, sample_table.shape)
+        else:
+            bootstrap_vs[i] = 0.0
+    
+    t_bootstrap_end = time.monotonic()
+    print(f"TIMING - Bootstrap CI (cramers_v): {t_bootstrap_end - t_bootstrap_start:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
+    
+    # Méthode percentile
+    bootstrap_vs_sorted = np.sort(bootstrap_vs)
+    alpha = 1 - ci_level
+    lower_idx = int((alpha / 2) * n_bootstrap)
+    upper_idx = int((1 - alpha / 2) * n_bootstrap)
+    
+    ci_lower = float(bootstrap_vs_sorted[lower_idx])
+    ci_upper = float(bootstrap_vs_sorted[upper_idx])
+    
+    return cramers_v, round(ci_lower, 4), round(ci_upper, 4)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -895,6 +1150,38 @@ def _select_and_run_test_impl(
         
         return {"result": result, "audit_log": audit_log, "validation_issues": all_issues,
                 "action_executed": "association"}
+
+    # ── Cas 2.5 : ACM (Analyse des Correspondances Multiples) ─────────────
+    if action == "acm":
+        if len(cat_cols) < 3:
+            audit_log.append({
+                "etape": "fallback_action", "colonne": None,
+                "decision": "descriptive_only", "valeur": None,
+                "justification": (
+                    f"Action 'acm' demandée mais seulement {len(cat_cols)} variables catégorielles "
+                    f"(minimum 3 requis) -> repli sur statistiques descriptives."
+                ),
+            })
+            return {"result": {"status": "skipped", "reason": "ACM nécessite au moins 3 variables catégorielles."},
+                    "audit_log": audit_log, "validation_issues": all_issues,
+                    "action_executed": "descriptive_only"}
+        
+        acm_result = run_acm(df, cat_cols)
+        if acm_result.get("status") == "ok":
+            audit_log.append({
+                "etape": "selection_test", "colonne": None,
+                "decision": "ACM (Analyse des Correspondances Multiples)",
+                "valeur": f"n_variables={len(cat_cols)}",
+                "justification": (
+                    f"Action 'acm' demandée avec {len(cat_cols)} variables catégorielles "
+                    f"-> ACM exécutée pour explorer les structures d'association."
+                ),
+            })
+            return {"result": acm_result, "audit_log": audit_log, "validation_issues": all_issues,
+                    "action_executed": "acm"}
+        else:
+            return {"result": acm_result, "audit_log": audit_log, "validation_issues": all_issues,
+                    "action_executed": "acm"}
 
     # ── Cas 3 : régression ───────────────────────────────────────────────
     if action == "regression":
