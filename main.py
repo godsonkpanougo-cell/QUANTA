@@ -481,7 +481,7 @@ def _run_analysis_dispatch(analysis_id: str, user_id: str, file_id: str, query: 
     try:
         proc = subprocess.run(
             [sys.executable, "app/analyze_worker.py", analysis_id, file_id, query],
-            capture_output=True, text=True, timeout=200,
+            capture_output=True, text=True, timeout=260,
         )
         print(f"ANALYZE Worker - Returncode: {proc.returncode}", flush=True)
         if proc.stdout:
@@ -498,7 +498,7 @@ def _run_analysis_dispatch(analysis_id: str, user_id: str, file_id: str, query: 
             print("ANALYZE Worker - Échec (returncode non nul ou statut pas 'done' en base), fallback vers exécution en mémoire", flush=True)
             _run_analysis_core(analysis_id, user_id, file_id, query)
     except subprocess.TimeoutExpired as e:
-        print(f"ANALYZE Worker - Timeout après 200s", flush=True)
+        print(f"ANALYZE Worker - Timeout après 260s", flush=True)
         if e.stdout:
             print(f"ANALYZE Worker - Stdout partiel avant timeout: {e.stdout[-3000:]}", flush=True)
         if e.stderr:
@@ -556,8 +556,27 @@ def analyze(
             detail=f"file_id '{analyze_request.file_id}' introuvable. Uploadez d'abord un fichier via /upload.",
         )
 
-    analysis_id = str(uuid.uuid4())
+    # Vérifier et incrémenter le quota de manière atomique
     user_id = current_user["user_id"]
+    allowed, remaining, renewal_at = db.check_and_increment_quota(user_id)
+    
+    if not allowed:
+        # Formater la date de renouvellement pour l'affichage
+        from datetime import datetime
+        renewal_date_str = ""
+        if renewal_at:
+            try:
+                renewal_date = datetime.fromisoformat(renewal_at.replace("Z", "+00:00"))
+                renewal_date_str = renewal_date.strftime("%d/%m/%Y")
+            except ValueError:
+                renewal_date_str = "date inconnue"
+        
+        raise HTTPException(
+            status_code=403,
+            detail=f"Quota mensuel atteint (15 analyses). Renouvellement le {renewal_date_str}."
+        )
+
+    analysis_id = str(uuid.uuid4())
     db.create_analysis(analysis_id, user_id, analyze_request.file_id, analyze_request.query, _now())
 
     background_tasks.add_task(_run_analysis_background, analysis_id, user_id, analyze_request.file_id, analyze_request.query)
@@ -601,6 +620,20 @@ def get_history(current_user: dict = Depends(auth.get_current_user)) -> dict[str
     """
     items = db.list_analyses(current_user["user_id"], limit=100)
     return {"count": len(items), "analyses": items}
+
+
+@app.get("/quota")
+def get_quota(current_user: dict = Depends(auth.get_current_user)) -> dict[str, Any]:
+    """
+    Retourne les informations de quota de l'utilisateur connecté.
+    """
+    quota_info = db.get_quota_info(current_user["user_id"])
+    if quota_info is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Utilisateur introuvable."
+        )
+    return quota_info
 
 
 @app.get("/report/{analysis_id}")

@@ -68,7 +68,7 @@ def init_db() -> None:
                 created_at   TEXT NOT NULL,
                 last_login_at TEXT,
                 analyses_count INTEGER DEFAULT 0,
-                quota_renewal_at TEXT NOT NULL
+                quota_renewal_at TEXT
             )
         """)
         # Migration pour les utilisateurs existants : ajouter les colonnes si elles n'existent pas
@@ -77,7 +77,7 @@ def init_db() -> None:
         except:
             pass  # La colonne existe déjà
         try:
-            conn.execute("ALTER TABLE users ADD COLUMN quota_renewal_at TEXT NOT NULL DEFAULT ''")
+            conn.execute("ALTER TABLE users ADD COLUMN quota_renewal_at TEXT")
         except:
             pass  # La colonne existe déjà
         conn.execute("""
@@ -490,20 +490,52 @@ def get_quota_info(user_id: str, monthly_limit: int = 15) -> dict[str, Any] | No
     """
     Récupère les informations de quota d'un utilisateur.
     Retourne None si l'utilisateur n'existe pas.
+    Initialise les colonnes quota si elles sont NULL (utilisateurs pré-migration).
     """
     from datetime import datetime, timezone
 
     with _get_conn() as conn:
-        row = conn.execute(
-            "SELECT analyses_count, quota_renewal_at FROM users WHERE user_id = ?",
-            (user_id,)
-        ).fetchone()
+        # Essayer de récupérer les colonnes quota
+        try:
+            row = conn.execute(
+                "SELECT analyses_count, quota_renewal_at FROM users WHERE user_id = ?",
+                (user_id,)
+            ).fetchone()
+        except Exception as e:
+            # Si les colonnes n'existent pas (erreur SQLite), les créer
+            print(f"Colonnes quota manquantes pour user_id={user_id}, tentative d'initialisation: {e}", file=sys.stderr)
+            try:
+                conn.execute("ALTER TABLE users ADD COLUMN analyses_count INTEGER DEFAULT 0")
+                conn.execute("ALTER TABLE users ADD COLUMN quota_renewal_at TEXT")
+                conn.commit()
+                # Réessayer après création des colonnes
+                row = conn.execute(
+                    "SELECT analyses_count, quota_renewal_at FROM users WHERE user_id = ?",
+                    (user_id,)
+                ).fetchone()
+            except Exception as e2:
+                print(f"Échec création colonnes quota: {e2}", file=sys.stderr)
+                return None
     
     if row is None:
         return None
     
     current_count = row["analyses_count"] or 0
     renewal_at_str = row["quota_renewal_at"] or ""
+    
+    # Si renewal_at est vide (utilisateur pré-migration), l'initialiser
+    if not renewal_at_str:
+        from datetime import timedelta
+        now = datetime.now(timezone.utc)
+        new_renewal = (now + timedelta(days=30)).isoformat().replace("+00:00", "Z")
+        with _get_conn() as conn:
+            conn.execute(
+                "UPDATE users SET analyses_count = 0, quota_renewal_at = ? WHERE user_id = ?",
+                (new_renewal, user_id)
+            )
+            conn.commit()
+        renewal_at_str = new_renewal
+        current_count = 0
     
     # Vérifier si le quota doit être renouvelé (lecture seule)
     now = datetime.now(timezone.utc)

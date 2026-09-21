@@ -879,8 +879,8 @@ def _cramers_v_with_ci(
     """
     Calcule le V de Cramér avec intervalle de confiance bootstrap percentile.
     
-    Bootstrap en rééchantillonnant les LIGNES du DataFrame source,
-    recalculant le tableau de contingence et le V de Cramér à chaque réplication.
+    Bootstrap optimisé : rééchantillonne directement les comptes du tableau de contingence
+    via multinomial, évitant pd.crosstab() à chaque itération.
     
     Args:
         df: DataFrame source avec les 2 colonnes catégorielles
@@ -904,23 +904,38 @@ def _cramers_v_with_ci(
     chi2, _, _, _ = stats.chi2_contingency(contingency)
     cramers_v = _cramers_v(chi2, n, contingency.shape)
     
-    # Bootstrap
+    # Bootstrap optimisé : rééchantillonner les comptes via multinomial
     t_bootstrap_start = time.monotonic()
     bootstrap_vs = np.zeros(n_bootstrap)
     
+    # Convertir le tableau de contingence en array numpy
+    contingency_array = contingency.values
+    n_rows, n_cols = contingency_array.shape
+    
+    # Probabilités marginales pour le rééchantillonnage
+    row_probs = contingency_array.sum(axis=1) / n
+    col_probs = contingency_array.sum(axis=0) / n
+    
     for i in range(n_bootstrap):
-        # Rééchantillonner les lignes avec remplacement
-        sample = sub.sample(n=n, replace=True, random_state=seed + i if seed else None)
+        # Rééchantillonner les comptes via multinomial (beaucoup plus rapide que pd.crosstab)
+        # On rééchantillonne les lignes selon leurs probabilités marginales
+        bootstrap_row_counts = np.random.multinomial(n, row_probs)
         
-        # Recalculer le tableau de contingence
-        sample_table = pd.crosstab(sample[col1], sample[col2])
+        # Pour chaque ligne, répartir les comptes entre les colonnes
+        bootstrap_table = np.zeros((n_rows, n_cols))
+        for r in range(n_rows):
+            if bootstrap_row_counts[r] > 0:
+                bootstrap_table[r, :] = np.random.multinomial(bootstrap_row_counts[r], col_probs)
         
-        # Recalculer le Chi-deux et le V de Cramér
-        sample_chi2, _, _, _ = stats.chi2_contingency(sample_table)
-        sample_n = sample_table.values.sum()
-        
-        if sample_n > 0:
-            bootstrap_vs[i] = _cramers_v(sample_chi2, sample_n, sample_table.shape)
+        # Recalculer le Chi-deux et le V de Cramér sur le tableau bootstrap
+        bootstrap_n = bootstrap_table.sum()
+        if bootstrap_n > 0:
+            # Calculer le chi2 manuellement pour éviter stats.chi2_contingency sur array
+            expected = np.outer(bootstrap_table.sum(axis=1), bootstrap_table.sum(axis=0)) / bootstrap_n
+            # Éviter la division par zéro
+            expected[expected == 0] = 1e-10
+            bootstrap_chi2 = ((bootstrap_table - expected) ** 2 / expected).sum()
+            bootstrap_vs[i] = _cramers_v(bootstrap_chi2, int(bootstrap_n), (n_rows, n_cols))
         else:
             bootstrap_vs[i] = 0.0
     

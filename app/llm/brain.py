@@ -62,6 +62,9 @@ print(f"LLM Fallback model: {OPENROUTER_MODEL}")
 #   PRIMARY_API_KEY, PRIMARY_BASE_URL, PRIMARY_MODEL
 #   FALLBACK_API_KEY, FALLBACK_BASE_URL, FALLBACK_MODEL   (optionnel)
 
+# Configuration timeout LLM ajustée pour budget global de 300s
+# Avec calcul statistique optimisé (~20-30s), worker timeout à 260s
+# Budget LLM max: 25s × 2 retries = 75s (marge suffisante)
 REQUEST_TIMEOUT_SECONDS = 25
 MAX_RETRIES_PER_PROVIDER = 2
 RETRY_BACKOFF_SECONDS = 3
@@ -251,7 +254,7 @@ def text_to_intent(
         predictor_cols = []
     predictor_cols = [c for c in predictor_cols if c in all_known_cols]
 
-    valid_actions = {"compare_groups", "correlation", "association", "regression", "descriptive_only"}
+    valid_actions = {"compare_groups", "correlation", "association", "regression", "acm", "descriptive_only"}
     action = parsed.get("action")
     if action not in valid_actions:
         action = "descriptive_only"
@@ -276,13 +279,19 @@ RÈGLE ABSOLUE ET NON-NÉGOCIABLE : tu ne calcules JAMAIS aucun chiffre. Tu ne f
 
 RÈGLE ABSOLUE SUR LES P-VALUES : Toujours écrire les p-values avec exactement 3 décimales dans le texte (ex: 0.179, 0.412). Jamais 5 décimales (0.17917). Si p < 0.001, écrire 'p < 0.001'.
 
+INTERPRÉTATION DES INTERVALLES DE CONFIANCE BOOTSTRAP :
+Si les résultats contiennent des intervalles de confiance bootstrap pour les tailles d'effet (champs effect_size_ci_lower/upper, eta_squared_ci_lower/upper, epsilon_squared_ci_lower/upper, cramers_v_ci_lower/upper), tu dois :
+- Au niveau TECHNIQUE : mentionner explicitement l'IC bootstrap 95% et interpréter sa signification (précision de l'estimation de la taille d'effet)
+- Au niveau ANALYTIQUE : commenter si l'IC est étroit (estimation précise) ou large (incertitude élevée), et si l'IC exclut la valeur nulle (effet robuste)
+- Au niveau DÉCISIONNEL : expliquer ce que la largeur de l'IC signifie pour la confiance dans la conclusion (ex: IC étroit = conclusion fiable, IC large = prudence recommandée)
+
 Pour CHAQUE test statistique présent dans les résultats, tu dois produire 3 niveaux d'interprétation distincts :
 
-1. NIVEAU TECHNIQUE : formulation rigoureuse avec hypothèses H0/H1 explicites, statistique de test, p-value, décision statistique (rejet ou non de H0 au seuil de 5%). Langage de statisticien.
+1. NIVEAU TECHNIQUE : formulation rigoureuse avec hypothèses H0/H1 explicites, statistique de test, p-value, décision statistique (rejet ou non de H0 au seuil de 5%). Si disponible, inclure l'intervalle de confiance bootstrap de la taille d'effet. Langage de statisticien.
 
-2. NIVEAU ANALYTIQUE : reformulation pour un rapport, sans jargon statistique excessif mais toujours précis sur ce que le résultat signifie concrètement pour les variables étudiées. Doit rester compréhensible par quelqu'un avec une formation générale en sciences sociales ou en gestion.
+2. NIVEAU ANALYTIQUE : reformulation pour un rapport, sans jargon statistique excessif mais toujours précis sur ce que le résultat signifie concrètement pour les variables étudiées. Doit rester compréhensible par quelqu'un avec une formation générale en sciences sociales ou en gestion. Commenter la précision de l'estimation si un IC bootstrap est disponible.
 
-3. NIVEAU DÉCISIONNEL : conclusion opérationnelle orientée action, formulée pour un décideur qui n'a pas de formation statistique. Que doit-il retenir et, si pertinent, quelle action cela suggère-t-il ?
+3. NIVEAU DÉCISIONNEL : conclusion opérationnelle orientée action, formulée pour un décideur qui n'a pas de formation statistique. Que doit-il retenir et, si pertinent, quelle action cela suggère-t-il ? Si l'IC bootstrap est disponible, expliquer le niveau de confiance dans la conclusion.
 
 INTERPRÉTATION SPÉCIFIQUE POUR L'ACM (Analyse des Correspondances Multiples) :
 Si les résultats contiennent une section "acm" avec les champs suivants :
