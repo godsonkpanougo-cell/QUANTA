@@ -25,19 +25,26 @@ export function AuthButton() {
   const [isLoadingQuota, setIsLoadingQuota] = useState(false);
 
   const fetchQuota = async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      console.log("fetchQuota: non authentifié, skip");
+      return;
+    }
     
     try {
       setIsLoadingQuota(true);
       const baseUrl = getApiBaseUrl();
+      console.log("fetchQuota: appel à", `${baseUrl}/quota`);
       const response = await fetch(`${baseUrl}/quota`, {
         credentials: "include",
       });
       
+      console.log("fetchQuota: response status", response.status);
       if (response.ok) {
         const data = (await response.json()) as QuotaInfo;
         setQuota(data);
         console.log("Quota chargé dans AuthButton:", data);
+      } else {
+        console.error("fetchQuota: response non OK", response.status, response.statusText);
       }
     } catch (error) {
       console.error("Erreur chargement quota:", error);
@@ -123,17 +130,17 @@ export function AuthButton() {
       </div>
       
       {/* Affichage du quota */}
-      {quota !== null && (
-        <div className="flex items-center gap-2">
-          {isLoadingQuota ? (
-            <Loader2 strokeWidth={1.5} className="size-4 animate-spin text-quanta-muted" />
-          ) : (
-            <span className={`font-sans text-sm font-medium ${getQuotaColor(quota.remaining)}`}>
-              {quota.remaining}/15
-            </span>
-          )}
-        </div>
-      )}
+      <div className="flex items-center gap-2">
+        {isLoadingQuota ? (
+          <Loader2 strokeWidth={1.5} className="size-4 animate-spin text-quanta-muted" />
+        ) : quota !== null ? (
+          <span className={`font-sans text-sm font-medium ${getQuotaColor(quota.remaining)}`}>
+            {quota.remaining}/15
+          </span>
+        ) : (
+          <span className="font-sans text-sm text-quanta-muted">--/15</span>
+        )}
+      </div>
       
       <div className="flex items-center gap-2">
         <a
