@@ -129,8 +129,8 @@ export function AuthButton() {
         </div>
       </div>
       
-      {/* Affichage du quota */}
-      <div className="flex items-center gap-2">
+      {/* Affichage du quota - séparé des boutons d'action */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-quanta border border-quanta-border-subtle bg-quanta-surface">
         {isLoadingQuota ? (
           <Loader2 strokeWidth={1.5} className="size-4 animate-spin text-quanta-muted" />
         ) : quota !== null ? (
