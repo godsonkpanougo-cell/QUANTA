@@ -74,31 +74,37 @@ def init_db() -> None:
                 quota_col = [c for c in columns if c[1] == "quota_renewal_at"]
                 if quota_col and quota_col[0][3] == 1:  # notnull=1 signifie NOT NULL
                     print("Migration détectée : suppression contrainte NOT NULL sur quota_renewal_at", flush=True)
-                    # Recréer la table sans la contrainte NOT NULL
-                    conn.execute("""
-                        CREATE TABLE users_new (
-                            user_id      TEXT PRIMARY KEY,
-                            google_sub   TEXT UNIQUE NOT NULL,
-                            email        TEXT UNIQUE NOT NULL,
-                            name         TEXT,
-                            picture_url  TEXT,
-                            created_at   TEXT NOT NULL,
-                            last_login_at TEXT,
-                            analyses_count INTEGER DEFAULT 0,
-                            quota_renewal_at TEXT
-                        )
-                    """)
-                    # Copier les données
-                    conn.execute("""
-                        INSERT INTO users_new 
-                        SELECT user_id, google_sub, email, name, picture_url, created_at, last_login_at, analyses_count, quota_renewal_at
-                        FROM users
-                    """)
-                    # Supprimer l'ancienne table et renommer
-                    conn.execute("DROP TABLE users")
-                    conn.execute("ALTER TABLE users_new RENAME TO users")
-                    conn.commit()
-                    print("Migration terminée : contrainte NOT NULL supprimée", flush=True)
+                    # Transaction explicite pour garantir l'atomicité (évite perte de données si crash entre DROP et RENAME)
+                    conn.execute("BEGIN TRANSACTION")
+                    try:
+                        # Recréer la table sans la contrainte NOT NULL
+                        conn.execute("""
+                            CREATE TABLE users_new (
+                                user_id      TEXT PRIMARY KEY,
+                                google_sub   TEXT UNIQUE NOT NULL,
+                                email        TEXT UNIQUE NOT NULL,
+                                name         TEXT,
+                                picture_url  TEXT,
+                                created_at   TEXT NOT NULL,
+                                last_login_at TEXT,
+                                analyses_count INTEGER DEFAULT 0,
+                                quota_renewal_at TEXT
+                            )
+                        """)
+                        # Copier les données
+                        conn.execute("""
+                            INSERT INTO users_new 
+                            SELECT user_id, google_sub, email, name, picture_url, created_at, last_login_at, analyses_count, quota_renewal_at
+                            FROM users
+                        """)
+                        # Supprimer l'ancienne table et renommer
+                        conn.execute("DROP TABLE users")
+                        conn.execute("ALTER TABLE users_new RENAME TO users")
+                        conn.commit()
+                        print("Migration terminée : contrainte NOT NULL supprimée", flush=True)
+                    except Exception:
+                        conn.rollback()
+                        raise
             except Exception as e:
                 # Erreur ignorée : la migration a peut-être déjà été appliquée
                 pass
