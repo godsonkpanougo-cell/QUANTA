@@ -57,29 +57,81 @@ def _get_conn():
 
 def init_db() -> None:
     """Crée les tables si elles n'existent pas. Appelée au démarrage de main.py."""
-    with _get_conn() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id      TEXT PRIMARY KEY,
-                google_sub   TEXT UNIQUE NOT NULL,
-                email        TEXT UNIQUE NOT NULL,
-                name         TEXT,
-                picture_url  TEXT,
-                created_at   TEXT NOT NULL,
-                last_login_at TEXT,
-                analyses_count INTEGER DEFAULT 0,
-                quota_renewal_at TEXT
-            )
-        """)
+    # Utiliser une connexion directe pour la migration (pas de context manager pour éviter le double commit)
+    conn = _connect()
+    try:
+        # Vérifier si la table users existe déjà
+        table_exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone() is not None
+        
+        if table_exists:
+            # Migration explicite : supprimer la contrainte NOT NULL sur quota_renewal_at
+            # SQLite ne supporte pas DROP CONSTRAINT, donc on recrée la table
+            try:
+                # Vérifier si la colonne a encore la contrainte NOT NULL
+                columns = conn.execute("PRAGMA table_info(users)").fetchall()
+                quota_col = [c for c in columns if c[1] == "quota_renewal_at"]
+                if quota_col and quota_col[0][3] == 1:  # notnull=1 signifie NOT NULL
+                    print("Migration détectée : suppression contrainte NOT NULL sur quota_renewal_at", flush=True)
+                    # Recréer la table sans la contrainte NOT NULL
+                    conn.execute("""
+                        CREATE TABLE users_new (
+                            user_id      TEXT PRIMARY KEY,
+                            google_sub   TEXT UNIQUE NOT NULL,
+                            email        TEXT UNIQUE NOT NULL,
+                            name         TEXT,
+                            picture_url  TEXT,
+                            created_at   TEXT NOT NULL,
+                            last_login_at TEXT,
+                            analyses_count INTEGER DEFAULT 0,
+                            quota_renewal_at TEXT
+                        )
+                    """)
+                    # Copier les données
+                    conn.execute("""
+                        INSERT INTO users_new 
+                        SELECT user_id, google_sub, email, name, picture_url, created_at, last_login_at, analyses_count, quota_renewal_at
+                        FROM users
+                    """)
+                    # Supprimer l'ancienne table et renommer
+                    conn.execute("DROP TABLE users")
+                    conn.execute("ALTER TABLE users_new RENAME TO users")
+                    conn.commit()
+                    print("Migration terminée : contrainte NOT NULL supprimée", flush=True)
+            except Exception as e:
+                # Erreur ignorée : la migration a peut-être déjà été appliquée
+                pass
+        else:
+            # Table n'existe pas : créer avec le nouveau schéma
+            conn.execute("""
+                CREATE TABLE users (
+                    user_id      TEXT PRIMARY KEY,
+                    google_sub   TEXT UNIQUE NOT NULL,
+                    email        TEXT UNIQUE NOT NULL,
+                    name         TEXT,
+                    picture_url  TEXT,
+                    created_at   TEXT NOT NULL,
+                    last_login_at TEXT,
+                    analyses_count INTEGER DEFAULT 0,
+                    quota_renewal_at TEXT
+                )
+            """)
+            conn.commit()
+        
         # Migration pour les utilisateurs existants : ajouter les colonnes si elles n'existent pas
         try:
             conn.execute("ALTER TABLE users ADD COLUMN analyses_count INTEGER DEFAULT 0")
+            conn.commit()
         except:
             pass  # La colonne existe déjà
         try:
             conn.execute("ALTER TABLE users ADD COLUMN quota_renewal_at TEXT")
+            conn.commit()
         except:
             pass  # La colonne existe déjà
+            
+        # Créer les autres tables
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 session_token TEXT PRIMARY KEY,
@@ -121,6 +173,9 @@ def init_db() -> None:
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_analyses_created ON analyses(created_at DESC)")
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def clear_all() -> None:
