@@ -121,6 +121,19 @@ def main():
 
         # Closure run_analysis_fn qui appelle run_full_analysis
         def run_analysis_fn(intent: ts.AnalysisIntent) -> dict[str, Any]:
+            # Vérifier si l'analyse a été annulée avant d'exécuter chaque intent
+            current_analysis = db.get_analysis_internal(analysis_id)
+            if current_analysis and current_analysis["status"] == "cancelled":
+                print(f"ANALYZE Worker - Analyse annulée par l'utilisateur, arrêt immédiat", flush=True)
+                db.update_analysis(
+                    analysis_id,
+                    status="cancelled",
+                    error="Analyse annulée par l'utilisateur",
+                    updated_at=_now(),
+                    user_id=user_id
+                )
+                sys.exit(0)  # Sortir proprement sans erreur
+            
             analysis = run_full_analysis(file_bytes, filename, intent, theme="dark")
             # Journaliser chaque test lancé (appelé 1× en mode query, N× en auto).
             inference = analysis.get("inference") if isinstance(analysis, dict) else None

@@ -636,6 +636,45 @@ def get_quota(current_user: dict = Depends(auth.get_current_user)) -> dict[str, 
     return quota_info
 
 
+@app.post("/analyses/{analysis_id}/cancel")
+def cancel_analysis(
+    analysis_id: str,
+    current_user: dict = Depends(auth.get_current_user)
+) -> dict[str, str]:
+    """
+    Annule une analyse en cours. Le worker vérifie le statut avant chaque intent
+    et s'arrête si le statut est "cancelled".
+    """
+    analysis = db.get_analysis(analysis_id, current_user["user_id"])
+    if analysis is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"analysis_id '{analysis_id}' introuvable."
+        )
+    
+    if analysis["status"] not in {"pending", "running"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Impossible d'annuler une analyse avec statut '{analysis['status']}'."
+        )
+    
+    # Mettre à jour le statut en base
+    updated = db.update_analysis(
+        analysis_id,
+        status="cancelled",
+        updated_at=_now(),
+        user_id=current_user["user_id"]
+    )
+    
+    if not updated:
+        raise HTTPException(
+            status_code=400,
+            detail="Impossible de mettre à jour l'analyse (statut déjà 'done' ou utilisateur non propriétaire)."
+        )
+    
+    return {"analysis_id": analysis_id, "status": "cancelled"}
+
+
 @app.get("/report/{analysis_id}")
 def get_report(
     analysis_id: str,

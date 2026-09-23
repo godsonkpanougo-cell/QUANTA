@@ -214,6 +214,10 @@ export function HomePage() {
                     setErrorMessage(msg);
                     setPhase("error");
                   }}
+                  onCancel={() => {
+                    setPhase("idle");
+                    setAnalysisId(null);
+                  }}
                 />
               ) : null}
 

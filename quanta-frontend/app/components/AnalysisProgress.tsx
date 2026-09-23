@@ -23,12 +23,12 @@ const POLL_TIMEOUT_MS = 300000; // 5 minutes (300 secondes)
 const MAX_RUNNING_STEP = 6;
 const FINAL_STEP = 8;
 
-type AnalysisStatus = "running" | "done" | "error";
+type AnalysisStatus = "running" | "done" | "error" | "cancelled";
 
 type StepVisualState = "past" | "active" | "future";
 
 interface AnalysisStatusResponse {
-  status: "pending" | "running" | "done" | "error";
+  status: "pending" | "running" | "done" | "error" | "cancelled";
   result?: unknown;
   error?: string;
 }
@@ -37,6 +37,7 @@ export interface AnalysisProgressProps {
   analysisId: string;
   onComplete: (result: unknown) => void;
   onError: (message: string) => void;
+  onCancel?: () => void;
 }
 
 const MOTION_TRANSITION = {
@@ -88,6 +89,27 @@ async function fetchAnalysisStatus(
   }
 
   return response.json() as Promise<AnalysisStatusResponse>;
+}
+
+async function cancelAnalysis(analysisId: string): Promise<void> {
+  const baseUrl = getApiBaseUrl();
+  if (!baseUrl) {
+    throw new Error("NEXT_PUBLIC_API_URL n'est pas configurée.");
+  }
+
+  const response = await fetch(`${baseUrl}/analyses/${analysisId}/cancel`, {
+    method: "POST",
+    credentials: "include",
+  });
+
+  if (response.status === 401) {
+    throw new Error("Connectez-vous pour continuer.");
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Impossible d'annuler l'analyse (HTTP ${response.status}).`,
+    );
+  }
 }
 
 interface StepDotProps {
@@ -154,17 +176,21 @@ export function AnalysisProgress({
   analysisId,
   onComplete,
   onError,
+  onCancel,
 }: AnalysisProgressProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [status, setStatus] = useState<AnalysisStatus>("running");
+  const [isCancelling, setIsCancelling] = useState(false);
 
   const onCompleteRef = useRef(onComplete);
   const onErrorRef = useRef(onError);
+  const onCancelRef = useRef(onCancel);
   const inProgressRef = useRef(true);
   const finishedRef = useRef(false);
 
   onCompleteRef.current = onComplete;
   onErrorRef.current = onError;
+  onCancelRef.current = onCancel;
 
   useEffect(() => {
     inProgressRef.current = true;
@@ -223,6 +249,11 @@ export function AnalysisProgress({
           return;
         }
 
+        if (data.status === "cancelled") {
+          finishWithError("Analyse annulée par l'utilisateur.");
+          return;
+        }
+
         if (data.status === "running" || data.status === "pending") {
           inProgressRef.current = true;
         }
@@ -272,11 +303,39 @@ export function AnalysisProgress({
     };
   }, [analysisId]);
 
+  const handleCancel = async () => {
+    if (isCancelling || finishedRef.current) {
+      return;
+    }
+    setIsCancelling(true);
+    try {
+      await cancelAnalysis(analysisId);
+      if (onCancelRef.current) {
+        onCancelRef.current();
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'annulation:", error);
+      setIsCancelling(false);
+    }
+  };
+
   return (
     <div className="rounded-card bg-quanta-surface p-8">
-      <h2 className="mb-8 text-center font-display text-xl font-light text-quanta-primary">
-        Analyse en cours...
-      </h2>
+      <div className="mb-8 flex items-center justify-between">
+        <h2 className="text-center font-display text-xl font-light text-quanta-primary">
+          Analyse en cours...
+        </h2>
+        {(status === "running" || status === "pending") && !finishedRef.current && (
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={isCancelling}
+            className="font-sans text-xs text-quanta-muted transition-colors hover:text-quanta-error disabled:opacity-50"
+          >
+            {isCancelling ? "Annulation..." : "Annuler"}
+          </button>
+        )}
+      </div>
 
       <div className="flex flex-row items-start gap-2 overflow-x-auto">
         {STEPS.map((label, index) => {
