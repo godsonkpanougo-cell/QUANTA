@@ -869,37 +869,6 @@ def get_report(
     )
 
 
-@app.get("/debug/schema")
-def debug_schema(current_user: dict = Depends(auth.get_current_user)):
-    """
-    Endpoint de debug temporaire pour inspecter le schéma de la base de données.
-    
-    Retourne les informations de schéma des tables users et analyses.
-    À supprimer après vérification de la migration en production.
-    """
-    import db
-    
-    def get_table_info(table_name: str) -> list[dict[str, Any]]:
-        """Exécute PRAGMA table_info et retourne le résultat en dict."""
-        with db._get_conn() as conn:
-            rows = conn.execute(f"PRAGMA table_info({table_name});").fetchall()
-        return [
-            {
-                "name": row[0],
-                "type": row[1],
-                "notnull": row[2],
-                "dflt_value": row[3],
-                "pk": row[4],
-            }
-            for row in rows
-        ]
-    
-    return {
-        "users": get_table_info("users"),
-        "analyses": get_table_info("analyses"),
-    }
-
-
 # Note : pas de nettoyage automatique des fichiers à l'arrêt du serveur --
 # ce serait contradictoire avec l'objectif de persistance via SQLite. Un
 # vrai mécanisme d'expiration/nettoyage périodique (ex: fichiers de plus
