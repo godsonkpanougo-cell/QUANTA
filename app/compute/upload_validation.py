@@ -312,6 +312,8 @@ def load_and_diagnose(file_bytes: bytes, filename: str) -> dict[str, Any]:
         if _is_likely_id_column_categorical(df[col], col):
             id_cols.append(col)
 
+    raw_cat_cols = [c for c in raw_cat_cols if c not in id_cols]
+
     candidate_numeric_cols = [c for c in raw_numeric_cols if c not in id_cols]
 
     # ── Filtre texte libre (Fix #5) ─────────────────────────────────────────

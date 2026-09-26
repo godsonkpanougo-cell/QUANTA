@@ -155,8 +155,12 @@ export function UploadZone({ onFileSelect, selectedFile = null }: UploadZoneProp
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
+        <label htmlFor="file-input" className="sr-only">
+          Sélectionner un fichier
+        </label>
         <input
           ref={inputRef}
+          id="file-input"
           type="file"
           accept=".csv,.xlsx,.dta,.sav"
           className="hidden"

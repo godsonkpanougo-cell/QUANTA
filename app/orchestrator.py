@@ -484,7 +484,7 @@ def auto_intent(diagnosis: dict[str, Any]) -> list[ts.AnalysisIntent]:
     if len(eligible_cat_cols) >= 3:
         intents.append(
             ts.AnalysisIntent(
-                action="association",
+                action="acm",
                 target_col=eligible_cat_cols[0],
                 group_col=eligible_cat_cols[1],
                 raw_query="[auto]",

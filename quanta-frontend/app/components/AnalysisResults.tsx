@@ -292,6 +292,7 @@ export function AnalysisResults({
             onClick={() => {
               void handleDownloadPdf("dark");
             }}
+            aria-label={downloadingTheme === "dark" ? "Génération du rapport en cours" : "Télécharger le rapport sombre"}
             className="inline-flex items-center justify-center gap-2 rounded-quanta border border-quanta-border-active bg-quanta-surface px-8 py-3 font-sans text-sm font-medium text-quanta-gold transition-colors hover:bg-quanta-elevated disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Download
@@ -310,6 +311,7 @@ export function AnalysisResults({
             onClick={() => {
               void handleDownloadPdf("light");
             }}
+            aria-label={downloadingTheme === "light" ? "Génération du rapport en cours" : "Télécharger le rapport académique"}
             className="inline-flex items-center justify-center gap-2 rounded-quanta border border-quanta-border-active bg-quanta-surface px-8 py-3 font-sans text-sm font-medium text-quanta-gold transition-colors hover:bg-quanta-elevated disabled:cursor-not-allowed disabled:opacity-40"
           >
             <FileText

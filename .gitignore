@@ -15,6 +15,7 @@ __pycache__/
 # Base de données générée automatiquement
 quanta.db
 *.db
+*.db.backup
 
 # Fichiers système
 .DS_Store

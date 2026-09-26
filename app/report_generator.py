@@ -1931,6 +1931,11 @@ def _apa_effect_rows(data: dict[str, Any]) -> list[tuple[str, str, bool]]:
 
     effect = data.get("effect_size")
     effect_name = data.get("effect_size_name") or "Taille d'effet"
+    
+    # IC bootstrap pour Cohen's d ou r
+    ci_lower = data.get("effect_size_ci_lower")
+    ci_upper = data.get("effect_size_ci_upper")
+    
     if isinstance(effect, dict):
         for k, v in effect.items():
             rows.append((str(k), _fmt_number(v), True))
@@ -1938,7 +1943,11 @@ def _apa_effect_rows(data: dict[str, Any]) -> list[tuple[str, str, bool]]:
             if interp:
                 rows.append(("Interprétation", interp, False))
     elif effect is not None:
-        rows.append((str(effect_name), _fmt_number(effect), True))
+        # Ajouter l'IC bootstrap si disponible
+        effect_value_str = _fmt_number(effect)
+        if ci_lower is not None and ci_upper is not None:
+            effect_value_str = f"{effect_value_str} [{_fmt_number(ci_lower)}, {_fmt_number(ci_upper)}]"
+        rows.append((str(effect_name), effect_value_str, True))
         interp = _effect_interpretation_html(str(effect_name), effect)
         if interp:
             rows.append(("Interprétation", interp, False))
@@ -1952,7 +1961,13 @@ def _apa_effect_rows(data: dict[str, Any]) -> list[tuple[str, str, bool]]:
         ("n_observations", "N"),
     ):
         if key in data and data[key] is not None:
-            rows.append((label, _fmt_number(data[key]), True))
+            # IC bootstrap pour η² et ε²
+            ci_lower = data.get(f"{key}_ci_lower")
+            ci_upper = data.get(f"{key}_ci_upper")
+            value_str = _fmt_number(data[key])
+            if ci_lower is not None and ci_upper is not None:
+                value_str = f"{value_str} [{_fmt_number(ci_lower)}, {_fmt_number(ci_upper)}]"
+            rows.append((label, value_str, True))
             if key in {"cramers_v", "eta_squared", "epsilon_squared"}:
                 interp = _effect_interpretation_html(label, data[key])
                 if interp:
