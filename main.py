@@ -469,7 +469,7 @@ def _run_analysis_core(analysis_id: str, user_id: str, file_id: str, query: str)
     })
     result["audit_trail"] = audit_trail
 
-    db.update_analysis(analysis_id, status="done", result=result, updated_at=_now(), user_id=user_id)
+    db.update_analysis(analysis_id, status="done", result=result, updated_at=_now(), user_id=user_id, file_hash=file_hash)
 
 
 def _run_analysis_dispatch(analysis_id: str, user_id: str, file_id: str, query: str) -> None:
@@ -544,11 +544,14 @@ def analyze(
     analyze_request: AnalyzeRequest,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(auth.get_current_user)
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """
     Lance une analyse en arrière-plan et retourne immédiatement un
     analysis_id. Le frontend doit ensuite poller GET /status/{analysis_id}
     jusqu'à obtenir le statut "done" ou "error".
+    
+    Si une analyse identique (même fichier, même requête, même utilisateur)
+    existe déjà en cache, renvoie le résultat sans recalcul ni consommation de quota.
     """
     if not db.upload_exists(analyze_request.file_id, current_user["user_id"]):
         raise HTTPException(
@@ -556,8 +559,37 @@ def analyze(
             detail=f"file_id '{analyze_request.file_id}' introuvable. Uploadez d'abord un fichier via /upload.",
         )
 
-    # Vérifier et incrémenter le quota de manière atomique
     user_id = current_user["user_id"]
+    
+    # Calculer le file_hash pour le cache
+    upload_info = db.get_upload(analyze_request.file_id, user_id)
+    if upload_info is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"file_id '{analyze_request.file_id}' introuvable."
+        )
+    
+    with open(upload_info["path"], "rb") as f:
+        file_bytes = f.read()
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
+    
+    # Chercher dans le cache (strictement par utilisateur)
+    cached = db.find_cached_analysis(user_id, file_hash, analyze_request.query)
+    if cached:
+        # Cache hit : créer une nouvelle entrée avec le résultat déjà calculé
+        analysis_id = str(uuid.uuid4())
+        db.create_analysis(analysis_id, user_id, analyze_request.file_id, analyze_request.query, _now(), file_hash)
+        db.update_analysis(
+            analysis_id,
+            status="done",
+            result=cached["result"],
+            updated_at=_now(),
+            user_id=user_id,
+            file_hash=file_hash,
+        )
+        return {"analysis_id": analysis_id, "status": "done", "from_cache": True}
+    
+    # Cache miss : comportement normal avec consommation de quota
     allowed, remaining, renewal_at = db.check_and_increment_quota(user_id)
     
     if not allowed:
@@ -577,11 +609,11 @@ def analyze(
         )
 
     analysis_id = str(uuid.uuid4())
-    db.create_analysis(analysis_id, user_id, analyze_request.file_id, analyze_request.query, _now())
+    db.create_analysis(analysis_id, user_id, analyze_request.file_id, analyze_request.query, _now(), file_hash)
 
     background_tasks.add_task(_run_analysis_background, analysis_id, user_id, analyze_request.file_id, analyze_request.query)
 
-    return {"analysis_id": analysis_id, "status": "pending"}
+    return {"analysis_id": analysis_id, "status": "pending", "from_cache": False}
 
 
 @app.get("/status/{analysis_id}")
@@ -835,6 +867,37 @@ def get_report(
             "Access-Control-Allow-Headers": "*",
         },
     )
+
+
+@app.get("/debug/schema")
+def debug_schema(current_user: dict = Depends(auth.get_current_user)):
+    """
+    Endpoint de debug temporaire pour inspecter le schéma de la base de données.
+    
+    Retourne les informations de schéma des tables users et analyses.
+    À supprimer après vérification de la migration en production.
+    """
+    import db
+    
+    def get_table_info(table_name: str) -> list[dict[str, Any]]:
+        """Exécute PRAGMA table_info et retourne le résultat en dict."""
+        with db._get_conn() as conn:
+            rows = conn.execute(f"PRAGMA table_info({table_name});").fetchall()
+        return [
+            {
+                "name": row[0],
+                "type": row[1],
+                "notnull": row[2],
+                "dflt_value": row[3],
+                "pk": row[4],
+            }
+            for row in rows
+        ]
+    
+    return {
+        "users": get_table_info("users"),
+        "analyses": get_table_info("analyses"),
+    }
 
 
 # Note : pas de nettoyage automatique des fichiers à l'arrêt du serveur --

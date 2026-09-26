@@ -52,6 +52,7 @@ def test_cancel_analysis_running():
         file_id="test-cancel-file",
         query="test query",
         created_at="2024-01-01T00:00:00Z",
+        file_hash="cancel_hash_1",
     )
     
     # Mettre à jour le statut à "running"
@@ -60,6 +61,7 @@ def test_cancel_analysis_running():
         status="running",
         updated_at="2024-01-01T00:00:00Z",
         user_id=user_id,
+        file_hash="cancel_hash_1",
     )
     
     # Mock l'authentification
@@ -122,6 +124,7 @@ def test_cancel_analysis_already_done():
         file_id="test-cancel-file-2",
         query="test query",
         created_at="2024-01-01T00:00:00Z",
+        file_hash="cancel_hash_2",
     )
     
     # Mettre à jour le statut à "done"
@@ -130,6 +133,7 @@ def test_cancel_analysis_already_done():
         status="done",
         updated_at="2024-01-01T00:00:00Z",
         user_id=user_id,
+        file_hash="cancel_hash_2",
     )
     
     # Mock l'authentification
@@ -215,6 +219,7 @@ def test_cancel_analysis_wrong_user():
         file_id="test-cancel-file-4",
         query="test query",
         created_at="2024-01-01T00:00:00Z",
+        file_hash="cancel_hash_4",
     )
     
     # Mettre à jour le statut à "running"
@@ -223,6 +228,7 @@ def test_cancel_analysis_wrong_user():
         status="running",
         updated_at="2024-01-01T00:00:00Z",
         user_id=user_id_4,
+        file_hash="cancel_hash_4",
     )
     
     # Mock l'authentification pour l'utilisateur 5

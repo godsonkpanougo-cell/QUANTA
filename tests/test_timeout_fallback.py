@@ -45,7 +45,7 @@ def test_timeout_fallback_to_lightweight_pdf():
     
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
-    db.create_analysis(analysis_id, user_id, file_id, "Test query", now)
+    db.create_analysis(analysis_id, user_id, file_id, "Test query", now, file_hash="test_hash_123")
     
     # Simuler un résultat d'analyse
     result = {
@@ -53,7 +53,7 @@ def test_timeout_fallback_to_lightweight_pdf():
         "tests": [{"name": "Test 1", "p_value": 0.05}],
         "interpretations": [{"test": "Test 1", "interpretation": "Significatif"}],
     }
-    db.update_analysis(analysis_id, status="done", result=result, updated_at=now, user_id=user_id)
+    db.update_analysis(analysis_id, status="done", result=result, updated_at=now, user_id=user_id, file_hash="test_hash_123")
     
     # Mock subprocess.run pour lever TimeoutExpired
     with patch("main.subprocess.run") as mock_run:

@@ -193,7 +193,7 @@ def main():
         result["audit_trail"] = audit_trail
 
         # Marquer le statut "done" en base
-        db.update_analysis(analysis_id, status="done", result=result, updated_at=_now(), user_id=user_id)
+        db.update_analysis(analysis_id, status="done", result=result, updated_at=_now(), user_id=user_id, file_hash=file_hash)
 
         print(f"ANALYZE Worker - Succès : analysis_id={analysis_id}", flush=True)
         sys.exit(0)

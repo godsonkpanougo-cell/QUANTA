@@ -136,6 +136,13 @@ def init_db() -> None:
             conn.commit()
         except:
             pass  # La colonne existe déjà
+        
+        # Migration pour la table analyses : ajouter file_hash si elle n'existe pas
+        try:
+            conn.execute("ALTER TABLE analyses ADD COLUMN file_hash TEXT")
+            conn.commit()
+        except:
+            pass  # La colonne existe déjà
             
         # Créer les autres tables
         conn.execute("""
@@ -174,6 +181,7 @@ def init_db() -> None:
                 error       TEXT,
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL,
+                file_hash   TEXT,
                 FOREIGN KEY (file_id) REFERENCES uploads(file_id),
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
             )
@@ -250,14 +258,14 @@ def upload_exists(file_id: str, user_id: str) -> bool:
 # ANALYSES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def create_analysis(analysis_id: str, user_id: str, file_id: str, query: str, created_at: str) -> None:
-    """Crée une analyse avec user_id."""
+def create_analysis(analysis_id: str, user_id: str, file_id: str, query: str, created_at: str, file_hash: str | None = None) -> None:
+    """Crée une analyse avec user_id et file_hash optionnel."""
     with _get_conn() as conn:
         conn.execute(
             """INSERT INTO analyses
-               (analysis_id, user_id, file_id, query, status, result, error, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'pending', NULL, NULL, ?, ?)""",
-            (analysis_id, user_id, file_id, query, created_at, created_at),
+               (analysis_id, user_id, file_id, query, status, result, error, created_at, updated_at, file_hash)
+               VALUES (?, ?, ?, ?, 'pending', NULL, NULL, ?, ?, ?)""",
+            (analysis_id, user_id, file_id, query, created_at, created_at, file_hash),
         )
 
 
@@ -268,17 +276,19 @@ def update_analysis(
     error: str | None = None,
     updated_at: str = "",
     user_id: str = "",
+    file_hash: str | None = None,
 ) -> bool:
     """Met à jour une analyse si l'utilisateur est le propriétaire."""
     with _get_conn() as conn:
         cursor = conn.execute(
-            "UPDATE analyses SET status = ?, result = ?, error = ?, updated_at = ? "
+            "UPDATE analyses SET status = ?, result = ?, error = ?, updated_at = ?, file_hash = ? "
             "WHERE analysis_id = ? AND user_id = ? AND status != 'done'",
             (
                 status,
                 json.dumps(result, ensure_ascii=False) if result is not None else None,
                 error,
                 updated_at,
+                file_hash,
                 analysis_id,
                 user_id,
             ),
@@ -313,6 +323,7 @@ def get_analysis(analysis_id: str, user_id: str) -> dict[str, Any] | None:
         "error": row["error"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "file_hash": row["file_hash"] if "file_hash" in row.keys() else None,
     }
 
 
@@ -343,6 +354,37 @@ def get_analysis_internal(analysis_id: str) -> dict[str, Any] | None:
         "error": row["error"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "file_hash": row["file_hash"] if "file_hash" in row.keys() else None,
+    }
+
+
+def find_cached_analysis(user_id: str, file_hash: str, query: str) -> dict[str, Any] | None:
+    """
+    Cherche une analyse en cache pour le même utilisateur, même fichier et même requête.
+    
+    Retourne l'analyse si trouvée avec status='done', None sinon.
+    Le cache est strictement par utilisateur (isolation des données).
+    """
+    with _get_conn() as conn:
+        row = conn.execute(
+            """SELECT * FROM analyses 
+               WHERE user_id = ? AND file_hash = ? AND query = ? AND status = 'done'
+               ORDER BY created_at DESC LIMIT 1""",
+            (user_id, file_hash, query)
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "analysis_id": row["analysis_id"],
+        "file_id": row["file_id"],
+        "user_id": row["user_id"],
+        "query": row["query"],
+        "status": row["status"],
+        "result": json.loads(row["result"]) if row["result"] else None,
+        "error": row["error"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "file_hash": row["file_hash"] if "file_hash" in row.keys() else None,
     }
 
 

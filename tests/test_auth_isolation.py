@@ -117,8 +117,8 @@ def test_user_isolation_status_endpoint():
         })
         
         analysis_id = "test_analysis_isolation"
-        db.create_analysis(analysis_id, TEST_USER_A["user_id"], file_id, "test query", "2024-01-01T00:00:00Z")
-        db.update_analysis(analysis_id, status="done", result={"test": "data"}, updated_at="2024-01-01T00:00:00Z", user_id=TEST_USER_A["user_id"])
+        db.create_analysis(analysis_id, TEST_USER_A["user_id"], file_id, "test query", "2024-01-01T00:00:00Z", file_hash="isolation_hash_1")
+        db.update_analysis(analysis_id, status="done", result={"test": "data"}, updated_at="2024-01-01T00:00:00Z", user_id=TEST_USER_A["user_id"], file_hash="isolation_hash_1")
         
         # User A peut accéder à l'analyse
         response = client.get(f"/status/{analysis_id}")
@@ -168,8 +168,8 @@ def test_user_isolation_report_endpoint():
         })
         
         analysis_id = "test_analysis_report_isolation"
-        db.create_analysis(analysis_id, TEST_USER_A["user_id"], file_id, "test query", "2024-01-01T00:00:00Z")
-        db.update_analysis(analysis_id, status="done", result={"test": "data"}, updated_at="2024-01-01T00:00:00Z", user_id=TEST_USER_A["user_id"])
+        db.create_analysis(analysis_id, TEST_USER_A["user_id"], file_id, "test query", "2024-01-01T00:00:00Z", file_hash="isolation_hash_2")
+        db.update_analysis(analysis_id, status="done", result={"test": "data"}, updated_at="2024-01-01T00:00:00Z", user_id=TEST_USER_A["user_id"], file_hash="isolation_hash_2")
         
         # Override pour User B
         main.app.dependency_overrides[auth.get_current_user] = lambda: TEST_USER_B

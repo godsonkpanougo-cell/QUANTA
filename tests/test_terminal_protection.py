@@ -34,14 +34,14 @@ db.save_upload(file_id, test_user_id, {
 })
 
 analysis_id = "test_analysis_001"
-db.create_analysis(analysis_id, test_user_id, file_id, "test query", _now())
+db.create_analysis(analysis_id, test_user_id, file_id, "test query", _now(), file_hash="abc123")
 
 # Mettre le statut à "done"
-result1 = db.update_analysis(analysis_id, status="done", result={"test": "data"}, updated_at=_now(), user_id=test_user_id)
+result1 = db.update_analysis(analysis_id, status="done", result={"test": "data"}, updated_at=_now(), user_id=test_user_id, file_hash="abc123")
 print(f"update_analysis(id, status='done') -> {result1}")
 
 # Essayer d'écraser avec "error"
-result2 = db.update_analysis(analysis_id, status="error", error="test error", updated_at=_now(), user_id=test_user_id)
+result2 = db.update_analysis(analysis_id, status="error", error="test error", updated_at=_now(), user_id=test_user_id, file_hash="abc123")
 print(f"update_analysis(id, status='error') -> {result2}")
 
 # Vérifier le statut final
@@ -60,14 +60,14 @@ print("TEST 2: error peut être transformé en done")
 print("=" * 60)
 
 analysis_id2 = "test_analysis_002"
-db.create_analysis(analysis_id2, test_user_id, file_id, "test query 2", _now())
+db.create_analysis(analysis_id2, test_user_id, file_id, "test query 2", _now(), file_hash="def456")
 
 # Mettre le statut à "error"
-result3 = db.update_analysis(analysis_id2, status="error", error="premier error", updated_at=_now(), user_id=test_user_id)
+result3 = db.update_analysis(analysis_id2, status="error", error="premier error", updated_at=_now(), user_id=test_user_id, file_hash="def456")
 print(f"update_analysis(id, status='error') -> {result3}")
 
 # Transformer en "done"
-result4 = db.update_analysis(analysis_id2, status="done", result={"success": True}, updated_at=_now(), user_id=test_user_id)
+result4 = db.update_analysis(analysis_id2, status="done", result={"success": True}, updated_at=_now(), user_id=test_user_id, file_hash="def456")
 print(f"update_analysis(id, status='done') -> {result4}")
 
 # Vérifier le statut final
