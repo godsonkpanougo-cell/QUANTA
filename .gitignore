@@ -16,6 +16,7 @@ __pycache__/
 quanta.db
 *.db
 *.db.backup
+*.db.bak*
 
 # Fichiers système
 .DS_Store

@@ -21,10 +21,12 @@ import math
 import warnings
 import logging
 import time
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib
 import os
+
 # Forcer le backend Agg avant toute importation pyplot
 os.environ['MPLBACKEND'] = 'Agg'
 matplotlib.use("Agg", force=True)  # mode sans affichage
@@ -35,6 +37,18 @@ import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Forcer le niveau INFO pour voir les logs TIMING
+logger.propagate = True  # S'assurer que les logs remontent au root logger configuré par main.py/analyze_worker.py
+
+# Si aucun handler n'est configuré au niveau root, en ajouter un sur stderr
+# (cas d'utilisation directe du module sans passer par main.py/analyze_worker.py)
+root_logger = logging.getLogger()
+if not root_logger.handlers:
+    root_handler = logging.StreamHandler(sys.stderr)
+    root_handler.setLevel(logging.INFO)
+    root_handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    root_logger.addHandler(root_handler)
+
 logger.info(f"Matplotlib backend: {matplotlib.get_backend()}")
 from statsmodels.stats.diagnostic import het_white, het_breuschpagan
 from statsmodels.stats.stattools import durbin_watson

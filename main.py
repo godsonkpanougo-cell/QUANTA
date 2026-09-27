@@ -63,6 +63,29 @@ from app.llm import brain
 from app.orchestrator import run_full_analysis
 from app import analysis_core
 from app import auth
+from app import billing  # Paywall Stripe (PLAN_MONETISATION.md) — inerte sans STRIPE_SECRET_KEY
+
+# Paywall (PLAN_MONETISATION.md) : limite utilisée quand le billing est désactivé
+# ou que l'utilisateur est pré-paywall ('legacy'). Valeur historique = comportement
+# d'aujourd'hui à l'identique.
+LEGACY_MONTHLY_LIMIT = 15
+
+# Marque blanche agence (Phase 4) : chemin de stockage des logos
+BRANDING_DIR = os.environ.get("QUANTA_BRANDING_DIR", "/data/branding")
+
+
+def _get_effective_quota(user_id: str) -> tuple[str, int]:
+    """
+    (plan, monthly_limit) effectif pour le paywall.
+
+    Sans STRIPE_SECRET_KEY (feature flag off) → ('legacy', 15) : QUANTA se
+    comporte exactement comme avant le paywall, aucun utilisateur n'est
+    jamais bloqué. Avec le billing actif, la limite vient du plan en base
+    (free=1, pro/agence=10 000, legacy=15).
+    """
+    if not billing.billing_enabled():
+        return "legacy", LEGACY_MONTHLY_LIMIT
+    return db.get_user_plan_and_limit(user_id)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -562,7 +585,12 @@ def analyze(
         )
 
     user_id = current_user["user_id"]
-    
+
+    # ─── Paywall (PLAN_MONETISATION.md — Phase 3) ───
+    # La limite suit le plan effectif : legacy/free/pro/agence. Le 403 de
+    # dépassement porte le plan + upgrade_available pour le frontend.
+    plan, monthly_limit = _get_effective_quota(user_id)
+
     # Calculer le file_hash pour le cache
     upload_info = db.get_upload(analyze_request.file_id, user_id)
     if upload_info is None:
@@ -592,7 +620,7 @@ def analyze(
         return {"analysis_id": analysis_id, "status": "done", "from_cache": True}
     
     # Cache miss : comportement normal avec consommation de quota
-    allowed, remaining, renewal_at = db.check_and_increment_quota(user_id)
+    allowed, remaining, renewal_at = db.check_and_increment_quota(user_id, monthly_limit)
     
     if not allowed:
         # Formater la date de renouvellement pour l'affichage
@@ -605,9 +633,14 @@ def analyze(
             except ValueError:
                 renewal_date_str = "date inconnue"
         
+        limit_label = f"{monthly_limit} analyses" if monthly_limit <= 15 else "analyses illimitées"
         raise HTTPException(
             status_code=403,
-            detail=f"Quota mensuel atteint (15 analyses). Renouvellement le {renewal_date_str}."
+            detail={
+                "message": f"Quota mensuel atteint ({limit_label}). Renouvellement le {renewal_date_str}.",
+                "plan": plan,
+                "upgrade_available": billing.billing_enabled() and plan == "free",
+            },
         )
 
     analysis_id = str(uuid.uuid4())
@@ -661,12 +694,16 @@ def get_quota(current_user: dict = Depends(auth.get_current_user)) -> dict[str, 
     """
     Retourne les informations de quota de l'utilisateur connecté.
     """
-    quota_info = db.get_quota_info(current_user["user_id"])
+    # Paywall (Phase 3) : la limite suit le plan effectif (legacy=15 sans billing)
+    plan, monthly_limit = _get_effective_quota(current_user["user_id"])
+    quota_info = db.get_quota_info(current_user["user_id"], monthly_limit=monthly_limit)
     if quota_info is None:
         raise HTTPException(
             status_code=404,
             detail="Utilisateur introuvable."
         )
+    quota_info["plan"] = plan
+    quota_info["upgrade_available"] = billing.billing_enabled() and plan == "free"
     return quota_info
 
 
@@ -741,6 +778,20 @@ def get_report(
     if theme_norm not in {"dark", "light"}:
         theme_norm = "dark"
 
+    # ─── Paywall + marque blanche (PLAN_MONETISATION.md — Phases 3-4) ───
+    # Uniquement quand le billing est activé : sans STRIPE_SECRET_KEY, aucun
+    # PDF existant ne change d'un octet (comportement historique préservé).
+    watermark: str | None = None
+    branding_name: str | None = None
+    branding_logo_path: str | None = None
+    if billing.billing_enabled():
+        billing_info = db.get_user_billing(current_user["user_id"]) or {}
+        if (billing_info.get("plan") or "") == "free":
+            watermark = "DÉMO QUANTA"
+        elif (billing_info.get("plan") or "") == "agence":
+            branding_name = billing_info.get("branding_name")
+            branding_logo_path = billing_info.get("branding_logo_path")
+
     result = analysis.get("result")
     if not isinstance(result, dict):
         raise HTTPException(
@@ -786,7 +837,8 @@ def get_report(
         logger.info("PDF Worker - Launching subprocess", analysis_id=analysis_id)
         logger.debug("Before subprocess.run")
         proc = subprocess.run(
-            [sys.executable, "app/pdf_worker.py", input_path, pdf_path, theme_norm],
+            [sys.executable, "app/pdf_worker.py", input_path, pdf_path, theme_norm,
+             watermark or "-", branding_name or "-", branding_logo_path or "-"],
             timeout=300,
             capture_output=True,
             text=True
@@ -803,7 +855,7 @@ def get_report(
             logger.error("PDF Worker failed, using fallback lightweight PDF")
             # Fallback PDF léger
             from app.report_generator import generate_lightweight_pdf
-            pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm)
+            pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm, watermark=watermark)
             if pdf_bytes:
                 filename = f"rapport_quanta_{analysis_id[:8]}.pdf"
                 # Pas de headers CORS manuels : le middleware CORSMiddleware
@@ -824,7 +876,7 @@ def get_report(
         # Timeout 5min dépassé = très grand dataset
         # Retourner PDF léger
         from app.report_generator import generate_lightweight_pdf
-        pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm)
+        pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm, watermark=watermark)
         if pdf_bytes:
             filename = f"rapport_quanta_{analysis_id[:8]}.pdf"
             return Response(
@@ -869,3 +921,134 @@ def get_report(
 # ce serait contradictoire avec l'objectif de persistance via SQLite. Un
 # vrai mécanisme d'expiration/nettoyage périodique (ex: fichiers de plus
 # de 30 jours) est prévu pour une itération ultérieure, pas en V1.
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAYWALL & MARQUE BLANCHE (PLAN_MONETISATION.md — Phases 2-4)
+# Endpoints 100 % additifs : aucune route existante n'est modifiée.
+# Sans STRIPE_SECRET_KEY : /billing/checkout et /billing/portal répondent 503,
+# le webhook répond 400 (secret absent) — tout le reste est inchangé.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BrandingRequest(BaseModel):
+    branding_name: Annotated[str, StringConstraints(max_length=120)]
+
+
+@app.post("/billing/checkout")
+def billing_checkout(
+    plan_request: dict[str, str] | None = None,
+    current_user: dict = Depends(auth.get_current_user),
+) -> dict[str, Any]:
+    """
+    Crée une session Stripe Checkout pour l'offre demandée.
+    Body optionnel : {"plan": "pro" | "agence"} (défaut pro).
+    Retourne {"url": ...} — le frontend redirige vers cette URL.
+    """
+    if not billing.billing_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="Le service d'abonnement n'est pas encore disponible.",
+        )
+
+    requested = (plan_request or {}).get("plan", "pro").strip().lower()
+    if requested not in {"pro", "agence"}:
+        raise HTTPException(status_code=400, detail="Plan inconnu (pro ou agence).")
+
+    # Bloquer les re-abonnements depuis un compte déjà payant
+    info = db.get_user_billing(current_user["user_id"]) or {}
+    if info.get("plan") in {"pro", "agence"}:
+        raise HTTPException(status_code=409, detail="Un abonnement actif existe déjà.")
+
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    session = billing.create_checkout_session(
+        user_id=current_user["user_id"],
+        email=info.get("email") or current_user.get("email", ""),
+        plan=requested,
+        success_url=f"{frontend_url}/?checkout=success",
+        cancel_url=f"{frontend_url}/pricing",
+    )
+    if session is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe non configuré (prix manquant). Vérifiez STRIPE_PRICE_*_ID.",
+        )
+    return session
+
+
+@app.post("/billing/portal")
+def billing_portal(
+    current_user: dict = Depends(auth.get_current_user),
+) -> dict[str, Any]:
+    """Ouvre le portail client Stripe (gestion/résiliation de l'abonnement)."""
+    if not billing.billing_enabled():
+        raise HTTPException(status_code=503, detail="Le service d'abonnement n'est pas encore disponible.")
+    info = db.get_user_billing(current_user["user_id"]) or {}
+    portal = billing.create_portal_session(
+        stripe_customer_id=info.get("stripe_customer_id") or "",
+        return_url=f"{os.environ.get('FRONTEND_URL', 'http://localhost:3000').rstrip('/')}/pricing",
+    )
+    if portal is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Aucun client Stripe associé à ce compte (abonnez-vous d'abord).",
+        )
+    return portal
+
+
+@app.post("/billing/branding")
+async def billing_branding(
+    branding_request: BrandingRequest,
+    logo: UploadFile | None = File(None),
+    current_user: dict = Depends(auth.get_current_user),
+) -> dict[str, Any]:
+    """
+    Marque blanche agence (Phase 4) : enregistre le nom client et (optionnel)
+    un logo PNG/JPG ≤ 2 Mo, servi sur la page de garde des rapports.
+    """
+    info = db.get_user_billing(current_user["user_id"]) or {}
+    if info.get("plan") != "agence":
+        raise HTTPException(status_code=403, detail="Réservé à l'offre Agence.")
+
+    logo_path: str | None = info.get("branding_logo_path")
+    if logo is not None and logo.filename:
+        content_type = (logo.content_type or "").lower()
+        if content_type not in {"image/png", "image/jpeg"}:
+            raise HTTPException(status_code=400, detail="Logo : PNG ou JPG uniquement.")
+        raw = await logo.read()
+        if len(raw) > 2 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Logo trop volumineux (max 2 Mo).")
+
+        os.makedirs(BRANDING_DIR, exist_ok=True)
+        ext = ".png" if "png" in content_type else ".jpg"
+        logo_path = os.path.join(BRANDING_DIR, f"{current_user['user_id']}{ext}")
+        with open(logo_path, "wb") as f:
+            f.write(raw)
+
+    if not db.set_user_branding(current_user["user_id"], branding_request.branding_name, logo_path):
+        raise HTTPException(status_code=400, detail="Nom de branding invalide.")
+    return {"branding_name": branding_request.branding_name.strip()[:120], "logo_saved": bool(logo is not None and logo.filename)}
+
+
+@app.post("/webhooks/stripe")
+@limiter.limit("60/minute")
+async def stripe_webhook(request: Request) -> Response:
+    """
+    Webhook Stripe : synchronise le plan utilisateur.
+    Aucune authentification de session — la sécurité repose sur la vérification
+    de signature (STRIPE_WEBHOOK_SECRET) via billing.verify_webhook.
+    """
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    event = billing.verify_webhook(payload, sig)
+    if event is None:
+        return Response(
+            content='{"detail": "Signature webhook invalide ou Stripe non configuré."}',
+            status_code=400,
+            media_type="application/json",
+        )
+    outcome = billing.handle_webhook_event(event)
+    return Response(
+        content=json.dumps(outcome),
+        status_code=200,
+        media_type="application/json",
+    )

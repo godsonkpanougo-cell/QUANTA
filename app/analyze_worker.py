@@ -15,7 +15,13 @@ import logging
 from pathlib import Path
 
 # Configuration du logging pour rendre les logs TIMING visibles en production
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+# Forcer explicitement stderr avec le bon format
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    stream=sys.stderr,
+    force=True  # Force la reconfiguration même si déjà configuré
+)
 
 # Ajouter le répertoire racine au PYTHONPATH pour les imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
