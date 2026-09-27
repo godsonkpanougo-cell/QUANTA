@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { Loader2 } from "lucide-react";
 
 import { AnalysisProgress } from "@/app/components/AnalysisProgress";
 import { AnalysisResults } from "@/app/components/AnalysisResults";
@@ -55,7 +57,8 @@ async function parseErrorResponse(response: Response): Promise<string> {
   return `Erreur HTTP ${response.status}`;
 }
 
-export function HomePage() {
+function HomePageContent() {
+  const searchParams = useSearchParams();
   const { isAuthenticated, isLoading } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [query, setQuery] = useState("");
@@ -63,6 +66,15 @@ export function HomePage() {
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [result, setResult] = useState<unknown | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Au montage, vérifier si analysisId est présent dans l'URL
+  useEffect(() => {
+    const analysisIdParam = searchParams.get("analysisId");
+    if (analysisIdParam) {
+      setAnalysisId(analysisIdParam);
+      setPhase("analyzing");
+    }
+  }, [searchParams]);
 
   const canAnalyze = selectedFile !== null;
   const isUploading = phase === "uploading";
@@ -314,5 +326,20 @@ export function HomePage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export function HomePage() {
+  return (
+    <Suspense fallback={
+      <main className="flex min-h-screen items-center justify-center bg-quanta-void">
+        <div className="flex items-center gap-2">
+          <Loader2 strokeWidth={1.5} className="size-6 animate-spin text-quanta-gold" />
+          <span className="font-sans text-sm text-quanta-muted">Chargement...</span>
+        </div>
+      </main>
+    }>
+      <HomePageContent />
+    </Suspense>
   );
 }

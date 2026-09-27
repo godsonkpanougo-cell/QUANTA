@@ -20,6 +20,7 @@ import base64
 import math
 import warnings
 import logging
+import time
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -733,6 +734,7 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
     if len(numeric_cols) < 2:
         return {"error": "Moins de 2 variables numériques pour la corrélation."}
 
+    t0 = time.time()
     _apply_mpl_theme(theme)
 
     all_normal = all(
@@ -749,6 +751,11 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
 
     pairs = {}
     scatter_plots = {}
+    t_scatter_start = time.time()
+    n_scatter_generated = 0
+    
+    # Collecter d'abord toutes les paires significatives pour trier par |r|
+    significant_pairs = []
     for i, c1 in enumerate(numeric_cols):
         for j, c2 in enumerate(numeric_cols):
             if i < j:
@@ -780,13 +787,26 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
                         "direction": "Positive" if r > 0 else "Négative",
                     }
                     
-                    # Générer scatter plot pour les corrélations significatives
+                    # Collecter les paires significatives pour génération limitée
                     if p < 0.05:
-                        try:
-                            scatter_b64 = generate_scatter(df, c1, c2, theme=theme)
-                            scatter_plots[pair_key] = scatter_b64
-                        except Exception as e:
-                            scatter_plots[pair_key] = None
+                        significant_pairs.append((pair_key, c1, c2, abs(r)))
+    
+    # Trier par |r| décroissant et générer au maximum 5 scatter plots
+    # Garde-fou pour éviter timeout sur datasets avec beaucoup de variables numériques
+    MAX_SCATTER_PLOTS = 5
+    significant_pairs.sort(key=lambda x: x[3], reverse=True)
+    pairs_to_plot = significant_pairs[:MAX_SCATTER_PLOTS]
+    
+    for pair_key, c1, c2, _ in pairs_to_plot:
+        try:
+            scatter_b64 = generate_scatter(df, c1, c2, theme=theme)
+            scatter_plots[pair_key] = scatter_b64
+            n_scatter_generated += 1
+        except Exception as e:
+            scatter_plots[pair_key] = None
+    
+    t_scatter_end = time.time()
+    logger.info(f"TIMING - correlation_analysis: {n_scatter_generated}/{len(significant_pairs)} scatter plots générés (max {MAX_SCATTER_PLOTS}) en {t_scatter_end - t_scatter_start:.3f}s")
 
     # Heatmap
     charts = {}
@@ -1498,7 +1518,14 @@ def run_base_compute_pipeline(file_bytes: bytes, filename: str,
     Sortie : dict prêt à être enrichi par l'orchestrateur avec les résultats
     des tests d'inférence (clé "inference_tests", ajoutée en aval).
     """
+    t0 = time.time()
+    logger.info(f"TIMING - run_base_compute_pipeline: START for {filename}")
+    
+    t_diag_start = time.time()
     diag = load_and_diagnose(file_bytes, filename)
+    t_diag_end = time.time()
+    logger.info(f"TIMING - diagnosis: {t_diag_end - t_diag_start:.3f}s")
+    
     if "error" in diag:
         return {"error": diag["error"]}
 
@@ -1506,8 +1533,11 @@ def run_base_compute_pipeline(file_bytes: bytes, filename: str,
     numeric_cols = diag["numeric_cols"]
     cat_cols     = diag["cat_cols"]
 
+    t_clean_start = time.time()
     clean = clean_dataframe(df_raw, diag)
     df = clean["dataframe_clean"]
+    t_clean_end = time.time()
+    logger.info(f"TIMING - cleaning: {t_clean_end - t_clean_start:.3f}s")
 
     # Recalcule les listes de colonnes après nettoyage (certaines peuvent
     # avoir été supprimées pour trop de valeurs manquantes)
@@ -1515,6 +1545,7 @@ def run_base_compute_pipeline(file_bytes: bytes, filename: str,
     cat_cols     = [c for c in cat_cols if c in df.columns]
 
     # Génère les graphiques pour le thème demandé (ou les deux)
+    t_desc_start = time.time()
     if theme == "both":
         desc_dark = descriptive_stats(df, numeric_cols, cat_cols, theme="dark")
         norm_dark = normality_tests(df, numeric_cols, theme="dark")
@@ -1543,9 +1574,23 @@ def run_base_compute_pipeline(file_bytes: bytes, filename: str,
         all_charts_light.update(reg_light.get("charts", {}))
     else:
         desc = descriptive_stats(df, numeric_cols, cat_cols, theme=theme)
+        t_desc_end = time.time()
+        logger.info(f"TIMING - descriptive_stats: {t_desc_end - t_desc_start:.3f}s")
+        
+        t_norm_start = time.time()
         norm = normality_tests(df, numeric_cols, theme=theme)
+        t_norm_end = time.time()
+        logger.info(f"TIMING - normality_tests: {t_norm_end - t_norm_start:.3f}s")
+        
+        t_corr_start = time.time()
         corr = correlation_analysis(df, numeric_cols, norm.get("normality", {}), theme=theme)
+        t_corr_end = time.time()
+        logger.info(f"TIMING - correlation_analysis (total): {t_corr_end - t_corr_start:.3f}s")
+        
+        t_reg_start = time.time()
         reg  = ols_regression(df, numeric_cols, target_col, theme=theme)
+        t_reg_end = time.time()
+        logger.info(f"TIMING - ols_regression: {t_reg_end - t_reg_start:.3f}s")
 
         all_charts = {}
         all_charts.update(desc.get("charts", {}))
@@ -1559,6 +1604,9 @@ def run_base_compute_pipeline(file_bytes: bytes, filename: str,
     stata_script = generate_stata_script(
         df, filename, numeric_cols, cat_cols, reg, diag.get("n_missing", 0)
     )
+
+    t_total = time.time() - t0
+    logger.info(f"TIMING - run_base_compute_pipeline: TOTAL {t_total:.3f}s for {filename}")
 
     logger.info(f"Generated {len(all_charts)} charts for theme 'dark'")
     if all_charts_light:

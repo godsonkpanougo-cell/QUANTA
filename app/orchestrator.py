@@ -515,10 +515,12 @@ def run_full_analysis(
     filename: str,
     intent: ts.AnalysisIntent,
     theme: str = "both",
+    *,
+    base_pipeline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Point d'entrée unique du pipeline QUANTA. À appeler depuis main.py
-    (endpoint /analyze).
+    (endpoint /analyze) ou depuis brain.analyze_with_brain.
 
     Étapes :
       1. compute.run_base_compute_pipeline() -- diagnostic, nettoyage,
@@ -538,12 +540,22 @@ def run_full_analysis(
     theme : "both" (défaut, génère les graphiques pour les deux thèmes),
             "dark" ou "light" (génère uniquement pour ce thème).
 
+    base_pipeline : résultat pré-calculé de run_base_compute_pipeline.
+    En mode autonome multi-intents, le pipeline de base est IDENTIQUE pour
+    tous les intents du même fichier (target_col=None -- l'OLS générique de
+    base n'est lancée que pour action="regression", jamais en mode auto) :
+    le passer ici évite de recharger/re-nettoyer/re-grapher le dataset N fois
+    (historiquement jusqu'à ~6x le coût total d'une analyse autonome).
+
     Retourne TOUJOURS un dict -- en cas d'erreur de chargement du fichier,
     retourne {"error": ...} sans lever d'exception.
     """
-    # Étape 1 : calcul de base
-    base_target = intent.target_col if intent.action == "regression" else None
-    pipeline = compute.run_base_compute_pipeline(file_bytes, filename, target_col=base_target, theme=theme)
+    # Étape 1 : calcul de base (réutilisé s'il est fourni, sinon calculé).
+    if base_pipeline is not None and "error" not in base_pipeline:
+        pipeline = base_pipeline
+    else:
+        base_target = intent.target_col if intent.action == "regression" else None
+        pipeline = compute.run_base_compute_pipeline(file_bytes, filename, target_col=base_target, theme=theme)
 
     if "error" in pipeline:
         return {"error": pipeline["error"], "status": "failed"}

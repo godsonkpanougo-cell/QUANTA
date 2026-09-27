@@ -856,6 +856,7 @@ def analyze_with_brain(
     # ── Mode autonome : aucune requête utilisateur ──────────────────────────
     if not query_text:
         from app.orchestrator import auto_intent
+        from app.compute import compute as compute_mod
 
         diagnosis_payload: dict[str, Any] = dict(diagnosis or {})
         diagnosis_payload.setdefault("numeric_cols", available_numeric_cols)
@@ -864,9 +865,22 @@ def analyze_with_brain(
         intents = auto_intent(diagnosis_payload)
         _t0 = time.monotonic()
         analyses: list[dict[str, Any]] = []
+
+        # Optimisation perf majeure : pré-calculer le pipeline de base UNE
+        # fois (chargement, nettoyage, descriptives, normalité, matrice de
+        # corrélation O(k²), graphiques) puis le réutiliser pour CHAQUE intent.
+        # Historiquement, chaque intent relançait tout le pipeline -- jusqu'à
+        # ~6x le coût réel nécessaire en mode autonome.
+        base_pipeline = compute_mod.run_base_compute_pipeline(
+            run_analysis_fn.file_bytes,      # type: ignore[attr-defined]
+            run_analysis_fn.filename,        # type: ignore[attr-defined]
+            target_col=None,
+            theme="dark",
+        )
+
         for i, intent in enumerate(intents):
             _t_avant = time.monotonic()
-            result = run_analysis_fn(intent)
+            result = run_analysis_fn(intent, base_pipeline=base_pipeline)
             _t_apres = time.monotonic()
             print(f"TIMING - Intent {i+1}/{len(intents)} ({intent.action}) : {_t_apres - _t_avant:.1f}s (cumulé: {_t_apres - _t0:.1f}s)", flush=True)
             analyses.append(result)

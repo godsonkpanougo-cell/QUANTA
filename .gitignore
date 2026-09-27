@@ -45,3 +45,15 @@ uvicorn.log
 
 # WeasyPrint cache
 .weasyprint/
+
+# Artefacts binaires générés (rapports PDF de test, classeurs)
+*.pdf
+tests/output_*.pdf
+report_dark.pdf
+report_light.pdf
+Classeur1.xlsx
+
+# Éditeurs / agents
+.freebuff/
+.cursor/
+.windsurf/

@@ -1,39 +1,44 @@
 # QUANTA — État Actuel du Système
-*Dernière mise à jour : 24 juillet 2026*
+*Dernière mise à jour : 26 septembre 2026 (réécriture après audit complet du code)*
 
-Document de référence pour les sessions de développement. Décrit **ce qui existe et fonctionne aujourd’hui**, pas la vision produit ni les specs futures. Les limitations sont assumées.
+Document de référence pour les sessions de développement. Décrit **ce qui existe et fonctionne aujourd'hui**, pas la vision produit ni les specs futures. Les limitations sont assumées. Toute valeur citée ici a été vérifiée dans le code source à la date de mise à jour.
 
 ---
 
 ## 1. Vue d'ensemble
 
-- **Ce qu’est QUANTA** : un moteur d’analyse statistique doctoral-level qui transforme un fichier de données + une requête (optionnelle) en résultats chiffrés déterministes, interprétation textuelle structurée, et rapport PDF signable.
+- **Ce qu'est QUANTA** : un moteur d'analyse statistique doctoral-level qui transforme un fichier de données + une requête (optionnelle) en résultats chiffrés déterministes, interprétation textuelle structurée, et rapport PDF signable.
 - **Promesse centrale** : « Tu déposes ta base. Tu reçois un rapport que tu peux signer. » — séparation stricte **COMPUTE** (calcule) → **BRAIN** (interprète seulement) → **REPORT** (met en page).
-- **Stack technique (versions exactes, juillet 2026)** :
+- **Authentification** : OAuth Google obligatoire (Authlib 1.8.0) + sessions en base + **quota mensuel de 15 analyses par utilisateur** (remboursé si l'analyse finit en erreur).
+- **Stack technique (versions exactes vérifiées dans requirements.txt, sept. 2026)** :
 
 | Couche | Technologie | Version |
 |--------|-------------|---------|
-| Runtime | Python | 3.12+ (cible projet) |
+| Runtime | Python | 3.12 (Dockerfile `python:3.12-slim` ; runtime.txt `python-3.12.0`) |
 | API | FastAPI | 0.137.0 |
 | Serveur | uvicorn | 0.49.0 |
 | Validation | pydantic | 2.13.4 |
-| Data | pandas | 3.0.3 |
+| Data | pandas | ≥1.4.1, <3.0.0 (donc 2.x) |
 | Numérique | numpy | 2.4.6 |
 | Stats | scipy | 1.17.1 |
 | Stats modèles | statsmodels | 0.14.6 |
 | ANOVA Welch | pingouin | 0.6.1 |
 | Post-hoc | scikit-posthocs | 0.14.0 |
+| ACP / ACM | prince | 0.13.1 |
 | Graphiques | matplotlib / seaborn | 3.11.0 / 0.13.2 |
 | Excel | openpyxl | 3.1.5 |
 | SPSS | pyreadstat | 1.3.5 |
-| PDF | WeasyPrint | 69.0 |
+| PDF | WeasyPrint | 69.0 (+ fpdf2, pypdf) |
+| OAuth | Authlib | 1.8.0 |
+| Rate limiting | slowapi | 0.1.9 |
+| Logging | structlog | 24.1.0 |
+| Scheduler | APScheduler | 3.10.4 |
 | HTTP LLM | requests | 2.32.4 |
-| Env | python-dotenv | 1.2.2 |
 | Frontend | Next.js | 16.2.9 |
 | UI | React | 19.2.4 |
 | CSS | Tailwind CSS | 4.x |
 | Motion | framer-motion | ^12.42.0 |
-| Persistance | SQLite (stdlib) | fichier `quanta.db` |
+| Persistance | SQLite (stdlib) | fichier `quanta.db` (WAL) |
 
 ---
 
@@ -42,274 +47,177 @@ Document de référence pour les sessions de développement. Décrit **ce qui ex
 Chemins relatifs à la racine du dépôt. Lignes ≈ comptage physique (indicatif).
 
 ### Racine
-- `main.py` — API FastAPI : upload, analyze async, status, history, report PDF (`?theme=dark|light`), **audit_trail** horodaté — dépend de `db`, `app.compute`, `app.orchestrator`, `app.llm.brain`, `app.report_generator`
-- `db.py` — persistance SQLite (uploads + analyses) — stdlib `sqlite3` uniquement
+- `main.py` — API FastAPI : auth protégée, upload (filename sanitizé + whitelist extension), analyze async, status, history, quota, cancel, report PDF (`?theme=dark|light`), audit_trail horodaté, cleanup APScheduler (fichiers + analyses + sessions > 24h) — dépend de `db`, `app.compute`, `app.orchestrator`, `app.llm.brain`, `app.report_generator`, `app.analysis_core`
+- `db.py` — persistance SQLite (users, sessions, uploads, analyses) — stdlib `sqlite3` uniquement, WAL, lock global, migrations au démarrage, fonctions `_internal` réservées aux workers de confiance
 - `requirements.txt` — pin des dépendances Python
-- `.env.example` — modèle de configuration LLM
+- `.env.example` — modèle de configuration LLM + OAuth
 - `QUANTA_STATE.md` — ce document
 - `DESIGN_BRIEF.md` — contrat visuel frontend (pas le moteur stats)
-- `NOTES.md` — notes historiques de conception (non normatif)
+- `NOTES.md` — notes historiques (encodage cassé, non normatif)
+- `QUANTA_STATISTICAL_COVERAGE_MATRIX.md` — audit de couverture statistique (37 méthodes, 28 validées)
 - `legacy/` — code historique **lecture seule** (référence, ne pas modifier)
 
 ### `app/`
-- `app/orchestrator.py` — pipeline bout-en-bout : compute → test_selector → délégation → **puissance statsmodels** → score de confiance
-- `app/report_generator.py` — HTML → PDF WeasyPrint (thèmes dark/light) — lit le résultat assemblé, ne recalcule rien
-- `app/compute/compute.py` — chargement, diagnostic, nettoyage, descriptives, normalité, corrélation, OLS, charts, scripts R/Stata, **`compute_statistical_power`**
-- `app/compute/test_selector.py` — arbre de décision + tests d’inférence + **post-hoc** (Tukey / Dunn / Games-Howell)
-- `app/llm/brain.py` — `text_to_intent`, `generate_interpretation`, anti-hallucination, Skeptic Engine, `analyze_with_brain`
+- `app/orchestrator.py` — pipeline bout-en-bout : compute → test_selector → délégation → puissance statsmodels → score de confiance ; `auto_intent` (mode autonome) ; `run_full_analysis(..., base_pipeline=)` accepte un pipeline pré-calculé réutilisé entre intents
+- `app/analysis_core.py` — **logique d'analyse partagée** entre le worker subprocess et le fallback in-memory (annulation vérifiée avant chaque intent, audit trail unique) ; `CancelledAnalysis` levée si annulé
+- `app/analyze_worker.py` — subprocess d'analyse (délègue à analysis_core) ; erreurs persistées via `db.update_analysis_internal`
+- `app/pdf_worker.py` — subprocess génération PDF (WeasyPrint isolé en mémoire)
+- `app/auth.py` — OAuth Google : `/auth/google`, `/auth/callback` (rate limité 20/min), `/auth/logout`, `/auth/me` ; cookie httpOnly+secure+SameSite=None, 7 jours
+- `app/report_generator.py` — HTML → PDF WeasyPrint (thèmes dark/light) — lit le résultat assemblé, ne recalcule rien ; génération chunked (sections → PDFs fusionnés via pypdf)
+- `app/compute/compute.py` — chargement, diagnostic, nettoyage, descriptives, normalité, corrélation, OLS, charts, scripts R/Stata, **`compute_statistical_power`**, ACP, ACM
+- `app/compute/test_selector.py` — arbre de décision + tests d'inférence + post-hoc (Tukey / Dunn / Games-Howell) + **IC bootstrap vectorisés** (Cohen's d, r bisériel, η², ε², V de Cramér — RNG local, plus d'effet de bord `np.random.seed` global)
+- `app/compute/upload_validation.py` — chargement léger (pandas seul) pour /upload : encodages, séparateurs, IDs, texte libre, décimales FR
+- `app/llm/brain.py` — `text_to_intent`, `generate_interpretation`, anti-hallucination, Skeptic Engine, `analyze_with_brain` ; **mode autonome : pipeline de base calculé 1× pour N intents**
 
 ### Frontend `quanta-frontend/`
-- `app/page.tsx` — point d’entrée Next (délègue à `HomePage`)
+- `app/page.tsx` — point d'entrée Next (délègue à `HomePage`)
 - `app/components/HomePage.tsx` — orchestration UI upload → analyse → résultats
 - `app/components/UploadZone.tsx` — drag & drop fichier
-- `app/components/AnalysisProgress.tsx` — polling `/status`
+- `app/components/AnalysisProgress.tsx` — polling `/status` (timeout 5 min)
 - `app/components/AnalysisResults.tsx` — résultats + **deux téléchargements PDF** (Dark / Académique)
 - `app/components/ConfidenceScore.tsx` — score de confiance
-- `public/sample_data.csv` — dataset d’exemple (50 lignes)
+- `app/components/AuthButton.tsx` — connexion/déconnexion Google
+- `app/history/` — historique des analyses (UI)
+- `public/sample_data.csv` — dataset d'exemple (50 lignes)
 
 ### Tests `tests/`
-- Suite manuelle documentée dans `tests/RESULTS.md` (compute, selector, orchestrator, brain, API, persistance, CSV français)
-- Helpers : `_api_test.py`, `_print_*.py`
+- ~95 scripts autonomes (pas de pytest conventionnel pour la plupart) ; quelques-luns executables via pytest (`test_cache`, `test_cancel_analysis`, `test_quota`, ...)
+- `scripts/` — générateurs de datasets de test + 3 scripts de performance (bootstrap CI, endpoints, intents)
 
 ---
 
 ## 3. Les Organes actifs
 
-### Organe 01 — Intake Engine (`app/compute/compute.py` → `load_and_diagnose`)
+### Organe 01 — Intake Engine (`app/compute/upload_validation.py` → `load_and_diagnose`)
 
-- **Formats acceptés** : CSV, Excel (`.xls`/`.xlsx`), Stata (`.dta`), SPSS (`.sav` via pyreadstat)
+- **Formats acceptés** : CSV, Excel (`.xls`/`.xlsx`), Stata (`.dta`), SPSS (`.sav` via pyreadstat) — whitelist stricte dans `/upload`
+- **Limites API** (dans `main.py`) : **25 Mo**, **100 000 lignes**
 - **Encodages gérés** : cascade `utf-8` → `utf-8-sig` → `cp1252` → `latin-1` (filet de sécurité)
-- **Séparateurs détectés** : virgule, point-virgule, tabulation, pipe (par cohérence du nombre de colonnes, pas comptage brut)
+- **Séparateurs détectés** : virgule, point-virgule, tabulation, pipe (par cohérence du nombre de colonnes)
 - **Virgule décimale française** : oui — `_try_convert_french_decimal()` si ≥ 90 % des valeurs convertibles
-- **Détection de colonnes** :
-  - numériques continues vs catégorielles (garde-fou cardinalité &lt; 10 sur n ≥ 10)
-  - IDs probables exclus (`id`, `uuid`, etc.)
-  - dates / type de dataset heuristique
-- **Détection doublons** : oui via `df.duplicated()` — champs `n_duplicates` + `duplicates_removed: false` (signalement, **pas** de suppression au diagnostic)
-- **Statistiques descriptives** (`descriptive_stats` dans le diagnostic) :
-  - **Numériques** : mean, median, std, min, max, skewness, kurtosis, missing_pct
-  - **Catégorielles** : frequencies, percentages, mode, missing_pct
-- **Limites API** (dans `main.py`, pas dans compute) : **10 Mo**, **50 000 lignes**
+- **Détection de colonnes** : numériques vs catégorielles (garde-fou cardinalité < 10 sur n ≥ 10 ET n ≥ 2×n_unique), IDs exclus (hints forts/ambigus + unicité), texte libre isolé (ratio d'unicité > 50 %), dates, type de dataset heuristique
+- **Sanitisation** : `/upload` neutralise le nom de fichier (basename, caractères, longueur 255) avant écriture — protection path traversal
 
 ### Organe 02 — Cleaning Core (`clean_dataframe`)
 
 **Statut : PARTIEL (~70 %)**
 
-**Ce qui est fait :**
-- Copie défensive `df.copy()`
-- Détection + log des doublons **sans suppression** (`detection_sans_suppression`)
-- Imputation manquants numériques : médiane (&lt; 5 %), moyenne (5–20 %), suppression colonne (&gt; 20 %)
-- Imputation manquants catégoriels : mode (&lt; 20 %), sinon suppression colonne
-- Winsorisation 1 %–99 % sur numériques si n ≥ seuil (sinon log `winsorisation_non_appliquee`)
-- `audit_log` structuré `{etape, colonne, decision, valeur, justification}`
-
-**Ce qui ne l’est pas encore :**
-- Validation / accord utilisateur avant chaque transformation
-- Imputation avancée (MICE, KNN, modèles)
-- Suppression optionnelle des doublons sous contrôle utilisateur
-- UI de revue du cleaning avant analyse
-- Export du dataset nettoyé vers le client
+- Copie défensive, détection + log des doublons **sans suppression**, imputation médiane (<5 %)/moyenne (5-20 %)/suppression colonne (>20 %), mode pour catégorielles (<20 %), winsorisation 1-99 % seulement si n ≥ 30, `audit_log` structuré
+- Pas encore : validation utilisateur avant transformation, imputation avancée (MICE/KNN), suppression doublons sous contrôle, UI de revue, export dataset nettoyé
 
 ### Organe 03 — Statistical Brain (`test_selector.py` + `orchestrator.py`)
 
-**Tests implémentés (avec conditions) :**
+**Tests implémentés (avec conditions)** : t-Student / t-Welch / Mann-Whitney (2 groupes), t pairé / Wilcoxon (appariés), ANOVA + Tukey / Welch ANOVA + Games-Howell / Kruskal-Wallis + Dunn (k groupes), Chi-deux / Fisher exact (association), Pearson / Spearman (corrélation, déléguée compute), OLS (délégué), logistique binaire, ACM (prince, ≥3 catégorielles), ACP (prince, ≥3 numériques avec variance), `descriptive_only` en repli.
 
-| Famille | Test | Conditions | ddl retournés |
-|---------|------|------------|---------------|
-| 2 groupes indépendants | t-Student | normalité OK + Levene variances égales | `df` (= n1+n2−2) |
-| 2 groupes indépendants | t-Welch | normalité OK + variances inégales | `df` (scipy `.df`, Satterthwaite) |
-| 2 groupes indépendants | Mann-Whitney U | non-normalité | — |
-| 2 groupes appariés | t pairé / Wilcoxon | `paired=True` + normalité | `df` (t pairé) / — (Wilcoxon) |
-| k groupes | ANOVA + **Tukey HSD** (si p &lt; 0.05) | normal + variances égales | `df_between`, `df_within` |
-| k groupes | Welch ANOVA (`pingouin.welch_anova`) + **Games-Howell** (repli Tukey) | normal + variances inégales | `df_between`, `df_within` (dénominateur décimal) |
-| k groupes | Kruskal-Wallis + **Dunn Bonferroni** (si p &lt; 0.05) | non-normal | `df` (= k−1) |
-| Association | Chi-deux | effectifs attendus ≥ 5 | `df` (via `chi2_contingency`) |
-| Association | Fisher exact | table 2×2, effectifs &lt; 5 | `df` dans `chi2_indicatif` seulement |
-| Association | Chi-deux avec réserve | table &gt; 2×2, effectifs &lt; 5 | `df` |
-| Corrélation | Pearson / Spearman | déléguée à compute (normalité conjointe) | — (délégation compute) |
-| Régression | OLS | target numérique + prédicteurs (délégation) | — (délégation compute) |
-| Régression | Logistique binaire | target catégorielle à 2 niveaux | — |
-| Repli | `descriptive_only` | schéma invalide / intention absente | — |
-
-**Post-hoc (juil. 2026) :**
-- Format unifié `posthoc: { method, comparisons[{group1, group2, meandiff, p_adj, significant}] }` ou `null` si p ≥ 0.05
-- Affichage PDF : sous-section « Comparaisons post-hoc » (lignes or / muted)
-
-**Puissance statistique (juil. 2026) :**
-- `compute.compute_statistical_power()` appelé par l’orchestrateur après chaque test
-- t-test / Mann-Whitney → `TTestIndPower` ; ANOVA / Kruskal → `FTestAnovaPower` ; Chi-deux → `GofChisquarePower`
-- Champs : `power`, `power_interpretation`, `n_required` (si power &lt; 0.8, effet moyen 0.3)
-
-**Arbre de décision (résumé) :**
-1. Valider colonnes (existence, type, exclusion IDs) → `validation_issues`
-2. Selon `action` : `compare_groups` / `association` / `regression` / `correlation` / `descriptive_only`
-3. Pour groupes : 2 → comparaison 2 groupes ; 3+ → multi-groupes ; &lt; 2 → skip
-4. Normalité + Levene orientent paramétrique vs non-paramétrique
-5. Fallback systématique vers descriptif si schéma incohérent (jamais d’exception non gérée)
-
-**Score de confiance (pondérations) :**
-- Qualité des données — **20 %**
-- Respect des conditions — **25 %**
-- Cohérence inter-méthodes — **20 %**
-- Taille d’échantillon — **15 %**
-- Stabilité (outliers / interventions) — **20 %**
-- Niveaux : Élevé (≥ 85) / Modéré (≥ 65) / Faible (≥ 40) / Très faible
-- **Plafonds** : n &lt; 30 → niveau max « Faible » ; n &lt; 100 → max « Modéré »
-
-**Mode autonome** (`auto_intent` si query vide) :
-- 1+ cat + numériques → `compare_groups` (jusqu’à 3 targets)
-- 2+ numériques → 1 corrélation
-- 2+ cat → 1 association
-- Toujours un `descriptive_only` en fin
-- Brain sélectionne le run « le plus significatif » (p minimale, sinon score) pour l’interprétation principale ; le rapport multi-tests liste l’ensemble (filtre `descriptive_only` si d’autres tests ont une vraie p-value)
+- **Tailles d'effet + IC bootstrap 95 % vectorisés** : Cohen's d, r rang bisériel, η², ε², V de Cramér (1000 réplications, seed reproductible, RNG local)
+- **Post-hoc** : format unifié `posthoc: {method, comparisons[...]}` ou `null` si p ≥ 0.05
+- **Puissance statistique** : TTestIndPower / FTestAnovaPower / GofChisquarePower ; champs `power`, `power_interpretation`, `n_required`
+- **Garde-fous** : max 30 groupes et min 5 obs/groupe pour multi-groupes ; chi-deux avec avertissement si effectifs attendus < 5 ; repli Games-Howell→Tukey documenté
+- **Score de confiance** : qualite_donnees 20 %, respect_conditions 25 %, coherence 20 %, taille 15 %, stabilite 20 % ; plafonné à 95 ; n<30 → niveau max « Faible », n<100 → « Modéré »
+- **Mode autonome** (`auto_intent`) : compare_groups (≤3 targets) + corrélation + association + ACM (≥3 cat) + descriptif ; **le pipeline de base (chargement/nettoyage/normalité/corrélations/charts) est calculé UNE fois et réutilisé pour tous les intents** (optimisation sept. 2026 : évite jusqu'à ~6× recalcul)
 
 ### Organe 04 — Interpretation Layer (`app/llm/brain.py`)
 
-- **Provider principal** : Groq, modèle défaut `llama-3.3-70b-versatile` (`PRIMARY_*` ou legacy `GROQ_API_KEY`)
-- **Fallback** : OpenRouter, modèle défaut `deepseek/deepseek-chat` (`FALLBACK_*` / `OPENROUTER_API_KEY`)
-- **API** : compatible OpenAI `chat/completions` ; retries + backoff ; **jamais d’exception** vers l’appelant si LLM down → `llm_available: false` + résultats bruts
-- **Niveaux** : technique / analytique / décisionnel (+ résumé exécutif, limites)
-- **Anti-hallucination** : extracte les nombres du JSON généré et les compare aux sources (±1 % / ±0.01) ; détecte formats anormaux (zéros de tête type `025,02`)
-- **Skeptic Engine** (`validate_conclusions`) : post-interprétation ; si p &gt; 0,05 et texte revendique significativité sans nuance (ou l’inverse) → `skeptic_engine_alert` + message ; **ne bloque jamais** la génération
-- **Règle d’or** : le LLM ne calcule jamais ; il cite / reformule
+- **Provider principal** : Groq, `PRIMARY_MODEL` (défaut `llama-3.3-70b-versatile`)
+- **Fallback** : OpenRouter, `FALLBACK_MODEL` (défaut `meta-llama/llama-3.1-8b-instruct:free`)
+- Timeout 25 s, 2 retries/provider, backoff 3 s ; **jamais d'exception** si LLM down → `llm_available: false` + résultats bruts
+- **Anti-hallucination** : nombres du texte généré comparés aux sources (±1 % / ±0.01), détection zéros de tête (`025,02`)
+- **Skeptic Engine** : alertes sur incohérence conclusions/p-values ; ne bloque jamais
+- **Règle d'or** : le LLM ne calcule jamais ; il cite / reformule
 
 ### Organe 05 — Report Forge (`app/report_generator.py`)
 
-- **Format** : PDF via **WeasyPrint 69.0** (HTML/CSS → bytes)
-- **Thèmes** : `theme="dark"` (défaut) ou `theme="light"` (académique) — or/cyan conservés
-- **Sections actuelles** :
-  1. Page de garde (fichier, date, score, versions moteur, SHA256)
-  2. **1. Présentation des données** (n, variables, manquants, doublons)
-  3. **1.5 Statistiques descriptives** (tableaux APA)
-  4. **2. Analyse statistique** (H₀/H₁, APA, **post-hoc**, **puissance 1-β**, graphiques)
-  5. **3. Interprétation** (+ Skeptic Engine si alerté)
-  6. **4. Limites et réserves**
-  7. **En résumé** (puces actionnables)
-  8. **Défense Scientifique** — objections/réponses automatiques (normalité, puissance réelle, effet négligeable, Skeptic)
-  9. **Annexe A** — scripts R + Stata
-  10. **Annexe C** — bibliographie méthodologique automatique
-  11. **Annexe D** — script Python Colab (reproductible)
-  12. **Annexe E** — journal d’audit horodaté
-- **Graphiques intégrés** : oui — base64 PNG (distributions, QQ, heatmap, diagnostics)
-- **Scripts reproductibles** : R + Stata (compute) + **Python Colab** (généré dans le rapport)
+- WeasyPrint 69.0, thèmes dark/light ; génération **chunked** (sections rendues séparément, fusionnées avec pypdf) avec repli PDF léger (fpdf2) en cas d'échec/timeout
+- Sections : page de garde (SHA256, versions moteur), présentation des données, descriptives APA, analyse (H₀/H₁, APA, post-hoc, puissance, IC bootstrap, ACM/ACP), interprétation (+ Skeptic), limites, résumé, Défense Scientifique, annexes A (R/Stata), C (bibliographie), D (Colab), E (audit journal)
+- Graphiques limités dans les sections volumineuses ; les PDFs régénérés à la demande (ancien PDF supprimé avant régénération)
 
 ### Organe 06 — API & Persistance (`main.py` + `db.py`)
 
-**Endpoints (6) :**
+**Endpoints (~10 + 4 auth) :**
 
 | Méthode | Route | Rôle |
 |---------|-------|------|
 | GET | `/health` | santé service |
-| POST | `/upload` | fichier → diagnostic léger + `file_id` |
-| POST | `/analyze` | lance analyse async → `analysis_id` (+ `audit_trail` dans le résultat) |
-| GET | `/status/{analysis_id}` | polling pending/running/done/error |
-| GET | `/history` | dernières analyses |
-| GET | `/report/{analysis_id}?theme=dark\|light` | PDF binaire (analyse `done` uniquement) |
+| POST | `/upload` | fichier → diagnostic léger + `file_id` (auth) |
+| POST | `/analyze` | analyse async → `analysis_id` (auth, quota, cache, rate limit 5/min) |
+| GET | `/status/{analysis_id}` | polling pending/running/done/error/cancelled |
+| GET | `/history` | dernières analyses (auth) |
+| GET | `/quota` | quota mensuel restant (auth) |
+| POST | `/analyses/{id}/cancel` | annulation (worker vérifie avant chaque intent) |
+| GET | `/report/{id}?theme=dark\|light` | PDF binaire (done uniquement) |
+| GET | `/auth/google`, `/auth/callback` | flow OAuth (callback rate limité 20/min) |
+| POST | `/auth/logout`, GET `/auth/me` | session |
 
-- **Persistance** : SQLite `quanta.db` (configurable `QUANTA_DB_PATH`) — tables `uploads`, `analyses` ; fichiers physiques dans `temp/quanta_uploads/`
-- **Asynchrone** : `BackgroundTasks` FastAPI (pas Celery/Redis)
-- **CORS** : défaut `http://localhost:3000` (`CORS_ALLOWED_ORIGINS`)
-- **Audit trail** : journal horodaté (chargement → diagnostic → chaque test → préparation rapport) stocké dans `result["audit_trail"]`
+- **Persistance** : SQLite `quanta.db` (`QUANTA_DB_PATH`, défaut `/data/quanta.db`) — tables `users`, `sessions`, `uploads`, `analyses` ; fichiers physiques dans `/data/uploads` (`QUANTA_UPLOAD_DIR`)
+- **Migrations** : au démarrage (users : colonnes quota ; analyses : file_hash) — transaction explicite pour la recréation de `users`
+- **Cache** : `find_cached_analysis` par (user, file_hash, query) — hit = résultat dupliqué sans consommer de quota
+- **Quota** : 15 analyses/30 jours glissants, incrément atomique, **remboursé automatiquement si le statut final est `error`** (point unique dans `_run_analysis_background.finally`)
+- **Annulation** : `/cancel` écrit `cancelled` ; vérifié avant chaque intent dans analysis_core (worker ET fallback)
+- **Cleanup APScheduler** (toutes les 6 h) : fichiers > 24 h, analyses > 24 h (`list_analyses_internal`/`delete_analysis_internal`), sessions expirées
+- **Rate limiting** : upload 10/min, analyze 5/min (par user_id si session, sinon IP), auth 20/min
+- **CORS** : `ALLOWED_ORIGINS` (défaut `http://localhost:3000`) ; pas de headers CORS manuels dans /report (incompatibles avec allow_credentials)
 
 ---
 
 ## 4. Interface Frontend (`quanta-frontend/`)
 
-- **Framework** : Next.js **16.2.9** (App Router) + React **19.2.4** + Tailwind **4**
-- **Composants applicatifs** :
-  - `HomePage` — état global (fichier, query, phase, résultat)
-  - `UploadZone` — upload contrôlé (`selectedFile`)
-  - Lien « Pas de fichier ? Tester avec un exemple → » → charge `public/sample_data.csv` + query « Analyser automatiquement ce dataset »
-  - `AnalysisProgress` — poll `/status`
-  - `AnalysisResults` — interprétation, score, **Rapport Dark** + **Rapport Académique**
-  - `ConfidenceScore` — visualisation du score
-- **UI shadcn** : `button`, `accordion` (sous `components/ui/`)
-- **Flux utilisateur** : upload (ou exemple) → query optionnelle → Analyser → progression → résultats → téléchargement PDF (dark ou light) → nouvelle analyse
-- **Design system** (globals.css) :
-  - Fonds : void `#0A0A0F`, surface `#13131A`, elevated `#1C1C26`
-  - Accents : or `#C9A84C`, cyan `#00D4FF`
-  - Texte : primary / secondary / muted
-  - Typo : Space Grotesk (display), Geist (sans), JetBrains Mono (mono)
+- Next.js 16.2.9 (App Router) + React 19.2.4 + Tailwind 4
+- Composants : `HomePage`, `UploadZone`, `AnalysisProgress` (poll 5 min), `AnalysisResults` (dual PDF), `ConfidenceScore`, `AuthButton`
+- Pages : accueil, `history` (historique), `preview`
+- Design system (globals.css) : void `#0A0A0F`, surface `#13131A`, elevated `#1C1C26`, or `#C9A84C`, cyan `#00D4FF` ; Space Grotesk / Geist / JetBrains Mono
 - **Prérequis** : `NEXT_PUBLIC_API_URL` (ex. `http://127.0.0.1:8000`)
+- Déploiement : Vercel (`vercel.json`) ; attention `.env.production` historique en UTF-16 (à remplacer par UTF-8)
 
 ---
 
-## 5. Tests validés
+## 5. Tests
 
-Source principale : `tests/RESULTS.md` (validations manuelles chronologiques).
-
-### Compute (2026-06-15, MAJ CSV FR 2026-06-30)
-Datasets : `clean`, `missing_15pct`, `outliers_extreme`, `region_likert`, `small_sample`, `large_sample`, `with_duplicates`, `mixed_categorical` — **aucun crash** ; IDs exclus ; reclassification Likert OK.
-
-### Test selector
-Scénarios validés : Student, Mann-Whitney, ANOVA, Kruskal-Wallis, Chi-deux, Fisher 2×2, logistique, cas piège (colonne absente / id) → `descriptive_only`. Relancés **24 juil. 2026** après post-hoc / power / annexes — **zéro régression**.
-
-### Orchestrator
-compare_groups E2E, délégation OLS, délégation corrélation, score dégradé + plafonds n, trap, fichier corrompu → `status=failed`.
-
-### Brain (live Groq + repli sans clé)
-`text_to_intent` live / no-key ; `generate_interpretation` live / no-key ; `analyze_with_brain` E2E ; sérialisation JSON. Modèle live documenté : `llama-3.3-70b-versatile`.
-
-### API
-9 scripts TestClient + OpenAPI ; flux live Groq ; limites taille ; query vide (mode auto).
-
-### Persistance SQLite (J21)
-`test_persistence` : vrai process uvicorn — status + history survivent au redémarrage.
-
-### CSV français réel
-`french_excel_export.csv` (Latin-1, `;`, virgule décimale) — upload + analyze + status OK (`test_french_excel_export`).
-
-### Régression Mois 1
-12 datasets via API avec clé Groq — statut `done`, `llm_available=True` sur les cas documentés.
+- Scripts autonomes sous `python -m tests.<nom>` depuis la racine ; ex. : `test_selector_2groups_normal`, `test_selector_2groups_nonnormal`, `test_selector_multigroup`, `test_selector_association`, `test_selector_paired`, `test_cramers_v_ci`, `test_compute_statistical_power`, `test_orchestrator_*`, `test_brain_*` (live/no-key), `test_cache`, `test_cancel_analysis`, `test_quota`, `test_auth_isolation`, `test_french_excel_export`
+- `test_quota` : 2 échecs connus (rate limit slowapi 429 avant le 15e appel) — à exécuter avec limites désactivées ou contournés dans la CI
+- `test_orchestrator_compare_groups` : échec connu (attend Student/Welch sur un dataset qui produit Mann-Whitney — décalage dataset/test préexistant)
+- `tests/RESULTS.md` : validations manuelles chronologiques
+- `QUANTA_STATISTICAL_COVERAGE_MATRIX.md` : 37 méthodes implémentées, 28 validées, 7 partielles, 10 absentes (clustering, séries temporelles, survie, bootstrap/permutation génériques)
 
 ---
 
 ## 6. Ce qui fonctionne de bout en bout
 
-- Upload multi-format avec diagnostic de colonnes
-- Analyse async complète : compute → sélection de test → **puissance** → score → interprétation LLM (si clés) ou repli brut
-- Mode autonome sans query
-- Post-hoc automatiques (Tukey HSD, Dunn, Games-Howell) quand le test global est significatif
-- Rapport PDF téléchargeable en **thème Dark** ou **Académique (light)**
-- Défense Scientifique + bibliographie (Annexe C) + script Python Colab (Annexe D) + journal d’audit (Annexe E)
-- Frontend local : upload, exemple, progress, résultats, double download PDF
-- Persistance SQLite survivant aux redémarrages
+- Upload multi-format avec diagnostic + filename sanitizé + whitelist extension
+- Auth Google + sessions persistées + quota mensuel atomique avec remboursement sur erreur
+- Analyse async (worker subprocess, fallback in-memory) avec annulation effective sur les deux chemins
+- Mode autonome sans query avec **pipeline de base réutilisé entre intents**
+- Post-hoc automatiques ; IC bootstrap des tailles d'effet (vectorisés)
+- Rapport PDF dark/académique (chunked + repli léger)
+- Défense Scientifique + annexes A/C/D/E ; scripts R/Stata/Colab
+- Persistance SQLite WAL survivant aux redémarrages ; cache par utilisateur
+- Cleanup périodique : fichiers, analyses, sessions
 - Robustesse CSV francophones (encodage / séparateur / décimale)
-- Audit log cleaning/sélection **et** audit trail horodaté API
-- Graphiques base64 générés dans le pipeline et intégrés au PDF
 
 ---
 
 ## 7. Ce qui est partiellement implémenté
 
-| Élément | Avancement estimé | Commentaire |
-|---------|-------------------|-------------|
+| Élément | Avancement | Commentaire |
+|---------|-----------|-------------|
 | Cleaning Core | ~70 % | Automatique + audit ; pas de consentement utilisateur |
-| Rapport académique « complet » | ~90 % | Annexes A–E, défense, puissance, thèmes ; manque reco / méthodo narrative séparée |
-| ddl dans tableaux APA | ~90 % | Clés exposées ; cas délégués (corrélation / OLS) peuvent afficher « — » |
-| Welch ANOVA | 100 % | `pingouin.welch_anova` ; ddl décimaux documentés |
-| Post-hoc Tukey / Dunn / Games-Howell | ~95 % | Format unifié + PDF ; Dunn exige `scikit-posthocs` |
-| Power Analysis | ~90 % | statsmodels branché ; MW via \|r\| approximation TTestIndPower |
-| Scientific Defense | ~95 % | 4 objections conditionnelles ; puissance réelle dans objection 2 |
-| Mode multi-tests autonome | ~85 % | Fonctionne ; interprétation primaire = test le plus significatif |
-| Skeptic Engine | ~90 % | Code actif + bandeau PDF ; tests dédiés / UX frontend encore manquants |
-| Frontend produit | ~70 % | Flux principal + dual PDF ; pas d’historique UI, auth, settings |
-| Audit trail PDF | ~85 % | Journal API → Annexe E ; entrée « PDF » = résultat prêt (génération à la demande) |
+| Rapport académique complet | ~90 % | Manque méthodo narrative séparée |
+| Mode multi-tests autonome | ~85 % | Interprétation primaire = test le plus significatif |
+| Frontend produit | ~75 % | Flux + auth + historique ; pas de settings/export |
+| Tests pytest normalisés | ~40 % | Majorité de scripts manuels ; test_quota à réparer |
+| ACM côté tests | partiel | Implémentée, fichier .py de test manquant |
 
 ---
 
 ## 8. Ce qui n'est pas encore implémenté
 
-- Authentification / multi-utilisateurs / comptes
-- File d’attente lourde (Celery, Redis, workers)
-- Déploiement production (domaine CORS restreint, HTTPS, etc.)
+- File d'attente lourde (Celery/Redis) — BackgroundTasks + subprocess suffisent à la charge actuelle
 - Accord utilisateur explicite avant cleaning / suppression doublons
-- Section Méthodologie / Recommandations séparées (structure « 10 sections » des règles report)
 - Export dataset nettoyé
-- Tests inférentiels avancés (ANOVA factorielle, modèles mixtes, survival, bayésien…)
+- Tests inférentiels avancés (ANOVA factorielle, modèles mixtes, survival, bayésien)
+- Clustering, séries temporelles, analyse de survie
 - Affichage UI dédié de `skeptic_engine_alert`
 - Internationalisation (UI FR hardcodée)
-- CI automatisée (les tests sont surtout manuels via `python -m tests…`)
+- CI GitHub Actions (proposée ; à créer `.github/workflows/tests.yml`)
 
 ---
 
@@ -317,114 +225,21 @@ compare_groups E2E, délégation OLS, délégation corrélation, score dégradé
 
 Fichier `.env` à la racine (jamais commit). Modèle : `.env.example`.
 
-| Variable | Rôle | Exemple |
-|----------|------|---------|
-| `PRIMARY_API_KEY` | Clé LLM principal (Groq) | `gsk_…` |
+| Variable | Rôle | Défaut |
+|----------|------|--------|
+| `PRIMARY_API_KEY` | Clé LLM principal (Groq) | — |
 | `PRIMARY_BASE_URL` | Base URL OpenAI-compat | `https://api.groq.com/openai/v1` |
 | `PRIMARY_MODEL` | Modèle principal | `llama-3.3-70b-versatile` |
-| `FALLBACK_API_KEY` | Clé secours (OpenRouter) | `sk-or-…` |
+| `FALLBACK_API_KEY` | Clé secours (OpenRouter) | — |
 | `FALLBACK_BASE_URL` | Base URL secours | `https://openrouter.ai/api/v1` |
-| `FALLBACK_MODEL` | Modèle secours | `deepseek/deepseek-chat` |
-| `GROQ_API_KEY` | Alias legacy de PRIMARY | (optionnel) |
-| `OPENROUTER_API_KEY` | Alias legacy de FALLBACK | (optionnel) |
-| `CORS_ALLOWED_ORIGINS` | Origines CORS (CSV) | `http://localhost:3000` |
-| `QUANTA_DB_PATH` | Chemin SQLite | `quanta.db` |
+| `FALLBACK_MODEL` | Modèle secours | `meta-llama/llama-3.1-8b-instruct:free` |
+| `ALLOWED_ORIGINS` | Origines CORS, séparées par virgules | `http://localhost:3000` |
+| `QUANTA_DB_PATH` | Chemin base SQLite | `/data/quanta.db` |
+| `QUANTA_UPLOAD_DIR` | Répertoire uploads | `/data/uploads` |
+| `GOOGLE_CLIENT_ID` | OAuth Google client ID | — |
+| `GOOGLE_CLIENT_SECRET` | OAuth Google secret | — |
+| `GOOGLE_REDIRECT_URI` | Callback OAuth (ex. https://...onrender.com/auth/callback) | — |
+| `FRONTEND_URL` | URL frontend post-login | `http://localhost:3000` |
+| `SESSION_SECRET_KEY` | Clé signature session (requis en prod ; warning sinon) | vide |
 
-**Frontend** (`quanta-frontend/.env.local`) :
-
-| Variable | Rôle | Exemple |
-|----------|------|---------|
-| `NEXT_PUBLIC_API_URL` | URL de l’API FastAPI | `http://127.0.0.1:8000` |
-
-Sans clé LLM : l’analyse statistique **fonctionne** ; l’interprétation textuelle bascule en `llm_available: false`.
-
----
-
-## 10. Comment lancer QUANTA localement
-
-### Prérequis
-- Python 3.12+
-- Node.js 20+ (recommandé pour Next 16)
-- Dépendances système WeasyPrint (GTK/Pango selon OS — obligatoire pour le PDF)
-
-### Backend
-```bash
-cd QUANTA
-python -m venv .venv
-# Windows :
-.venv\Scripts\activate
-# Unix :
-# source .venv/bin/activate
-
-pip install -r requirements.txt
-copy .env.example .env   # puis renseigner PRIMARY_API_KEY (et fallback si besoin)
-
-uvicorn main:app --reload --host 127.0.0.1 --port 8000
-```
-Vérifier : `http://127.0.0.1:8000/health` et `http://127.0.0.1:8000/docs`
-
-### Frontend
-```bash
-cd quanta-frontend
-npm install
-# créer .env.local avec :
-# NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
-
-npm run dev
-```
-Ouvrir : `http://localhost:3000`
-
-### Parcours de smoke test
-1. « Tester avec un exemple » → Analyser  
-2. Attendre le statut `done`  
-3. Lire interprétation + score  
-4. Télécharger le PDF Dark **et** Académique  
-
-### Relancer une validation ciblée
-```bash
-python -m tests.test_selector_2groups_normal
-python -m tests.test_selector_2groups_nonnormal
-python -m tests.test_selector_multigroup
-python -m tests.test_selector_association
-python -m tests.test_selector_logistic
-python -m tests.test_selector_trap
-```
-
----
-
-## Ajouts récents (21–24 juillet 2026)
-
-| Feature | Où | Statut |
-|---------|-----|--------|
-| Post-hoc Tukey HSD / Dunn / Games-Howell | `test_selector` + PDF | ✅ |
-| Scientific Defense | `report_generator` | ✅ |
-| Power Analysis (statsmodels) | `compute` + orchestrator + APA | ✅ |
-| Thème Light / Académique | `generate_pdf_report(theme=…)` + `/report?theme=` + UI | ✅ |
-| Bibliographie Annexe C | `report_generator` | ✅ |
-| Script Python Annexe D (Colab) | `report_generator` | ✅ |
-| Audit trail Annexe E | `main._run_analysis_background` + PDF | ✅ |
-
----
-
-## Limitations connues (honnêteté opérationnelle)
-
-1. **Doublons** : détectés et signalés ; **conservés** dans le dataset analysé (plus de `drop_duplicates` au cleaning).
-2. **ddl APA** : clés standardisées exposées par `test_selector` ; cas délégués (corrélation / OLS) peuvent encore afficher « — ».
-3. **Welch ANOVA** : implémentation stricte via pingouin ; dénominateur non-entier attendu.
-4. **PDF / WeasyPrint** : dépendances OS fragiles ; échec → `/report` peut renvoyer une erreur plutôt qu’un PDF.
-5. **LLM** : qualité non déterministe ; Skeptic + anti-hallucination mitigent mais ne garantissent pas.
-6. **Frontend** : mono-page ; pas d’historique navigable côté UI malgré `/history` API.
-7. **Puissance MW** : approximation via `|r|` sous `TTestIndPower` (pas un modèle MW dédié).
-8. **Legacy** : `/legacy` est référence figée — ne pas y développer.
-9. **Race conditions — état au 2 septembre 2026** :
-   - **Résolu :**
-     - SQLite configuré en mode WAL + busy_timeout=5000ms (db.py) — élimine les erreurs "database is locked" sous accès concurrents rapprochés, confirmé par test de charge (10 requêtes rapprochées sans erreur, contre échecs systématiques avant).
-     - Le statut 'done' d'une analyse ne peut plus jamais être écrasé une fois écrit (update_analysis() dans db.py retourne False et ignore l'écriture si le statut actuel est déjà 'done').
-   - **Limite connue, acceptée pour l'instant :**
-     - `_run_with_timeout()` dans main.py utilise un thread Python qui ne peut pas être tué à l'expiration du timeout (limitation du langage). Si le timeout global déclenche un statut 'error', puis que ce thread orphelin termine son travail plus tard avec succès, il peut encore écrire 'done' par-dessus 'error' (l'inverse — done écrasé — est bloqué, mais pas error écrasé par un done tardif).
-     - Impact réel : faible probabilité (nécessite un calcul qui dépasse le timeout global tout en continuant en arrière-plan jusqu'à réussir), impact limité (l'utilisateur verrait une analyse passer de "erreur" à "terminée" de façon inattendue, mais sans perte de données ni corruption).
-     - Vraie solution si ça devient un problème réel : remplacer le thread non-tuable de _run_with_timeout par une isolation en sous-processus (même pattern que analyze_worker.py et pdf_worker.py), qui peut être tué proprement à l'expiration du timeout via subprocess.terminate()/kill().
-
----
-
-*Fin de l’état actuel. Mettre à jour ce fichier à chaque organe significativement modifié.*
+> Déploiement Railway : volume monté sur `/data` (base + uploads). Le volume est configuré côté tableau Railway, pas dans `railway.toml`.

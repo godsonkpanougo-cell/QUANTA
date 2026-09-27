@@ -17,6 +17,7 @@ base) ; seul leur chemin et leurs métadonnées sont en base.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import uuid
 import base64
@@ -27,9 +28,12 @@ import threading
 import hashlib
 import subprocess
 import json
+
+# Configuration du logging pour rendre les logs TIMING visibles en production
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 # Forcer le backend matplotlib Agg AVANT toute importation
 os.environ['MPLBACKEND'] = 'Agg'
@@ -46,7 +50,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import Response
 from fastapi import Cookie, Depends
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, StringConstraints, field_validator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -57,7 +61,55 @@ from app.compute import upload_validation
 from app.compute import test_selector as ts
 from app.llm import brain
 from app.orchestrator import run_full_analysis
+from app import analysis_core
 from app import auth
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SANITISATION DU NOM DE FICHIER UPLOADÉ (protection path traversal)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ALLOWED_UPLOAD_EXTENSIONS = {"csv", "xls", "xlsx", "dta", "sav"}
+
+
+def _sanitize_upload_filename(raw_filename: str | None) -> str:
+    """
+    Neutralise un nom de fichier fourni par le client avant écriture disque.
+
+    Défenses empilées :
+      1. os.path.basename() -- supprime tout composant de répertoire
+         ("../../etc/evil.csv" -> "evil.csv", y compris séparateurs Windows
+         "\\" via remplacement préalable) ;
+      2. retrait des caractères de contrôle et des séparateurs résiduels ;
+      3. rejet explicite de "." et ".." (noms réservés du système de fichiers) ;
+      4. limitation de longueur (255 = limite commune des FS) ;
+      5. extension whitelistée (csv/xls/xlsx/dta/sav) -- un fichier sans
+         extension valide est rejeté par /upload de toute façon.
+
+    Retourne toujours un nom plat, sûr à concaténer sous UPLOAD_DIR.
+    """
+    filename = (raw_filename or "upload.bin").replace("\\", "/")
+    filename = os.path.basename(filename)
+    filename = filename.replace("\x00", "")
+    # Retirer tout caractère non alphanumérique utile (hors . - _ espace)
+    filename = re.sub(r"[^A-Za-z0-9._\- ]", "_", filename).strip()
+    if filename in {"", ".", ".."}:
+        filename = "upload.bin"
+    if len(filename) > 255:
+        stem, _, ext = filename.rpartition(".")
+        filename = (stem[:240] or "upload") + ("." + ext[:14] if ext else "")
+    return filename
+
+
+def _validate_upload_extension(filename: str) -> None:
+    """Rejette les extensions hors whitelist avant tout traitement."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Format de fichier non supporté '.{ext or '?'}'. "
+                    f"Formats acceptés : CSV, XLS, XLSX, DTA (Stata), SAV (SPSS).",
+        )
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -192,7 +244,7 @@ def _now() -> str:
 
 def cleanup_old_files() -> None:
     """
-    Nettoie les fichiers uploadés et analyses de plus de 24 heures.
+    Nettoie les fichiers uploadés, analyses et sessions de plus de 24 heures.
     Exécuté périodiquement par APScheduler.
     """
     try:
@@ -203,32 +255,50 @@ def cleanup_old_files() -> None:
             for filename in os.listdir(UPLOAD_DIR):
                 filepath = os.path.join(UPLOAD_DIR, filename)
                 if os.path.isfile(filepath):
+                    # Ne jamais supprimer les PDFs de rapport encore utiles ?
+                    # Non : ils sont régénérables à la demande depuis le résultat
+                    # en base ; la suppression des PDFs > 24h est sûre.
                     file_mtime = datetime.fromtimestamp(os.path.getmtime(filepath), tz=timezone.utc)
                     if file_mtime < cutoff_time:
                         try:
                             os.remove(filepath)
-                            logger.info(f"Deleted old upload file: {filename}")
+                            logger.info("Deleted old upload file", filename=filename)
                         except Exception as e:
-                            logger.warning(f"Failed to delete file {filename}: {e}")
+                            logger.warning("Failed to delete file", filename=filename, error=str(e))
         
-        # Nettoyer les analyses anciennes de la base
-        old_analyses = db.list_analyses(limit=1000)
+        # Nettoyer les analyses anciennes de la base (variantes internes sans
+        # user_id -- réservées au nettoyage système, voir db.py).
+        old_analyses = db.list_analyses_internal(limit=1000)
         deleted_count = 0
         for analysis in old_analyses:
             if analysis.get("updated_at"):
                 try:
                     updated_at = datetime.fromisoformat(analysis["updated_at"])
+                    if updated_at.tzinfo is None:
+                        updated_at = updated_at.replace(tzinfo=timezone.utc)
                     if updated_at < cutoff_time:
-                        db.delete_analysis(analysis["analysis_id"])
+                        db.delete_analysis_internal(analysis["analysis_id"])
                         deleted_count += 1
                 except Exception as e:
-                    logger.warning(f"Failed to parse date for analysis {analysis.get('analysis_id')}: {e}")
+                    logger.warning(
+                        "Failed to parse date for analysis",
+                        analysis_id=analysis.get("analysis_id"), error=str(e),
+                    )
         
         if deleted_count > 0:
-            logger.info(f"Deleted {deleted_count} old analyses from database")
+            logger.info("Deleted old analyses from database", count=deleted_count)
+
+        # Purger les sessions expirées (sinon suppression uniquement lazy à
+        # l'accès -> accumulation illimitée en base).
+        try:
+            expired_sessions = db.cleanup_expired_sessions()
+            if expired_sessions > 0:
+                logger.info("Deleted expired sessions", count=expired_sessions)
+        except Exception as e:
+            logger.warning("Session cleanup failed", error=str(e))
             
     except Exception as e:
-        logger.error(f"Cleanup failed: {e}")
+        logger.error("Cleanup failed", error=str(e))
 
 
 # Démarrer le scheduler de cleanup
@@ -243,7 +313,9 @@ scheduler.start()
 
 class AnalyzeRequest(BaseModel):
     file_id: str
-    query: str = ""
+    # max_length : la query est stockée en base ET injectée dans le prompt LLM
+    # -- sans borne, c'est un vecteur de coût (tokens) et de gonflement DB.
+    query: Annotated[str, StringConstraints(max_length=2000)] = ""
 
     @field_validator("query")
     @classmethod
@@ -311,7 +383,11 @@ async def upload_file(
             )
         raw_bytes.extend(chunk)
 
-    filename = file.filename or "upload.bin"
+    # Sanitisation du nom de fichier (protection path traversal) + whitelist
+    # d'extension AVANT toute lecture ou écriture disque.
+    filename = _sanitize_upload_filename(file.filename)
+    _validate_upload_extension(filename)
+
     diag = upload_validation.load_and_diagnose(bytes(raw_bytes), filename)
 
     if "error" in diag:
@@ -325,6 +401,8 @@ async def upload_file(
         )
 
     file_id = str(uuid.uuid4())
+    # filename est désormais garanti plat (pas de composant de répertoire) :
+    # saved_path reste strictement sous UPLOAD_DIR.
     saved_path = os.path.join(UPLOAD_DIR, f"{file_id}_{filename}")
     with open(saved_path, "wb") as f:
         f.write(bytes(raw_bytes))
@@ -354,122 +432,35 @@ async def upload_file(
 
 def _run_analysis_core(analysis_id: str, user_id: str, file_id: str, query: str) -> None:
     """
-    Logique principale d'analyse, exécutée avec timeout.
+    Logique principale d'analyse (fallback in-memory), déléguée au module
+    partagé app/analysis_core.py -- même code que le worker subprocess,
+    avec vérification d'annulation avant chaque intent (le /cancel était
+    historiquement ignoré sur ce chemin).
     """
-    db.update_analysis(analysis_id, status="running", updated_at=_now(), user_id=user_id)
-    audit_trail: list[dict[str, str]] = []
+    def _check_cancelled() -> bool:
+        analysis = db.get_analysis(analysis_id, user_id)
+        return bool(analysis and analysis.get("status") == "cancelled")
 
-    upload_info = db.get_upload(file_id, user_id)
-    if upload_info is None:
-        db.update_analysis(
-            analysis_id, status="error",
-            error=f"file_id '{file_id}' introuvable -- le fichier a peut-être expiré ou n'a jamais été uploadé.",
-            updated_at=_now(),
-            user_id=user_id,
-        )
-        return
-
-    with open(upload_info["path"], "rb") as f:
-        file_bytes = f.read()
-
-    file_hash = hashlib.sha256(file_bytes).hexdigest()
-    filename = upload_info["filename"]
-    n_rows = upload_info["n_rows"]
-    n_cols = upload_info["n_cols"]
-    numeric_cols = upload_info["numeric_cols"]
-    cat_cols = upload_info["cat_cols"]
-
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if ext == "csv":
-        encoding = upload_validation._detect_csv_encoding(file_bytes)
-    elif ext in {"xls", "xlsx", "dta", "sav"}:
-        encoding = f"n/a ({ext})"
-    else:
-        encoding = "inconnu"
-
-    audit_trail.append({
-        "timestamp": _now(),
-        "etape": "Chargement du fichier",
-        "detail": (
-            f"{n_rows} lignes, {n_cols} colonnes, encodage {encoding}"
-        ),
-    })
-    audit_trail.append({
-        "timestamp": _now(),
-        "etape": "Diagnostic structurel",
-        "detail": (
-            f"{len(numeric_cols)} variables numériques, "
-            f"{len(cat_cols)} catégorielles"
-        ),
-    })
-
-    def run_analysis_fn(intent: ts.AnalysisIntent) -> dict[str, Any]:
-        analysis = run_full_analysis(file_bytes, filename, intent, theme="dark")
-        # Journaliser chaque test lancé (appelé 1× en mode query, N× en auto).
-        inference = analysis.get("inference") if isinstance(analysis, dict) else None
-        if isinstance(inference, dict):
-            test_result = inference.get("result")
-            test_name = None
-            if isinstance(test_result, dict):
-                test_name = test_result.get("test") or test_result.get("method")
-            action = inference.get("action_executed")
-            p_value = (
-                test_result.get("p_value")
-                if isinstance(test_result, dict)
-                else None
-            )
-            label = test_name or action or intent.action or "test"
-            detail_parts = [f"action={action or intent.action}"]
-            if intent.target_col:
-                detail_parts.append(f"target={intent.target_col}")
-            if intent.group_col:
-                detail_parts.append(f"group={intent.group_col}")
-            if p_value is not None:
-                detail_parts.append(f"p={p_value}")
-            audit_trail.append({
-                "timestamp": _now(),
-                "etape": f"Test : {label}",
-                "detail": ", ".join(detail_parts),
-            })
-        return analysis
-
-    diagnosis = {
-        "numeric_cols": numeric_cols,
-        "cat_cols": cat_cols,
-        "n_rows": n_rows,
-        "n_cols": n_cols,
-        "dataset_type": upload_info.get("dataset_type"),
-        "id_cols": upload_info.get("id_cols", []),
-    }
-
-    result = brain.analyze_with_brain(
-        user_query=query,
-        available_numeric_cols=numeric_cols,
-        available_cat_cols=cat_cols,
-        run_analysis_fn=run_analysis_fn,
-        diagnosis=diagnosis,
+    analysis_core.run_analysis(
+        analysis_id, user_id, file_id, query,
+        check_cancelled=_check_cancelled,
     )
-    result["file_hash"] = file_hash
-    
-    # LOGGING DIAGNOSTIC - Vérifier la présence des charts
-    logger.info(f"ANALYSIS DEBUG - result keys: {list(result.keys())}")
-    if "analysis" in result:
-        logger.info(f"ANALYSIS DEBUG - analysis keys: {list(result['analysis'].keys())}")
-        if "charts" in result["analysis"]:
-            logger.info(f"ANALYSIS DEBUG - charts present in analysis: {len(result['analysis']['charts'])} charts")
+    # Logging diagnostic présence des charts (le module partagé ne logge pas,
+    # il est aussi utilisé par le worker subprocess qui a ses propres prints).
+    try:
+        final = db.get_analysis(analysis_id, user_id)
+        result = (final or {}).get("result") or {}
+        analysis = result.get("analysis") if isinstance(result, dict) else None
+        if isinstance(analysis, dict):
+            charts = analysis.get("charts")
+            if charts:
+                logger.info("Analysis charts present", count=len(charts))
+            else:
+                logger.warning("Analysis has NO charts")
         else:
-            logger.warning("ANALYSIS DEBUG - NO CHARTS in analysis!")
-    else:
-        logger.warning("ANALYSIS DEBUG - NO 'analysis' key in result!")
-
-    audit_trail.append({
-        "timestamp": _now(),
-        "etape": "Génération du rapport",
-        "detail": "PDF généré avec succès",
-    })
-    result["audit_trail"] = audit_trail
-
-    db.update_analysis(analysis_id, status="done", result=result, updated_at=_now(), user_id=user_id, file_hash=file_hash)
+            logger.warning("Analysis result has NO 'analysis' key")
+    except Exception:
+        pass
 
 
 def _run_analysis_dispatch(analysis_id: str, user_id: str, file_id: str, query: str) -> None:
@@ -535,6 +526,17 @@ def _run_analysis_background(analysis_id: str, user_id: str, file_id: str, query
             updated_at=_now(),
             user_id=user_id,
         )
+    finally:
+        # Remboursement du quota (point unique, exactement une fois) : toute
+        # analyse qui finit en 'error' ne consomme pas le quota mensuel de
+        # l'utilisateur -- qu'elle ait échoué par timeout, crash worker,
+        # échec in-process ou fallback en erreur.
+        try:
+            final = db.get_analysis(analysis_id, user_id)
+            if final and final.get("status") == "error":
+                db.refund_quota(user_id)
+        except Exception:
+            pass
 
 
 @app.post("/analyze")
@@ -804,14 +806,14 @@ def get_report(
             pdf_bytes = generate_lightweight_pdf(result, theme=theme_norm)
             if pdf_bytes:
                 filename = f"rapport_quanta_{analysis_id[:8]}.pdf"
+                # Pas de headers CORS manuels : le middleware CORSMiddleware
+                # (allow_credentials=True) rejette "*" -- les origines
+                # autorisées sont déjà gérées par ALLOWED_ORIGINS.
                 return Response(
                     content=pdf_bytes,
                     media_type="application/pdf",
                     headers={
                         "Content-Disposition": f"attachment; filename={filename}",
-                        "Access-Control-Allow-Origin": "*",
-                        "Access-Control-Allow-Methods": "GET",
-                        "Access-Control-Allow-Headers": "*",
                     }
                 )
             raise HTTPException(status_code=500, detail="Erreur génération PDF")
@@ -830,9 +832,6 @@ def get_report(
                 media_type="application/pdf",
                 headers={
                     "Content-Disposition": f"attachment; filename={filename}",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET",
-                    "Access-Control-Allow-Headers": "*",
                 }
             )
         raise HTTPException(status_code=504, detail="Timeout génération PDF")
@@ -862,9 +861,6 @@ def get_report(
         media_type="application/pdf",
         headers={
             "Content-Disposition": f"attachment; filename={filename}",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET",
-            "Access-Control-Allow-Headers": "*",
         },
     )
 

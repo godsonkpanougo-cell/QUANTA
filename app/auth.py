@@ -105,6 +105,7 @@ async def auth_google(request: Request) -> Response:
 
 
 @router.get("/callback")
+@auth_limiter.limit("20/minute")
 async def auth_callback(request: Request) -> Response:
     """
     Callback OAuth Google : reçoit le code, échange le token, crée/màj l'utilisateur,

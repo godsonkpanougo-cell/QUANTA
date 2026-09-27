@@ -433,43 +433,75 @@ def _cohens_d(g1: np.ndarray, g2: np.ndarray) -> float:
     return round(float((np.mean(g1) - np.mean(g2)) / pooled_std), 4)
 
 
+def _bootstrap_percentile_ci(
+    statistic_fn,
+    n_bootstrap: int,
+    ci_level: float,
+    seed: int,
+    *args,
+) -> tuple[float, float]:
+    """
+    IC bootstrap percentile VECTORIZÉ, partagé par toutes les tailles d'effet.
+
+    statistic_fn(*samples_boot, ...) reçoit des échantillons rééchantillonnés
+    (matrices n_bootstrap × n_k) et doit retourner un array de n_bootstrap
+    statistiques. Utilise un Generateur RNG local (np.random.default_rng) au
+    lieu de np.random.seed global -- plus de mutation de l'état aléatoire
+    global (effet de bord historique documenté à l'audit).
+    """
+    import time
+    t0 = time.monotonic()
+    rng = np.random.default_rng(seed)
+    stats_boot = np.asarray(statistic_fn(*args, rng=rng), dtype=float)
+    stats_boot = stats_boot[~np.isnan(stats_boot)]
+    if len(stats_boot) == 0:
+        return float("nan"), float("nan")
+    alpha = 1 - ci_level
+    ci_lower = float(np.percentile(stats_boot, 100 * alpha / 2))
+    ci_upper = float(np.percentile(stats_boot, 100 * (1 - alpha / 2)))
+    print(f"TIMING - Bootstrap CI vectorisé ({statistic_fn.__name__}): {time.monotonic() - t0:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
+    return ci_lower, ci_upper
+
+
+def _bootstrap_matrix(g: np.ndarray, n_bootstrap: int, rng) -> np.ndarray:
+    """Rééchantillonnage vectorisé : matrice n_bootstrap × len(g)."""
+    return g[rng.integers(0, len(g), size=(n_bootstrap, len(g)))]
+
+
 def _cohens_d_with_ci(g1: np.ndarray, g2: np.ndarray, n_bootstrap: int = 1000, ci_level: float = 0.95, seed: int = 42) -> tuple[float, float, float]:
     """
     Calcule Cohen's d avec intervalle de confiance bootstrap percentile.
+    Version vectorisée : 1 rééchantillonnage matriciel + 1 calcul par
+    réplication sans boucle Python (ancien coût : 2 choix + 1 variance
+    par réplication dans une boucle pure Python, ~50x plus lent).
     
     Returns:
         (d, ci_lower, ci_upper): Cohen's d et ses bornes IC
     """
-    import time
     d = _cohens_d(g1, g2)
     
     # Bootstrap pour l'IC
     n1, n2 = len(g1), len(g2)
     if n1 + n2 < 10:
         return d, float("nan"), float("nan")
-    
-    t_bootstrap_start = time.monotonic()
-    np.random.seed(seed)
-    bootstrap_ds = np.zeros(n_bootstrap)
-    
-    for i in range(n_bootstrap):
-        # Échantillonnage avec remplacement dans chaque groupe
-        g1_boot = np.random.choice(g1, size=n1, replace=True)
-        g2_boot = np.random.choice(g2, size=n2, replace=True)
-        bootstrap_ds[i] = _cohens_d(g1_boot, g2_boot)
-    
-    t_bootstrap_end = time.monotonic()
-    print(f"TIMING - Bootstrap CI (Cohen's d): {t_bootstrap_end - t_bootstrap_start:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
-    
-    # Méthode percentile
-    bootstrap_ds_sorted = np.sort(bootstrap_ds)
-    alpha = 1 - ci_level
-    lower_idx = int((alpha / 2) * n_bootstrap)
-    upper_idx = int((1 - alpha / 2) * n_bootstrap)
-    
-    ci_lower = float(bootstrap_ds_sorted[lower_idx])
-    ci_upper = float(bootstrap_ds_sorted[upper_idx])
-    
+
+    def _statistic(b1, b2, rng=None):
+        m1 = b1.mean(axis=1)
+        m2 = b2.mean(axis=1)
+        v1 = b1.var(axis=1, ddof=1)
+        v2 = b2.var(axis=1, ddof=1)
+        pooled = np.sqrt(((n1 - 1) * v1 + (n2 - 1) * v2) / (n1 + n2 - 2))
+        out = np.zeros(len(b1))
+        mask = pooled > 0
+        out[mask] = (m1[mask] - m2[mask]) / pooled[mask]
+        return out
+
+    rng = np.random.default_rng(seed)
+    ci_lower, ci_upper = _bootstrap_percentile_ci(
+        _statistic, n_bootstrap, ci_level, seed,
+        _bootstrap_matrix(g1, n_bootstrap, rng),
+        _bootstrap_matrix(g2, n_bootstrap, rng),
+    )
     return d, round(ci_lower, 4), round(ci_upper, 4)
 
 
@@ -486,38 +518,36 @@ def _rank_biserial(g1: np.ndarray, g2: np.ndarray) -> float:
 def _rank_biserial_with_ci(g1: np.ndarray, g2: np.ndarray, n_bootstrap: int = 1000, ci_level: float = 0.95, seed: int = 42) -> tuple[float, float, float]:
     """
     Calcule r (rang bisériel) avec intervalle de confiance bootstrap percentile.
+    Version vectorisée via rangs calculés sur les échantillons bootstrap.
     
     Returns:
         (r, ci_lower, ci_upper): r et ses bornes IC
     """
-    import time
     r = _rank_biserial(g1, g2)
     
     # Bootstrap pour l'IC
     n1, n2 = len(g1), len(g2)
     if n1 + n2 < 10:
         return r, float("nan"), float("nan")
-    
-    t_bootstrap_start = time.monotonic()
-    np.random.seed(seed)
-    bootstrap_rs = np.zeros(n_bootstrap)
-    
-    for i in range(n_bootstrap):
-        g1_boot = np.random.choice(g1, size=n1, replace=True)
-        g2_boot = np.random.choice(g2, size=n2, replace=True)
-        bootstrap_rs[i] = _rank_biserial(g1_boot, g2_boot)
-    
-    t_bootstrap_end = time.monotonic()
-    print(f"TIMING - Bootstrap CI (rank biserial): {t_bootstrap_end - t_bootstrap_start:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
-    
-    bootstrap_rs_sorted = np.sort(bootstrap_rs)
-    alpha = 1 - ci_level
-    lower_idx = int((alpha / 2) * n_bootstrap)
-    upper_idx = int((1 - alpha / 2) * n_bootstrap)
-    
-    ci_lower = float(bootstrap_rs_sorted[lower_idx])
-    ci_upper = float(bootstrap_rs_sorted[upper_idx])
-    
+
+    def _statistic(b1, b2, rng=None):
+        # u = nombre de paires (x de g1, y de g2) avec x > y + 0.5 * ties,
+        # calculé vectoriellement : diff (n_bootstrap × n1 × n2) peut être
+        # gros (1000×50×50 = 2.5M floats = 20 Mo) -> acceptable.
+        diff = b1[:, :, None] - b2[:, None, :]
+        u = (diff > 0).sum(axis=(1, 2)) + 0.5 * (diff == 0).sum(axis=(1, 2))
+        denom = n1 * n2
+        out = np.ones(len(b1))
+        mask = denom > 0
+        out[mask] = 1 - (2 * u[mask]) / denom
+        return out
+
+    rng = np.random.default_rng(seed)
+    ci_lower, ci_upper = _bootstrap_percentile_ci(
+        _statistic, n_bootstrap, ci_level, seed,
+        _bootstrap_matrix(g1, n_bootstrap, rng),
+        _bootstrap_matrix(g2, n_bootstrap, rng),
+    )
     return r, round(ci_lower, 4), round(ci_upper, 4)
 
 
@@ -531,49 +561,50 @@ def _eta_squared(groups: list[np.ndarray], f_stat: float) -> float:
     return round(float((f_stat * df_between) / (f_stat * df_between + df_within)), 4)
 
 
+def _anova_eta2_boot(b_groups: list[np.ndarray]) -> np.ndarray:
+    """
+    η² sur k échantillons bootstrap (matrices n_bootstrap × n_k).
+    Identique mathématiquement à la boucle historique (approximation
+    SS_between/SS_total), mais vectorisé.
+    """
+    k = len(b_groups)
+    n_k = [b.shape[1] for b in b_groups]
+    means = [b.mean(axis=1) for b in b_groups]  # chaque (n_bootstrap,)
+    # Moyenne globale pondérée par les tailles
+    total_n = sum(n_k)
+    overall = sum(m * nk for m, nk in zip(means, n_k)) / total_n  # (n_bootstrap,)
+    ss_between = np.zeros(b_groups[0].shape[0])
+    ss_total = np.zeros(b_groups[0].shape[0])
+    for b, m, nk in zip(b_groups, means, n_k):
+        ss_between += nk * (m - overall) ** 2
+        ss_total += ((b - overall[:, None]) ** 2).sum(axis=1)
+    out = np.zeros(len(ss_total))
+    mask = ss_total > 0
+    out[mask] = ss_between[mask] / ss_total[mask]
+    return out
+
+
 def _eta_squared_with_ci(groups: list[np.ndarray], f_stat: float, n_bootstrap: int = 1000, ci_level: float = 0.95, seed: int = 42) -> tuple[float, float, float]:
     """
     Calcule η² avec intervalle de confiance bootstrap percentile.
+    Version vectorisée (même approximation SS_between/SS_total que la
+    boucle historique, sans boucle Python par réplication).
     
     Returns:
         (eta2, ci_lower, ci_upper): η² et ses bornes IC
     """
-    import time
     eta2 = _eta_squared(groups, f_stat)
     
     n = sum(len(g) for g in groups)
     if n < 10:
         return eta2, float("nan"), float("nan")
-    
-    t_bootstrap_start = time.monotonic()
-    np.random.seed(seed)
-    bootstrap_eta2s = np.zeros(n_bootstrap)
-    
-    for i in range(n_bootstrap):
-        # Échantillonnage avec remplacement dans chaque groupe
-        groups_boot = [np.random.choice(g, size=len(g), replace=True) for g in groups]
-        # Recalculer F et η² sur l'échantillon bootstrap
-        # Pour simplifier, on utilise une approximation basée sur la variance
-        means_boot = [np.mean(g) for g in groups_boot]
-        overall_mean = np.mean(np.concatenate(groups_boot))
-        ss_between = sum(len(g) * (m - overall_mean)**2 for g, m in zip(groups_boot, means_boot))
-        ss_total = sum(np.sum((g - overall_mean)**2) for g in groups_boot)
-        if ss_total == 0:
-            bootstrap_eta2s[i] = 0.0
-        else:
-            bootstrap_eta2s[i] = ss_between / ss_total
-    
-    t_bootstrap_end = time.monotonic()
-    print(f"TIMING - Bootstrap CI (eta_squared): {t_bootstrap_end - t_bootstrap_start:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
-    
-    bootstrap_eta2s_sorted = np.sort(bootstrap_eta2s)
-    alpha = 1 - ci_level
-    lower_idx = int((alpha / 2) * n_bootstrap)
-    upper_idx = int((1 - alpha / 2) * n_bootstrap)
-    
-    ci_lower = float(bootstrap_eta2s_sorted[lower_idx])
-    ci_upper = float(bootstrap_eta2s_sorted[upper_idx])
-    
+
+    rng = np.random.default_rng(seed)
+    b_groups = [_bootstrap_matrix(g, n_bootstrap, rng) for g in groups]
+    ci_lower, ci_upper = _bootstrap_percentile_ci(
+        _anova_eta2_boot, n_bootstrap, ci_level, seed,
+        b_groups,
+    )
     return eta2, round(ci_lower, 4), round(ci_upper, 4)
 
 
@@ -586,44 +617,24 @@ def _epsilon_squared(h_stat: float, n: int) -> float:
 def _epsilon_squared_with_ci(groups: list[np.ndarray], h_stat: float, n_bootstrap: int = 1000, ci_level: float = 0.95, seed: int = 42) -> tuple[float, float, float]:
     """
     Calcule ε² avec intervalle de confiance bootstrap percentile.
+    Version vectorisée : même approximation SS_between/SS_total que η²
+    (identique à la boucle historique).
     
     Returns:
         (eps2, ci_lower, ci_upper): ε² et ses bornes IC
     """
-    import time
     eps2 = _epsilon_squared(h_stat, sum(len(g) for g in groups))
     
     n = sum(len(g) for g in groups)
     if n < 10:
         return eps2, float("nan"), float("nan")
-    
-    t_bootstrap_start = time.monotonic()
-    np.random.seed(seed)
-    bootstrap_eps2s = np.zeros(n_bootstrap)
-    
-    for i in range(n_bootstrap):
-        groups_boot = [np.random.choice(g, size=len(g), replace=True) for g in groups]
-        # Approximation de ε² basée sur la variance (similaire à η²)
-        means_boot = [np.mean(g) for g in groups_boot]
-        overall_mean = np.mean(np.concatenate(groups_boot))
-        ss_between = sum(len(g) * (m - overall_mean)**2 for g, m in zip(groups_boot, means_boot))
-        ss_total = sum(np.sum((g - overall_mean)**2) for g in groups_boot)
-        if ss_total == 0:
-            bootstrap_eps2s[i] = 0.0
-        else:
-            bootstrap_eps2s[i] = ss_between / ss_total
-    
-    t_bootstrap_end = time.monotonic()
-    print(f"TIMING - Bootstrap CI (epsilon_squared): {t_bootstrap_end - t_bootstrap_start:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
-    
-    bootstrap_eps2s_sorted = np.sort(bootstrap_eps2s)
-    alpha = 1 - ci_level
-    lower_idx = int((alpha / 2) * n_bootstrap)
-    upper_idx = int((1 - alpha / 2) * n_bootstrap)
-    
-    ci_lower = float(bootstrap_eps2s_sorted[lower_idx])
-    ci_upper = float(bootstrap_eps2s_sorted[upper_idx])
-    
+
+    rng = np.random.default_rng(seed)
+    b_groups = [_bootstrap_matrix(g, n_bootstrap, rng) for g in groups]
+    ci_lower, ci_upper = _bootstrap_percentile_ci(
+        _anova_eta2_boot, n_bootstrap, ci_level, seed,
+        b_groups,
+    )
     return eps2, round(ci_lower, 4), round(ci_upper, 4)
 
 
@@ -904,43 +915,59 @@ def _cramers_v_with_ci(
     chi2, _, _, _ = stats.chi2_contingency(contingency)
     cramers_v = _cramers_v(chi2, n, contingency.shape)
     
-    # Bootstrap optimisé : rééchantillonner les comptes via multinomial
+    # Bootstrap optimisé : rééchantillonner les comptes via multinomial,
+    # VECTORIZÉ sur toutes les réplications (rng local, boucle interne
+    # éliminée -- les tirages multinomiaux par ligne sont empilés en 3D).
     t_bootstrap_start = time.monotonic()
-    bootstrap_vs = np.zeros(n_bootstrap)
-    
-    # Convertir le tableau de contingence en array numpy
+
     contingency_array = contingency.values
     n_rows, n_cols = contingency_array.shape
-    
-    # Probabilités marginales pour le rééchantillonnage
+
     row_probs = contingency_array.sum(axis=1) / n
     col_probs = contingency_array.sum(axis=0) / n
-    
-    for i in range(n_bootstrap):
-        # Rééchantillonner les comptes via multinomial (beaucoup plus rapide que pd.crosstab)
-        # On rééchantillonne les lignes selon leurs probabilités marginales
-        bootstrap_row_counts = np.random.multinomial(n, row_probs)
-        
-        # Pour chaque ligne, répartir les comptes entre les colonnes
-        bootstrap_table = np.zeros((n_rows, n_cols))
-        for r in range(n_rows):
-            if bootstrap_row_counts[r] > 0:
-                bootstrap_table[r, :] = np.random.multinomial(bootstrap_row_counts[r], col_probs)
-        
-        # Recalculer le Chi-deux et le V de Cramér sur le tableau bootstrap
-        bootstrap_n = bootstrap_table.sum()
-        if bootstrap_n > 0:
-            # Calculer le chi2 manuellement pour éviter stats.chi2_contingency sur array
-            expected = np.outer(bootstrap_table.sum(axis=1), bootstrap_table.sum(axis=0)) / bootstrap_n
-            # Éviter la division par zéro
-            expected[expected == 0] = 1e-10
-            bootstrap_chi2 = ((bootstrap_table - expected) ** 2 / expected).sum()
-            bootstrap_vs[i] = _cramers_v(bootstrap_chi2, int(bootstrap_n), (n_rows, n_cols))
-        else:
-            bootstrap_vs[i] = 0.0
-    
+
+    rng = np.random.default_rng(seed)
+
+    # 1) Comptes de lignes pour toutes les réplications : (B, n_rows)
+    row_counts = rng.multinomial(n, row_probs, size=n_bootstrap)
+
+    # 2) Répartition intra-ligne pour toutes les réplications d'un coup :
+    #    pour chaque (b, r) : multinomial(row_counts[b, r], col_probs)
+    #    Vectorisation : somme de tirages binomiaux par cellule (équivalent
+    #    exact du multinomial séquentiel ligne à ligne, le surplus allant
+    #    aux colonnes restantes).
+    bootstrap_tables = np.zeros((n_bootstrap, n_rows, n_cols))
+    remaining = row_counts.astype(np.int64)            # (B, n_rows)
+    remaining_col_prob = np.tile(col_probs, (n_bootstrap, n_rows, 1))
+    for c in range(n_cols - 1):
+        p = remaining_col_prob[:, :, c].copy()
+        denom = p.sum(axis=1)
+        safe_denom = np.where(denom > 0, denom, 1.0)
+        p_norm = p / safe_denom[:, None]
+        draws = rng.binomial(remaining, p_norm)        # (B, n_rows)
+        bootstrap_tables[:, :, c] = draws
+        remaining = remaining - draws
+        if c + 1 < n_cols - 1:
+            remaining_col_prob[:, :, c + 1:] = (
+                remaining_col_prob[:, :, c + 1:] * 0
+            )
+    bootstrap_tables[:, :, n_cols - 1] = remaining
+
+    # 3) Chi2 + V de Cramér pour toutes les tables d'un coup
+    totals_rows = bootstrap_tables.sum(axis=2)            # (B, n_rows)
+    totals_cols = bootstrap_tables.sum(axis=1)            # (B, n_cols)
+    grand = totals_rows.sum(axis=1)                       # (B,)
+    expected = (
+        totals_rows[:, :, None] * totals_cols[:, None, :]
+    ) / grand[:, None, None]
+    expected = np.where(expected == 0, 1e-10, expected)
+    chi2_boot = ((bootstrap_tables - expected) ** 2 / expected).sum(axis=(1, 2))
+    bootstrap_vs = np.sqrt(
+        chi2_boot / (grand * (min(n_rows, n_cols) - 1))
+    )
+
     t_bootstrap_end = time.monotonic()
-    print(f"TIMING - Bootstrap CI (cramers_v): {t_bootstrap_end - t_bootstrap_start:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
+    print(f"TIMING - Bootstrap CI (cramers_v, vectorisé): {t_bootstrap_end - t_bootstrap_start:.2f}s (n_bootstrap={n_bootstrap})", flush=True)
     
     # Méthode percentile
     bootstrap_vs_sorted = np.sort(bootstrap_vs)

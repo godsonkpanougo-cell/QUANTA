@@ -4,11 +4,18 @@ Analyze Worker — exécuté en subprocess séparé.
 Reçoit analysis_id, file_id, query en argv, exécute l'analyse complète,
 et écrit le résultat en base de données via db.py.
 Usage: python app/analyze_worker.py <analysis_id> <file_id> <query>
+
+La logique d'analyse est déléguée à app/analysis_core.py (module partagé
+avec le fallback in-memory de main.py) : un seul code pour les deux chemins,
+avec vérification d'annulation avant chaque intent et réutilisation du
+pipeline de base en mode autonome.
 """
 import sys
-import hashlib
+import logging
 from pathlib import Path
-from typing import Any
+
+# Configuration du logging pour rendre les logs TIMING visibles en production
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 # Ajouter le répertoire racine au PYTHONPATH pour les imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -35,12 +42,9 @@ _mem_checkpoint("tout début fichier, avant imports")
 
 # Imports locaux à ce worker (jamais partagés avec main.py)
 import db
-from app.compute import upload_validation
-from app.compute import test_selector as ts
-from app.llm import brain
-from app.orchestrator import run_full_analysis
+from app import analysis_core
 
-_mem_checkpoint("après imports lourds (orchestrator, brain, compute)")
+_mem_checkpoint("après imports lourds (analysis_core -> orchestrator, brain, compute)")
 
 def main():
     if len(sys.argv) < 4:
@@ -58,7 +62,9 @@ def main():
         # Utilisation de get_analysis_internal car le worker n'a pas encore le user_id
         analysis = db.get_analysis_internal(analysis_id)
         if analysis is None:
-            db.update_analysis(
+            # update_analysis_internal : sans user_id, l'écriture serait
+            # silencieusement ignorée (WHERE user_id = '' ne matche rien).
+            db.update_analysis_internal(
                 analysis_id, status="error",
                 error=f"analysis_id '{analysis_id}' introuvable.",
                 updated_at=_now(),
@@ -67,144 +73,43 @@ def main():
 
         user_id = analysis["user_id"]
 
-        # Marquer le statut "running" en base
-        db.update_analysis(analysis_id, status="running", updated_at=_now(), user_id=user_id)
-        audit_trail: list[dict[str, str]] = []
+        _mem_checkpoint("avant exécution analyse")
 
-        upload_info = db.get_upload(file_id, user_id)
-        if upload_info is None:
-            db.update_analysis(
-                analysis_id, status="error",
-                error=f"file_id '{file_id}' introuvable -- le fichier a peut-être expiré ou n'a jamais été uploadé.",
-                updated_at=_now(),
-                user_id=user_id,
-            )
-            sys.exit(1)
+        # Logique d'analyse complète déléguée au module partagé.
+        # La vérification d'annulation lit la base (statut 'cancelled')
+        # avant chaque intent, comme dans l'implémentation historique.
+        def _check_cancelled() -> bool:
+            current = db.get_analysis_internal(analysis_id)
+            return bool(current and current.get("status") == "cancelled")
 
-        # Lire le fichier depuis le disque
-        with open(upload_info["path"], "rb") as f:
-            file_bytes = f.read()
-
-        _mem_checkpoint("après chargement du fichier")
-
-        file_hash = hashlib.sha256(file_bytes).hexdigest()
-        filename = upload_info["filename"]
-        n_rows = upload_info["n_rows"]
-        n_cols = upload_info["n_cols"]
-        numeric_cols = upload_info["numeric_cols"]
-        cat_cols = upload_info["cat_cols"]
-
-        # Détecter l'encodage CSV
-        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        if ext == "csv":
-            encoding = upload_validation._detect_csv_encoding(file_bytes)
-        elif ext in {"xls", "xlsx", "dta", "sav"}:
-            encoding = f"n/a ({ext})"
-        else:
-            encoding = "inconnu"
-
-        audit_trail.append({
-            "timestamp": _now(),
-            "etape": "Chargement du fichier",
-            "detail": (
-                f"{n_rows} lignes, {n_cols} colonnes, encodage {encoding}"
-            ),
-        })
-        audit_trail.append({
-            "timestamp": _now(),
-            "etape": "Diagnostic structurel",
-            "detail": (
-                f"{len(numeric_cols)} variables numériques, "
-                f"{len(cat_cols)} catégorielles"
-            ),
-        })
-
-        # Closure run_analysis_fn qui appelle run_full_analysis
-        def run_analysis_fn(intent: ts.AnalysisIntent) -> dict[str, Any]:
-            # Vérifier si l'analyse a été annulée avant d'exécuter chaque intent
-            current_analysis = db.get_analysis_internal(analysis_id)
-            if current_analysis and current_analysis["status"] == "cancelled":
-                print(f"ANALYZE Worker - Analyse annulée par l'utilisateur, arrêt immédiat", flush=True)
-                db.update_analysis(
-                    analysis_id,
-                    status="cancelled",
-                    error="Analyse annulée par l'utilisateur",
-                    updated_at=_now(),
-                    user_id=user_id
-                )
-                sys.exit(0)  # Sortir proprement sans erreur
-            
-            analysis = run_full_analysis(file_bytes, filename, intent, theme="dark")
-            # Journaliser chaque test lancé (appelé 1× en mode query, N× en auto).
-            inference = analysis.get("inference") if isinstance(analysis, dict) else None
-            if isinstance(inference, dict):
-                test_result = inference.get("result")
-                test_name = None
-                if isinstance(test_result, dict):
-                    test_name = test_result.get("test") or test_result.get("method")
-                action = inference.get("action_executed")
-                p_value = (
-                    test_result.get("p_value")
-                    if isinstance(test_result, dict)
-                    else None
-                )
-                label = test_name or action or intent.action or "test"
-                detail_parts = [f"action={action or intent.action}"]
-                if intent.target_col:
-                    detail_parts.append(f"target={intent.target_col}")
-                if intent.group_col:
-                    detail_parts.append(f"group={intent.group_col}")
-                if p_value is not None:
-                    detail_parts.append(f"p={p_value}")
-                audit_trail.append({
-                    "timestamp": _now(),
-                    "etape": f"Test : {label}",
-                    "detail": ", ".join(detail_parts),
-                })
-            return analysis
-
-        diagnosis = {
-            "numeric_cols": numeric_cols,
-            "cat_cols": cat_cols,
-            "n_rows": n_rows,
-            "n_cols": n_cols,
-            "dataset_type": upload_info.get("dataset_type"),
-            "id_cols": upload_info.get("id_cols", []),
-        }
-
-        # Appeler brain.analyze_with_brain
-        result = brain.analyze_with_brain(
-            user_query=query,
-            available_numeric_cols=numeric_cols,
-            available_cat_cols=cat_cols,
-            run_analysis_fn=run_analysis_fn,
-            diagnosis=diagnosis,
+        analysis_core.run_analysis(
+            analysis_id, user_id, file_id, query,
+            check_cancelled=_check_cancelled,
         )
 
-        _mem_checkpoint("après brain.analyze_with_brain")
-
-        result["file_hash"] = file_hash
-
-        audit_trail.append({
-            "timestamp": _now(),
-            "etape": "Génération du rapport",
-            "detail": "PDF généré avec succès",
-        })
-        result["audit_trail"] = audit_trail
-
-        # Marquer le statut "done" en base
-        db.update_analysis(analysis_id, status="done", result=result, updated_at=_now(), user_id=user_id, file_hash=file_hash)
+        _mem_checkpoint("après exécution analyse")
 
         print(f"ANALYZE Worker - Succès : analysis_id={analysis_id}", flush=True)
         sys.exit(0)
 
+    except SystemExit:
+        # run_analysis -> _raise_if_cancelled -> sys.exit(0) historique est
+        # remplacé par une exception ; SystemExit remonte si un sous-module
+        # en lève une, on le laisse traverser sans le transformer en erreur.
+        raise
+
     except Exception as e:
         # Filet de sécurité : toute erreur non prévue est capturée et stockée en base
+        # update_analysis_internal : le user_id n'est pas forcément disponible
+        # dans ce contexte (et sans lui l'écriture serait ignorée) -> variante
+        # interne réservée aux workers de confiance. Le remboursement du quota
+        # est géré côté main.py (_run_analysis_background.finally) au vu du
+        # statut final 'error' -- point unique, jamais deux fois.
         import traceback
         error_msg = f"Erreur inattendue dans analyze_worker : {e}\n{traceback.format_exc()}"
         print(f"ANALYZE Worker - Erreur : {error_msg}", file=sys.stderr, flush=True)
         try:
-            db.update_analysis(
+            db.update_analysis_internal(
                 analysis_id, status="error",
                 error=error_msg,
                 updated_at=_now(),

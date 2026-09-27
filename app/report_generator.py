@@ -57,10 +57,10 @@ def _select_charts(all_charts: dict, max_charts: int = MAX_CHARTS_IN_PDF) -> dic
 def _get_weasyprint():
     try:
         from weasyprint import HTML
-        print("WeasyPrint import réussi")
+        logger.info("WeasyPrint import OK")
         return HTML
     except Exception as e:
-        print(f"WeasyPrint non disponible: {e}")
+        logger.warning("WeasyPrint unavailable", error=str(e))
         import traceback
         traceback.print_exc()
         return None
@@ -74,7 +74,7 @@ def _weasyprint_safe(html: str) -> bytes | None:
             return None
         return HTML(string=html).write_pdf()
     except Exception as e:
-        print(f"WeasyPrint error: {e}")
+        logger.error("WeasyPrint error", error=str(e))
         return None
 
 
@@ -111,7 +111,7 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         try:
             import resource
             mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-            print(f"MEM CHECKPOINT [{label}] : {mb:.1f} Mo", flush=True)
+            logger.debug("MEM checkpoint", label=label, max_rss_mb=round(mb, 1))
         except Exception:
             pass  # resource non disponible sur certaines plateformes
 
@@ -120,68 +120,68 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         from pypdf import PdfWriter
         import io
 
-        print("CHUNKED PDF - Début génération", flush=True)
+        logger.info("PDF chunked: Début génération")
         
         # Générer le HTML complet
         import resource
         mb_avant_acm = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-        print(f"CHUNKED PDF - AVANT construction HTML (incluant ACM) : {mb_avant_acm:.1f} Mo", flush=True)
+        logger.info("PDF chunked: AVANT construction HTML (incluant ACM) : {mb_avant_acm:.1f} Mo")
         
         full_html = _build_html(analysis_result, theme)
         
         mb_apres_acm = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-        print(f"CHUNKED PDF - APRÈS construction HTML (incluant ACM) : {mb_apres_acm:.1f} Mo (delta: {mb_apres_acm - mb_avant_acm:.1f} Mo)", flush=True)
-        print(f"CHUNKED PDF - HTML généré, longueur: {len(full_html)}", flush=True)
+        logger.info("PDF chunked: APRÈS construction HTML (incluant ACM) : {mb_apres_acm:.1f} Mo (delta: {mb_apres_acm - mb_avant_acm:.1f} Mo)")
+        logger.info("PDF chunked: HTML généré, longueur: {len(full_html)}")
 
         # Diviser en sections
         sections = _split_html_by_sections(full_html)
-        print(f"CHUNKED PDF - Sections trouvées: {len(sections)}", flush=True)
+        logger.info("PDF chunked: Sections trouvées: {len(sections)}")
 
         if not sections:
-            print("CHUNKED PDF - ERREUR: Aucune section trouvée!", flush=True)
+            logger.info("PDF chunked: ERREUR: Aucune section trouvée!")
             return None
         
         writer = PdfWriter()
         
         # Checkpoint avant boucle de rendu
-        print(f"CHUNKED PDF - AVANT boucle de rendu, {len(sections)} sections construites : {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.1f} Mo", flush=True)
+        logger.info("PDF chunked: AVANT boucle de rendu, {len(sections)} sections construites : {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.1f} Mo")
         
         # Générer chaque section comme un chunk séparé
         for i, section_html in enumerate(sections):
-            print(f"CHUNKED PDF - Traitement section {i+1}/{len(sections)}, longueur: {len(section_html)}", flush=True)
+            logger.info("PDF chunked: Traitement section {i+1}/{len(sections)}, longueur: {len(section_html)}")
 
             # Limiter les graphiques dans les sections volumineuses
             if len(section_html) > 500_000:
                 nb_images = section_html.count("data:image")
-                print(f"CHUNKED PDF - Section {i+1} contient {nb_images} images base64", flush=True)
+                logger.info("PDF chunked: Section {i+1} contient {nb_images} images base64")
                 taille_avant = len(section_html)
                 section_html = _limit_charts_in_html(section_html, max_charts=3)
-                print(f"CHUNKED PDF - Graphiques limités dans section {i+1} (taille avant: {taille_avant}, après: {len(section_html)})", flush=True)
+                logger.info("PDF chunked: Graphiques limités dans section {i+1} (taille avant: {taille_avant}, après: {len(section_html)})")
 
             # Envelopper dans un HTML complet
             wrapped_html = _wrap_section_in_html(section_html, theme)
-            print(f"CHUNKED PDF - HTML enveloppé pour section {i+1}, longueur: {len(wrapped_html)}", flush=True)
+            logger.info("PDF chunked: HTML enveloppé pour section {i+1}, longueur: {len(wrapped_html)}")
 
             # Générer PDF pour ce chunk
             import resource
             section_id = section_html[:80].replace("\n", " ") if len(section_html) > 80 else section_html.replace("\n", " ")
             mb_avant = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-            print(f"CHUNKED PDF - Section {i+1} ({len(section_html)} car.) - ID: {section_id} - AVANT rendu : {mb_avant:.1f} Mo", flush=True)
+            logger.info("PDF chunked: Section {i+1} ({len(section_html)} car.) - ID: {section_id} - AVANT rendu : {mb_avant:.1f} Mo")
             
             pdf_chunk = _weasyprint_safe(wrapped_html)
             
             if pdf_chunk:
                 mb_apres = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-                print(f"CHUNKED PDF - Section {i+1} - APRÈS rendu : {mb_apres:.1f} Mo (delta: {mb_apres - mb_avant:.1f} Mo)", flush=True)
+                logger.info("PDF chunked: Section {i+1} - APRÈS rendu : {mb_apres:.1f} Mo (delta: {mb_apres - mb_avant:.1f} Mo)")
             if pdf_chunk:
-                print(f"CHUNKED PDF - PDF chunk {i+1} généré, taille: {len(pdf_chunk)}", flush=True)
+                logger.info("PDF chunked: PDF chunk {i+1} généré, taille: {len(pdf_chunk)}")
                 from pypdf import PdfReader
                 reader = PdfReader(io.BytesIO(pdf_chunk))
-                print(f"CHUNKED PDF - Chunk {i+1} a {len(reader.pages)} pages", flush=True)
+                logger.info("PDF chunked: Chunk {i+1} a {len(reader.pages)} pages")
                 for page in reader.pages:
                     writer.add_page(page)
             else:
-                print(f"CHUNKED PDF - ERREUR: Chunk {i+1} échoué", flush=True)
+                logger.info("PDF chunked: ERREUR: Chunk {i+1} échoué")
             
             # Libérer la mémoire
             del pdf_chunk, wrapped_html, section_html
@@ -191,11 +191,11 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         output = io.BytesIO()
         writer.write(output)
         result = output.getvalue()
-        print(f"CHUNKED PDF - PDF final généré, taille: {len(result)}", flush=True)
+        logger.info("PDF chunked: PDF final généré, taille: {len(result)}")
         return result
 
     except Exception as e:
-        print(f"CHUNKED PDF - Erreur: {e}", flush=True)
+        logger.error("PDF chunked generation failed", error=str(e), exc_info=True)
         import traceback
         traceback.print_exc()
         return None
@@ -2054,7 +2054,7 @@ def _html_posthoc(
     # Diagnostic : compter les comparaisons et les groupes
     nb_comparisons = len(comparisons) if comparisons else 0
     nb_groups = len(set([c.get("group1") for c in comparisons] + [c.get("group2") for c in comparisons])) if comparisons else 0
-    print(f"ACM DEBUG - _html_posthoc: {nb_comparisons} comparaisons, {nb_groups} groupes", flush=True)
+    logger.debug("ACM: _html_posthoc: {nb_comparisons} comparaisons, {nb_groups} groupes")
 
     # Plafond dur pour éviter OOM avec trop de groupes
     MAX_POSTHOC_ROWS = 50
@@ -2127,7 +2127,7 @@ def _html_posthoc(
     </table>
     {troncature_note}
     """
-    print(f"ACM DEBUG - _html_posthoc HTML généré: {len(html_posthoc_final)} car.", flush=True)
+    logger.debug("ACM: _html_posthoc HTML généré: {len(html_posthoc_final)} car.")
     return html_posthoc_final
 
 
@@ -2449,7 +2449,7 @@ def _html_apa_results(
     </table>
     {_html_posthoc(data, table_counter)}
     """
-    print(f"ACM DEBUG - _html_apa_results HTML généré: {len(html_apa_final)} car.", flush=True)
+    logger.debug("ACM: _html_apa_results HTML généré: {len(html_apa_final)} car.")
     return html_apa_final
 
 # Titres HTML pour les clés de graphiques du pipeline compute (jamais la clé brute).
@@ -2910,7 +2910,7 @@ def _html_multi_section2(
             {apa_block}
             {charts_block}
             """
-        print(f"ACM DEBUG - Bloc analyse {i}: {len(bloc_html)} car.", flush=True)
+        logger.debug("ACM: Bloc analyse {i}: {len(bloc_html)} car.")
         subsections.append(bloc_html)
 
     return recap_table + "\n".join(subsections)
@@ -3487,21 +3487,21 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
     interp_main = _as_dict(interpretation.get("interpretation_principale"))
 
     # Logs diagnostic ACM
-    print(f"ACM DEBUG - analysis_result: {len(analysis_result)} clés", flush=True)
-    print(f"ACM DEBUG - analysis: {len(analysis)} clés", flush=True)
-    print(f"ACM DEBUG - test_result: {len(test_result)} clés", flush=True)
-    print(f"ACM DEBUG - 'acm' in test_result: {'acm' in test_result}", flush=True)
-    print(f"ACM DEBUG - 'acm' in analysis: {'acm' in analysis}", flush=True)
-    print(f"ACM DEBUG - 'acm' in analysis_result: {'acm' in analysis_result}", flush=True)
+    logger.debug("ACM: analysis_result: {len(analysis_result)} clés")
+    logger.debug("ACM: analysis: {len(analysis)} clés")
+    logger.debug("ACM: test_result: {len(test_result)} clés")
+    logger.debug("ACM: 'acm' in test_result: {'acm' in test_result}")
+    logger.debug("ACM: 'acm' in analysis: {'acm' in analysis}")
+    logger.debug("ACM: 'acm' in analysis_result: {'acm' in analysis_result}")
     
     # Vérifier chemin multi-analyses
     if "analyses" in analysis_result:
-        print(f"ACM DEBUG - analyses found, count: {len(analysis_result['analyses'])}", flush=True)
+        logger.debug("ACM: analyses found, count: {len(analysis_result['analyses'])}")
         for i, a in enumerate(analysis_result['analyses'][:3]):  # Vérifier les 3 premiers
-            print(f"ACM DEBUG - analysis[{i}]: {len(a)} clés", flush=True)
+            logger.debug("ACM: analysis[{i}]: {len(a)} clés")
             if 'result' in a:
-                print(f"ACM DEBUG - analysis[{i}]['result']: {len(a['result'])} clés", flush=True)
-                print(f"ACM DEBUG - 'acm' in analysis[{i}]['result']: {'acm' in a['result']}", flush=True)
+                logger.debug("ACM: analysis[{i}]['result']: {len(a['result'])} clés")
+                logger.debug("ACM: 'acm' in analysis[{i}]['result']: {'acm' in a['result']}")
 
     # Limiter les graphiques pour éviter crash mémoire WeasyPrint
     charts_source = "charts"

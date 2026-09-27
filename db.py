@@ -327,6 +327,48 @@ def get_analysis(analysis_id: str, user_id: str) -> dict[str, Any] | None:
     }
 
 
+def update_analysis_internal(
+    analysis_id: str,
+    status: str,
+    result: dict[str, Any] | None = None,
+    error: str | None = None,
+    updated_at: str = "",
+    file_hash: str | None = None,
+) -> bool:
+    """
+    Met à jour une analyse SANS vérification de propriétaire.
+
+    Réservée aux workers de confiance (analyze_worker.py) qui doivent pouvoir
+    écrire un statut terminal (done/error/cancelled) même lorsque le user_id
+    n'est pas disponible dans leur contexte d'erreur. La clause
+    "status != 'done'" protège toujours le statut terminal.
+
+    NE PAS utiliser dans les endpoints publics HTTP.
+    """
+    with _get_conn() as conn:
+        cursor = conn.execute(
+            "UPDATE analyses SET status = ?, result = ?, error = ?, updated_at = ?, file_hash = COALESCE(?, file_hash) "
+            "WHERE analysis_id = ? AND status != 'done'",
+            (
+                status,
+                json.dumps(result, ensure_ascii=False) if result is not None else None,
+                error,
+                updated_at,
+                file_hash,
+                analysis_id,
+            ),
+        )
+        if cursor.rowcount == 0:
+            print(
+                f"DB - update_analysis_internal IGNORÉ pour {analysis_id} : "
+                f"statut déjà 'done' (définitif) OU analyse introuvable, "
+                f"tentative d'écriture '{status}' bloquée.",
+                flush=True,
+            )
+            return False
+        return True
+
+
 def get_analysis_internal(analysis_id: str) -> dict[str, Any] | None:
     """
     Récupère une analyse sans vérification de propriétaire.
@@ -441,6 +483,45 @@ def delete_analysis(analysis_id: str, user_id: str) -> None:
         conn.execute(
             "DELETE FROM analyses WHERE analysis_id = ? AND user_id = ?",
             (analysis_id, user_id)
+        )
+
+
+def list_analyses_internal(limit: int = 1000) -> list[dict[str, Any]]:
+    """
+    Liste des analyses SANS filtre utilisateur et SANS parsing JSON.
+
+    Réservée au nettoyage périodique (scheduler cleanup) et aux workers de
+    confiance -- ne jamais exposer via un endpoint HTTP : les entrées
+    contiennent user_id et le résultat complet sérialisé.
+    """
+    with _get_conn() as conn:
+        rows = conn.execute(
+            """SELECT a.analysis_id, a.user_id, a.status, a.updated_at
+               FROM analyses a ORDER BY a.created_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    return [
+        {
+            "analysis_id": r["analysis_id"],
+            "user_id": r["user_id"],
+            "status": r["status"],
+            "updated_at": r["updated_at"],
+        }
+        for r in rows
+    ]
+
+
+def delete_analysis_internal(analysis_id: str) -> None:
+    """
+    Supprime une analyse sans vérification de propriétaire.
+
+    Réservée au nettoyage périodique (scheduler cleanup) et aux workers de
+    confiance. NE PAS utiliser dans un endpoint HTTP public.
+    """
+    with _get_conn() as conn:
+        conn.execute(
+            "DELETE FROM analyses WHERE analysis_id = ?",
+            (analysis_id,)
         )
 
 
@@ -587,6 +668,58 @@ def check_and_increment_quota(user_id: str, monthly_limit: int = 15) -> tuple[bo
         
         remaining = monthly_limit - new_count
         return True, remaining, renewal_at_str
+
+
+def refund_quota(user_id: str, monthly_limit: int = 15) -> bool:
+    """
+    Rembourse une analyse : décrémente analyses_count (plancher 0) et avance
+    la date de renouvellement si le compteur repasse à zéro depuis un état
+    épuisé (compteur >= limite).
+
+    Appelée quand une analyse finit en 'error' pour que l'utilisateur ne
+    perde pas une de ses analyses mensuelles sur un crash moteur.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT analyses_count, quota_renewal_at FROM users WHERE user_id = ?",
+            (user_id,)
+        ).fetchone()
+        if row is None:
+            return False
+
+        current_count = row["analyses_count"] or 0
+        if current_count <= 0:
+            return False
+
+        new_count = current_count - 1
+        renewal_at_str = row["quota_renewal_at"] or ""
+
+        # Si le quota était épuisé au moment de la consommation, le
+        # renouvellement a peut-être déjà avancé -- on le remet à zéro plus
+        # tard uniquement si le compteur repart de 0 (comportement simple,
+        # sans recalcul complexe de la date d'origine).
+        if new_count == 0:
+            try:
+                date_to_parse = renewal_at_str.replace("Z", "+00:00")
+                if date_to_parse.endswith("+00:00+00:00"):
+                    date_to_parse = date_to_parse.replace("+00:00+00:00", "+00:00")
+                renewal_at = datetime.fromisoformat(date_to_parse)
+                if renewal_at.tzinfo is None:
+                    renewal_at = renewal_at.replace(tzinfo=timezone.utc)
+                now = datetime.now(timezone.utc)
+                if renewal_at <= now:
+                    # Quota déjà expiré de toute façon -> recalculer
+                    renewal_at_str = (now + timedelta(days=30)).isoformat().replace("+00:00", "Z")
+            except ValueError:
+                pass
+
+        conn.execute(
+            "UPDATE users SET analyses_count = ? WHERE user_id = ?",
+            (new_count, user_id)
+        )
+        return True
 
 
 def get_quota_info(user_id: str, monthly_limit: int = 15) -> dict[str, Any] | None:

@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Download, FileText, Clock, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/context/AuthContext";
+import { useAnalysisSteps } from "@/app/hooks/useAnalysisSteps";
 
 interface Analysis {
   analysis_id: string;
@@ -78,7 +80,23 @@ function getConfidenceColor(score: number | null): string {
   return "text-quanta-muted";
 }
 
+interface RunningStepDisplayProps {
+  createdAt: string;
+}
+
+function RunningStepDisplay({ createdAt }: RunningStepDisplayProps) {
+  const { currentStep, steps } = useAnalysisSteps(true, false, createdAt);
+  
+  return (
+    <div className="flex items-center gap-2 text-xs text-quanta-muted">
+      <span className="text-quanta-cyan">Étape :</span>
+      <span>{steps[currentStep]}</span>
+    </div>
+  );
+}
+
 export default function HistoryPage() {
+  const router = useRouter();
   const { isAuthenticated, isLoading } = useAuth();
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(true);
@@ -112,6 +130,12 @@ export default function HistoryPage() {
 
     fetchAnalyses();
   }, [isAuthenticated]);
+
+  const handleAnalysisClick = (analysisId: string, status: Analysis["status"]) => {
+    if (status === "running" || status === "pending") {
+      router.push(`/?analysisId=${analysisId}`);
+    }
+  };
 
   const handleDownloadPdf = async (analysisId: string, theme: "dark" | "light") => {
     try {
@@ -198,7 +222,12 @@ export default function HistoryPage() {
             {analyses.map((analysis) => (
               <div
                 key={analysis.analysis_id}
-                className="rounded-quanta border border-quanta-border-subtle bg-quanta-surface px-6 py-4 transition-colors hover:bg-quanta-elevated"
+                onClick={() => handleAnalysisClick(analysis.analysis_id, analysis.status)}
+                className={`rounded-quanta border border-quanta-border-subtle bg-quanta-surface px-6 py-4 transition-colors ${
+                  (analysis.status === "running" || analysis.status === "pending")
+                    ? "cursor-pointer hover:bg-quanta-elevated"
+                    : ""
+                }`}
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex-1 space-y-2">
@@ -207,6 +236,9 @@ export default function HistoryPage() {
                         {analysis.filename}
                       </h3>
                       {getStatusBadge(analysis.status)}
+                      {(analysis.status === "running" || analysis.status === "pending") && (
+                        <RunningStepDisplay createdAt={analysis.created_at} />
+                      )}
                     </div>
                     
                     {analysis.query && (

@@ -4,28 +4,13 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { cn } from "@/lib/utils";
-
-const STEPS = [
-  "Réception du fichier",
-  "Diagnostic structurel",
-  "Nettoyage des données",
-  "Sélection des tests",
-  "Calculs statistiques",
-  "Vérification des conditions",
-  "Interprétation",
-  "Finalisation du rapport",
-] as const;
+import { useAnalysisSteps, StepVisualState } from "@/app/hooks/useAnalysisSteps";
 
 const POLL_INTERVAL_MS = 2000;
-const STEP_INTERVAL_MS = 3000;
 const COMPLETE_DELAY_MS = 500;
 const POLL_TIMEOUT_MS = 300000; // 5 minutes (300 secondes)
-const MAX_RUNNING_STEP = 6;
-const FINAL_STEP = 8;
 
-type AnalysisStatus = "running" | "done" | "error" | "cancelled";
-
-type StepVisualState = "past" | "active" | "future";
+type AnalysisStatus = "pending" | "running" | "done" | "error" | "cancelled";
 
 interface AnalysisStatusResponse {
   status: "pending" | "running" | "done" | "error" | "cancelled";
@@ -44,20 +29,6 @@ const MOTION_TRANSITION = {
   duration: 0.3,
   ease: [0.4, 0, 0.2, 1] as const,
 };
-
-function getStepState(
-  index: number,
-  currentStep: number,
-  status: AnalysisStatus,
-): StepVisualState {
-  if (status === "done" || index < currentStep) {
-    return "past";
-  }
-  if (index === currentStep) {
-    return "active";
-  }
-  return "future";
-}
 
 function getApiBaseUrl(): string | null {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -178,28 +149,28 @@ export function AnalysisProgress({
   onError,
   onCancel,
 }: AnalysisProgressProps) {
-  const [currentStep, setCurrentStep] = useState(0);
   const [status, setStatus] = useState<AnalysisStatus>("running");
   const [isCancelling, setIsCancelling] = useState(false);
+  const finishedRef = useRef(false);
 
   const onCompleteRef = useRef(onComplete);
   const onErrorRef = useRef(onError);
   const onCancelRef = useRef(onCancel);
-  const inProgressRef = useRef(true);
-  const finishedRef = useRef(false);
 
   onCompleteRef.current = onComplete;
   onErrorRef.current = onError;
   onCancelRef.current = onCancel;
 
+  const { currentStep, steps, getStepState, finalStep } = useAnalysisSteps(
+    status === "running" || status === "pending",
+    finishedRef.current,
+    undefined // Pas de startTime pour une nouvelle analyse
+  );
+
   useEffect(() => {
-    inProgressRef.current = true;
     finishedRef.current = false;
-    setCurrentStep(0);
     setStatus("running");
 
-    let pollIntervalId: ReturnType<typeof setInterval> | null = null;
-    let stepIntervalId: ReturnType<typeof setInterval> | null = null;
     let completeTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const finishWithError = (message: string) => {
@@ -207,7 +178,6 @@ export function AnalysisProgress({
         return;
       }
       finishedRef.current = true;
-      inProgressRef.current = false;
       setStatus("error");
       onErrorRef.current(message);
     };
@@ -217,8 +187,6 @@ export function AnalysisProgress({
         return;
       }
       finishedRef.current = true;
-      inProgressRef.current = false;
-      setCurrentStep(FINAL_STEP);
       setStatus("done");
       completeTimeoutId = setTimeout(() => {
         onCompleteRef.current(result);
@@ -253,10 +221,6 @@ export function AnalysisProgress({
           finishWithError("Analyse annulée par l'utilisateur.");
           return;
         }
-
-        if (data.status === "running" || data.status === "pending") {
-          inProgressRef.current = true;
-        }
       } catch (error) {
         const message =
           error instanceof Error
@@ -286,17 +250,7 @@ export function AnalysisProgress({
 
     void pollWithTimeout();
 
-    stepIntervalId = setInterval(() => {
-      if (!inProgressRef.current || finishedRef.current) {
-        return;
-      }
-      setCurrentStep((previous) => Math.min(previous + 1, MAX_RUNNING_STEP));
-    }, STEP_INTERVAL_MS);
-
     return () => {
-      if (stepIntervalId) {
-        clearInterval(stepIntervalId);
-      }
       if (completeTimeoutId) {
         clearTimeout(completeTimeoutId);
       }
@@ -338,8 +292,8 @@ export function AnalysisProgress({
       </div>
 
       <div className="flex flex-row items-start gap-2 overflow-x-auto">
-        {STEPS.map((label, index) => {
-          const stepState = getStepState(index, currentStep, status);
+        {steps.map((label, index) => {
+          const stepState = getStepState(index, status);
           const connectorPast = index < currentStep || status === "done";
 
           return (
@@ -370,7 +324,7 @@ export function AnalysisProgress({
                 </AnimatePresence>
               </motion.div>
 
-              {index < STEPS.length - 1 ? (
+              {index < steps.length - 1 ? (
                 <StepConnector isPast={connectorPast} />
               ) : null}
             </Fragment>
