@@ -2,14 +2,22 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "feature/**"]
 
 jobs:
   syntax-and-fast-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # db.py et main.py dérivent leurs chemins de ces variables dès l'import
+      # (création des répertoires au niveau module). Sans elles, le runner
+      # tenterait de créer /data à la racine -> PermissionError. En production,
+      # ces valeurs sont fournies par Railway/Render ; en CI on pointe vers des
+      # répertoires jetables du runner. Aucun impact sur le comportement métier.
+      QUANTA_DB_PATH: /tmp/quanta-ci/quanta.db
+      QUANTA_UPLOAD_DIR: /tmp/quanta-ci/uploads
     steps:
       - uses: actions/checkout@v4
 
