@@ -17,9 +17,11 @@ recalculée ici.
 
 from __future__ import annotations
 
+import base64
 import html
 import io
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -102,10 +104,19 @@ def _wrap_section_in_html(section_html: str, theme: str = "dark") -> str:
 </html>"""
 
 
-def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -> bytes | None:
+def generate_pdf_chunked(
+    analysis_result: dict[str, Any],
+    theme: str = "dark",
+    watermark: str | None = None,
+    branding_name: str | None = None,
+    branding_logo_path: str | None = None,
+) -> bytes | None:
     """
     Génère le PDF en chunks séparés pour éviter le dépassement mémoire.
     Divise le HTML en sections et génère chaque chunk séparément.
+
+    Paywall (PLAN_MONETISATION.md — Phases 3-4) : watermark et branding sont
+    optionnels (None par défaut → rendu identique à l'avant-paywall).
     """
     def _mem_checkpoint(label: str) -> None:
         try:
@@ -127,7 +138,13 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         mb_avant_acm = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
         logger.info("PDF chunked: AVANT construction HTML (incluant ACM) : {mb_avant_acm:.1f} Mo")
         
-        full_html = _build_html(analysis_result, theme)
+        full_html = _build_html(
+            analysis_result,
+            theme,
+            watermark=watermark,
+            branding_name=branding_name,
+            branding_logo_path=branding_logo_path,
+        )
         
         mb_apres_acm = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
         logger.info("PDF chunked: APRÈS construction HTML (incluant ACM) : {mb_apres_acm:.1f} Mo (delta: {mb_apres_acm - mb_avant_acm:.1f} Mo)")
@@ -3477,7 +3494,13 @@ def _html_acp_section(acp_result: dict[str, Any] | None, table_counter: list[int
   </section>
 """
 
-def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
+def _build_html(
+    analysis_result: dict[str, Any],
+    theme: str = "dark",
+    watermark: str | None = None,
+    branding_name: str | None = None,
+    branding_logo_path: str | None = None,
+) -> str:
     intent, analysis, interpretation = _unpack(analysis_result)
 
     diagnosis = _as_dict(analysis.get("diagnosis"))
@@ -3729,20 +3752,53 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
       SHA256 : {_esc(file_hash)}
     </p>"""
 
+    # ─── Paywall (Phase 3) : filigrane démo — CSS + overlay, absents si None ───
+    watermark_css = ""
+    watermark_html = ""
+    if watermark:
+        watermark_css = (
+            "\n    .quanta-watermark { position: fixed; top: 0; left: 0; width: 100%; height: 100%;"
+            " z-index: 9999; pointer-events: none; display: flex; align-items: center; justify-content: center; }"
+            "\n    .quanta-watermark span { color: rgba(140,140,155,0.13); font-size: 40pt; font-weight: bold;"
+            " letter-spacing: 0.12em; transform: rotate(-30deg); white-space: nowrap;"
+            " border: 3px solid rgba(140,140,155,0.13); border-radius: 12px; padding: 12px 28px; }"
+        )
+        watermark_html = f'\n  <div class="quanta-watermark"><span>{_esc(watermark)}</span></div>'
+
+    # ─── Marque blanche (Phase 4) : logo + nom client sur la page de garde ───
+    branding_html = ""
+    if branding_name:
+        logo_img = ""
+        if branding_logo_path and os.path.exists(branding_logo_path):
+            try:
+                with open(branding_logo_path, "rb") as f:
+                    logo_b64 = base64.b64encode(f.read()).decode("ascii")
+                mime = "image/png" if branding_logo_path.lower().endswith(".png") else "image/jpeg"
+                logo_img = (
+                    f'<img src="data:{mime};base64,{logo_b64}" '
+                    f'style="max-height:64px; max-width:220px; margin-bottom:8px;" alt="logo"/><br/>'
+                )
+            except Exception:
+                logo_img = ""  # logo illisible → nom seul, jamais de crash PDF
+        branding_html = (
+            f'\n      <p class="subtitle" style="margin-top:4px;">'
+            f'{logo_img}Préparé pour <strong>{_esc(branding_name)}</strong></p>'
+        )
+
     html_document = f"""<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="utf-8"/>
   <title>QUANTA — Rapport d'analyse</title>
-  <style>{_css(theme)}</style>
+  <style>{_css(theme)}{watermark_css}</style>
 </head>
-<body>
+<body>{watermark_html}
 
   <!-- PAGE DE GARDE -->
   <section class="cover">
     <div class="cover-inner">
       <h1>QUANTA</h1>
-      <p class="subtitle">Rapport d'Analyse Statistique</p>
+      <p class="subtitle">Rapport d'Analyse Statistique</p>{branding_html}
       <div class="cover-meta">
         <p><span class="muted">Fichier analysé</span><br/><strong>{_esc(filename)}</strong></p>
         <p><span class="muted">Date de génération</span><br/>{_esc(generated_at)}</p>
@@ -3881,11 +3937,15 @@ def _apply_theme(html_document: str, theme: str) -> str:
 def generate_pdf_report(
     analysis_result: dict[str, Any],
     theme: str = "dark",
+    watermark: str | None = None,
+    branding_name: str | None = None,
+    branding_logo_path: str | None = None,
 ) -> bytes | None:
     """
     Génère le PDF de rapport QUANTA.
 
     theme : "dark" (défaut) ou "light" (rapport académique clair).
+    watermark / branding_* : paywall et marque blanche (None → rendu inchangé).
 
     Retourne les bytes du PDF, ou None en cas d'erreur (jamais d'exception
     vers l'appelant).
@@ -3897,7 +3957,13 @@ def generate_pdf_report(
         theme_norm = (theme or "dark").strip().lower()
         if theme_norm not in {"dark", "light"}:
             theme_norm = "dark"
-        html_document = _build_html(analysis_result, theme=theme_norm)
+        html_document = _build_html(
+            analysis_result,
+            theme=theme_norm,
+            watermark=watermark,
+            branding_name=branding_name,
+            branding_logo_path=branding_logo_path,
+        )
         HTML = _get_weasyprint()
         if HTML is None:
             print("WeasyPrint indisponible - fallback vers fpdf2")
@@ -3990,7 +4056,11 @@ def _sanitize_for_fpdf(text: str) -> str:
     return text.encode("latin-1", errors="replace").decode("latin-1")
 
 
-def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark") -> bytes | None:
+def generate_lightweight_pdf(
+    analysis_result: dict[str, Any],
+    theme: str = "dark",
+    watermark: str | None = None,
+) -> bytes | None:
     """
     PDF léger avec fpdf2 (zero WeasyPrint) pour les datasets volumineux.
     Texte uniquement, pas de graphiques.
@@ -4005,7 +4075,19 @@ def generate_lightweight_pdf(analysis_result: dict[str, Any], theme: str = "dark
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
-        
+
+        # Paywall (Phase 3) : filigrane incliné au centre (fallback léger).
+        # Garde-fou : ne doit JAMAIS faire échouer le PDF de secours.
+        if watermark:
+            try:
+                pdf.set_font("Helvetica", "B", 34)
+                pdf.set_text_color(170, 170, 180)
+                pdf.rotate(-30, pdf.w / 2, pdf.h / 2)
+                pdf.text(pdf.w / 2 - 45, pdf.h / 2, _sanitize_for_fpdf(watermark))
+                pdf.rotate(0)
+            except Exception:
+                pass
+
         # Page de garde simple
         pdf.set_font("Helvetica", "B", 24)
         pdf.set_text_color(201, 168, 76)

@@ -144,6 +144,23 @@ def init_db() -> None:
         except:
             pass  # La colonne existe déjà
             
+        # ═══ Migrations paywall (PLAN_MONETISATION.md — Phase 1) ═══
+        # 100 % additives, même pattern try/except idempotent que ci-dessus.
+        # Aucune colonne NOT NULL, aucun DROP : les lignes existantes prennent
+        # la valeur par défaut et le comportement pré-paywall est préservé.
+        for _column_def in (
+            "plan TEXT DEFAULT 'free'",
+            "stripe_customer_id TEXT",
+            "stripe_subscription_id TEXT",
+            "branding_name TEXT",
+            "branding_logo_path TEXT",
+        ):
+            try:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {_column_def}")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass  # La colonne existe déjà (migration idempotente)
+
         # Créer les autres tables
         conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
@@ -596,6 +613,113 @@ def get_user_by_id(user_id: str) -> dict[str, Any] | None:
         "analyses_count": row["analyses_count"] if "analyses_count" in row.keys() else 0,
         "quota_renewal_at": row["quota_renewal_at"] if "quota_renewal_at" in row.keys() else "",
     }
+
+
+def get_user_plan_and_limit(user_id: str) -> tuple[str, int]:
+    """
+    Retourne (plan, monthly_limit) pour le paywall (PLAN_MONETISATION.md — Phase 1).
+
+    Plans :
+    - 'free'   → 1 analyse / 30 jours
+    - 'pro'    → 10 000 (illimité en pratique, garde-fou anti-abus)
+    - 'agence' → 10 000 (marque blanche)
+    - 'legacy' → 15 : colonne plan absente (base pré-paywall) ou valeur
+                 inconnue → comportement historique préservé à l'identique
+
+    Aucune fonction quota existante n'est modifiée : la limite retournée est
+    passée comme monthly_limit à check_and_increment_quota / refund_quota /
+    get_quota_info par les appelants.
+    """
+    FREE_MONTHLY_LIMIT = 1
+    PAID_MONTHLY_LIMIT = 10_000
+    LEGACY_MONTHLY_LIMIT = 15
+
+    with _get_conn() as conn:
+        try:
+            row = conn.execute(
+                "SELECT plan FROM users WHERE user_id = ?",
+                (user_id,)
+            ).fetchone()
+        except sqlite3.OperationalError:
+            # Colonne plan absente (base pré-paywall) → comportement historique
+            return "legacy", LEGACY_MONTHLY_LIMIT
+
+    if row is None:
+        return "legacy", LEGACY_MONTHLY_LIMIT
+
+    plan = (row["plan"] or "free").strip().lower()
+    if plan in ("pro", "agence"):
+        return plan, PAID_MONTHLY_LIMIT
+    if plan == "free":
+        return plan, FREE_MONTHLY_LIMIT
+    return "legacy", LEGACY_MONTHLY_LIMIT
+
+
+def get_user_billing(user_id: str) -> dict[str, Any] | None:
+    """
+    Lit les champs paywall/branding d'un utilisateur (PLAN_MONETISATION.md — Phases 2-4).
+
+    100 % additif : ne remplace aucune fonction existante. Retourne None si
+    l'utilisateur est inconnu, et des valeurs par défaut sûres si la base est
+    pré-paywall (colonne plan absente → 'legacy').
+    """
+    with _get_conn() as conn:
+        try:
+            row = conn.execute(
+                """SELECT user_id, email, plan, stripe_customer_id,
+                          stripe_subscription_id, branding_name, branding_logo_path
+                   FROM users WHERE user_id = ?""",
+                (user_id,)
+            ).fetchone()
+        except sqlite3.OperationalError:
+            # Base pré-paywall : plan historique
+            base = get_user_by_id(user_id)
+            if base is None:
+                return None
+            return {
+                "user_id": base["user_id"],
+                "email": base["email"],
+                "plan": "legacy",
+                "stripe_customer_id": None,
+                "stripe_subscription_id": None,
+                "branding_name": None,
+                "branding_logo_path": None,
+            }
+
+    if row is None:
+        return None
+    return {
+        "user_id": row["user_id"],
+        "email": row["email"],
+        "plan": (row["plan"] or "free").strip().lower(),
+        "stripe_customer_id": row["stripe_customer_id"],
+        "stripe_subscription_id": row["stripe_subscription_id"],
+        "branding_name": row["branding_name"],
+        "branding_logo_path": row["branding_logo_path"],
+    }
+
+
+def set_user_branding(user_id: str, branding_name: str, branding_logo_path: str | None) -> bool:
+    """
+    Enregistre le branding agence (nom affiché + logo) d'un utilisateur
+    (PLAN_MONETISATION.md — Phase 4). Colonnes additives de la Phase 1.
+    """
+    import sqlite3
+
+    name = (branding_name or "").strip()[:120]
+    if not name:
+        return False
+    with _get_conn() as conn:
+        try:
+            cursor = conn.execute(
+                """UPDATE users
+                   SET branding_name = ?, branding_logo_path = ?
+                   WHERE user_id = ?""",
+                (name, branding_logo_path, user_id),
+            )
+        except sqlite3.OperationalError:
+            return False
+        return cursor.rowcount > 0
 
 
 def check_and_increment_quota(user_id: str, monthly_limit: int = 15) -> tuple[bool, int, str]:

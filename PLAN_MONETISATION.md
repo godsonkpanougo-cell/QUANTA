@@ -2,6 +2,11 @@
 
 *Créé le 27 septembre 2026. Document d'exécution : chaque phase est vérifiable et réversible.*
 
+> **AVANCEMENT (27/09/2026)** : Phases 0→5 implémentées et validées sur la branche `feature/paywall`
+> (backend committé dans b8ed207 ; frontend pricing non commité). Non-régression vérifiée :
+> test_cache 4/4, test_cancel 4/4, test_auth_isolation ✓, test_quota = 2 échecs connus inchangés.
+> Reste (Phase 6, côté utilisateur) : compte Stripe + prix, clés test, webhook local, déploiement Railway.
+
 ## 0. Objectif business
 
 Transformer QUANTA (moteur d'analyse statistique fonctionnel) en produit payant :

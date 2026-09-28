@@ -52,6 +52,16 @@ def main():
     output_path = sys.argv[2]
     theme = sys.argv[3]
 
+    # Paywall (PLAN_MONETISATION.md — Phases 3-4) : arguments optionnels.
+    # "-" = absent → None → rendu identique à l'avant-paywall.
+    def _arg_or_none(idx: int) -> str | None:
+        val = sys.argv[idx] if len(sys.argv) > idx else "-"
+        return None if (not val or val == "-") else val
+
+    watermark = _arg_or_none(4)
+    branding_name = _arg_or_none(5)
+    branding_logo_path = _arg_or_none(6)
+
     # Charger les données
     with open(input_path, 'r', encoding='utf-8') as f:
         analysis_result = json.load(f)
@@ -67,12 +77,24 @@ def main():
 
     pdf_bytes = None
     try:
-        pdf_bytes = generate_pdf_chunked(analysis_result, theme=theme)
+        pdf_bytes = generate_pdf_chunked(
+            analysis_result,
+            theme=theme,
+            watermark=watermark,
+            branding_name=branding_name,
+            branding_logo_path=branding_logo_path,
+        )
     except Exception as e:
         print(f"generate_pdf_chunked a échoué, tentative avec generate_pdf_report: {e}")
 
     if not pdf_bytes:
-        pdf_bytes = generate_pdf_report(analysis_result, theme=theme)
+        pdf_bytes = generate_pdf_report(
+            analysis_result,
+            theme=theme,
+            watermark=watermark,
+            branding_name=branding_name,
+            branding_logo_path=branding_logo_path,
+        )
     
     if pdf_bytes:
         with open(output_path, 'wb') as f:

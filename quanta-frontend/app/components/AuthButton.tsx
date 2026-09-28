@@ -17,6 +17,8 @@ interface QuotaInfo {
   used: number;
   remaining: number;
   renewal_at: string;
+  plan?: string;
+  upgrade_available?: boolean;
 }
 
 export function AuthButton() {
@@ -135,12 +137,24 @@ export function AuthButton() {
           <Loader2 strokeWidth={1.5} className="size-4 animate-spin text-quanta-muted" />
         ) : quota !== null ? (
           <span className={`font-sans text-sm font-medium ${getQuotaColor(quota.remaining)}`}>
-            {quota.remaining}/15
+            {quota.remaining}/{quota.limit ?? 15}
           </span>
         ) : (
           <span className="font-sans text-sm text-quanta-muted">--/15</span>
         )}
       </div>
+
+      {/* Paywall (PLAN_MONETISATION.md — Phase 5) : proposition d'upgrade
+          quand le quota est épuisé et que le billing est actif. Affichage
+          additif : invisible tant que upgrade_available est absent/false. */}
+      {quota?.remaining === 0 && quota?.upgrade_available === true && (
+        <a
+          href="/pricing"
+          className="inline-flex items-center justify-center rounded-quanta bg-quanta-gold px-4 py-2 font-sans text-sm font-semibold text-quanta-void transition-colors hover:bg-quanta-gold/90"
+        >
+          Passer Pro
+        </a>
+      )}
       
       <div className="flex items-center gap-2">
         <a
