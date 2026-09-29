@@ -561,11 +561,17 @@ def _eta_squared(groups: list[np.ndarray], f_stat: float) -> float:
     return round(float((f_stat * df_between) / (f_stat * df_between + df_within)), 4)
 
 
-def _anova_eta2_boot(b_groups: list[np.ndarray]) -> np.ndarray:
+def _anova_eta2_boot(b_groups: list[np.ndarray], rng=None) -> np.ndarray:
     """
     η² sur k échantillons bootstrap (matrices n_bootstrap × n_k).
     Identique mathématiquement à la boucle historique (approximation
     SS_between/SS_total), mais vectorisé.
+
+    rng : ignoré -- l'échantillonnage bootstrap est déjà matérialisé en amont
+    par _bootstrap_matrix(). Paramètre requis par le contrat de
+    _bootstrap_percentile_ci, qui transmet rng=rng à toute fonction
+    statistique (cet kwarg manquant a fait crasher les chemins η²/ε² en
+    production sur L2_tobit.dta -- retour d'expérience du 29/09/2026).
     """
     k = len(b_groups)
     n_k = [b.shape[1] for b in b_groups]
