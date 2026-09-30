@@ -36,11 +36,25 @@ if __name__ == "__main__":
     print(f"\n--- RÉSULTAT ---")
     print(f"status={result.get('status')}")
     print(f"test={result.get('test', 'N/A')}")
+    print(f"Clés disponibles: {list(result.keys())}")
     
     # Vérifier si l'ACM est présente dans le résultat
+    # L'ACM peut être directement dans result ou dans result["acm"]
+    # On détecte l'ACM par la présence de clés spécifiques
+    acm_result = None
     if "acm" in result:
-        print(f"\n[OK] ACM détecté dans le résultat")
         acm_result = result["acm"]
+        print(f"\n[OK] ACM détecté dans result['acm']")
+    elif "eigenvalues" in result and "inertia_pct" in result:
+        # L'ACM est le résultat principal (clés spécifiques ACM)
+        acm_result = result
+        print(f"\n[OK] ACM détecté comme résultat principal (clés ACM présentes)")
+    elif result.get("test") == "acm" or result.get("action_executed") == "acm":
+        # L'ACM est le résultat principal
+        acm_result = result
+        print(f"\n[OK] ACM détecté comme résultat principal")
+    
+    if acm_result:
         print(f"ACM status={acm_result.get('status')}")
         if acm_result.get("status") == "ok":
             print(f"[OK] ACM exécuté avec succès")

@@ -1179,23 +1179,6 @@ def _select_and_run_test_impl(
                     "audit_log": audit_log, "validation_issues": all_issues,
                     "action_executed": "descriptive_only"}
         result = run_categorical_association(df, target_col, group_col, audit_log)
-        
-        # Décision ACM : si 3+ variables catégorielles et action demandée est association
-        if len(cat_cols) >= 3 and action in ["association", "descriptive_only"]:
-            acm_result = run_acm(df, cat_cols)
-            if acm_result.get("status") == "ok":
-                result["acm"] = acm_result
-                audit_log.append({
-                    "etape": "selection_test", "colonne": None,
-                    "decision": "ACM (Analyse des Correspondances Multiples)",
-                    "valeur": f"n_variables={len(cat_cols)}",
-                    "justification": (
-                        f"{len(cat_cols)} variables catégorielles détectées "
-                        f"-> ACM automatiquement ajoutée pour explorer "
-                        f"les structures d'association."
-                    ),
-                })
-        
         return {"result": result, "audit_log": audit_log, "validation_issues": all_issues,
                 "action_executed": "association"}
 

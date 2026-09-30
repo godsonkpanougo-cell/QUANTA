@@ -3161,6 +3161,49 @@ def _html_en_resume(
   </section>
 """
 
+def _get_acm_result(test_result: dict[str, Any] | None, multi_entries: list[str, Any] | None) -> dict[str, Any] | None:
+    """
+    Récupère le résultat ACM depuis test_result["acm"] (ancien cas) ou depuis multi_entries (mode auto).
+    En mode auto, l'ACM est dans l'entrée avec action_executed == "acm".
+    Priorité à multi_entries si disponibles (mode auto), puis test_result["acm"] (mode requête).
+    """
+    # Priorité : multi_entries (mode auto)
+    if multi_entries:
+        for entry in multi_entries:
+            if entry.get("action_executed") == "acm":
+                # L'ACM est le résultat de l'entrée (payload à plat)
+                # Priorité: entry["result"] direct, puis entry["analysis"]["inference"]["result"]
+                result = entry.get("result")
+                if result and result.get("status") == "ok":
+                    return result
+                # Fallback via analysis.inference.result
+                analysis = entry.get("analysis", {})
+                inference = analysis.get("inference", {})
+                inference_result = inference.get("result")
+                if inference_result and inference_result.get("status") == "ok":
+                    return inference_result
+    
+    # Fallback 1 : test_result["acm"] (ancien cas, mode requête avec clé nichée)
+    if test_result and test_result.get("acm"):
+        return test_result.get("acm")
+    
+    # Fallback 2 : test_result lui-même est un payload ACM (mode auto avec test_result direct)
+    if test_result and _is_acm_payload(test_result):
+        return test_result
+    
+    return None
+
+
+def _is_acm_payload(payload: dict[str, Any]) -> bool:
+    """Détecte si un payload est un résultat ACM par ses clés caractéristiques."""
+    return bool(
+        payload.get("status") == "ok"
+        and "n_variables" in payload
+        and "inertia_pct" in payload
+        and "modalities_coords" in payload
+    )
+
+
 def _html_acm_section(acm_result: dict[str, Any], table_counter: list[int], theme: str = "dark") -> str:
     """Génère la section ACM du rapport PDF."""
     if not acm_result or acm_result.get("status") != "ok":
@@ -3569,6 +3612,15 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
             theme=theme,
         )
 
+    # Récupérer le résultat ACM pour le PDF (mode auto ou requête)
+    acm_result_for_pdf = _get_acm_result(
+        None if is_multi and multi_entries else test_result,
+        multi_entries if is_multi and multi_entries else None
+    )
+    
+    # Générer le HTML ACM pour le template
+    acm_section_html = _html_acm_section(acm_result_for_pdf, table_counter, theme)
+
     # Interprétation (trois niveaux + résumé) — porte sur l'ensemble en mode auto.
     if interpretation.get("llm_available") is False:
         reason = interpretation.get("reason") or "Interprétation textuelle indisponible."
@@ -3670,6 +3722,8 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
         multi_entries if is_multi else [],
         bool(is_multi and multi_entries),
     )
+    
+    methodology_html = scientific_defense_html
 
     # Skeptic Engine : alerte visible uniquement si le flag est explicitement True.
     skeptic_alert_html = ""
@@ -3784,7 +3838,7 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
   </section>
 
   <!-- SECTION ACM -->
-  {_html_acm_section(test_result.get("acm") if test_result else None, table_counter, theme)}
+  {acm_section_html}
 
   <!-- SECTION ACP -->
   {_html_acp_section(test_result.get("acp") if test_result else None, table_counter, theme)}
@@ -3806,38 +3860,38 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
   <!-- SECTION 4 -->
   <section class="section">
     <h2>4. Limites et réserves</h2>
-    <h3>Points de vigilance du score de confiance</h3>
-    <ul class="plain">
-      {vigilance_html}
-    </ul>
-    <h3>Conditions d'application</h3>
-    <ul class="plain">
-      {conditions_html}
-    </ul>
-    <p class="footnote">
-      Les conditions listées ci-dessus reflètent les diagnostics automatiques
-      produits par le pipeline compute/sélecteur. Elles ne remplacent pas
-      un jugement statistique expert sur le plan d'analyse.
-    </p>
+    {conditions_html}
   </section>
 
-  {en_resume_html}
-
-  {scientific_defense_html}
-
-  <!-- ANNEXE -->
+  <!-- SECTION 5 -->
   <section class="section">
-    <h2>Annexe A — Scripts reproductibles</h2>
-    <h3>Code R</h3>
-    <pre class="code">{_esc(r_script)}</pre>
+    <h2>5. Méthodologie</h2>
+    {methodology_html}
+  </section>
+
+  <!-- SECTION 6 -->
+  <section class="section">
+    <h2>6. Code Stata</h2>
     {stata_block}
   </section>
 
-  {bibliography_html}
+  <!-- SECTION 7 -->
+  <section class="section">
+    <h2>7. Bibliographie</h2>
+    {bibliography_html}
+  </section>
 
-  {python_annex_html}
+  <!-- SECTION 8 -->
+  <section class="section">
+    <h2>8. Code Python (Colab)</h2>
+    {python_annex_html}
+  </section>
 
-  {audit_trail_html}
+  <!-- SECTION 9 -->
+  <section class="section">
+    <h2>9. Audit trail</h2>
+    {audit_trail_html}
+  </section>
 
 </body>
 </html>

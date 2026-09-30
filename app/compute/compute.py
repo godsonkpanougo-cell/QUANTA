@@ -1644,6 +1644,7 @@ def run_acm(df: pd.DataFrame,
     Uniquement sur les colonnes catégorielles.
     Minimum 3 variables catégorielles requises.
     """
+    import time
     try:
         import prince
         
@@ -1680,6 +1681,7 @@ def run_acm(df: pd.DataFrame,
         n_iter = min(10, n_rows - 1)
         
         # Lancer l'ACM
+        t_fit_start = time.time()
         acm = prince.MCA(
             n_components=n_comp,
             n_iter=n_iter,
@@ -1687,6 +1689,8 @@ def run_acm(df: pd.DataFrame,
             engine='sklearn'
         )
         acm = acm.fit(df_cat)
+        t_fit_end = time.time()
+        print(f"TIMING - ACM fit MCA: {t_fit_end - t_fit_start:.3f}s", flush=True)
         
         # Valeurs propres et inertie
         eigenvalues = acm.eigenvalues_.tolist()
@@ -1699,6 +1703,7 @@ def run_acm(df: pd.DataFrame,
             cumulative_inertia.append(round(cumul, 2))
         
         # Coordonnées des modalités
+        t_coords_start = time.time()
         coords = acm.column_coordinates(df_cat)
         modalities_coords = []
         for idx, row in coords.iterrows():
@@ -1708,6 +1713,8 @@ def run_acm(df: pd.DataFrame,
                 "dim2": round(float(row.iloc[1]), 4) 
                         if len(row) > 1 else 0.0
             })
+        t_coords_end = time.time()
+        print(f"TIMING - ACM column_coordinates: {t_coords_end - t_coords_start:.3f}s", flush=True)
         
         # Contributions des modalités à l'axe 1
         contributions = acm.column_contributions_
@@ -1722,6 +1729,7 @@ def run_acm(df: pd.DataFrame,
                 })
         
         # Générer le plan factoriel (graphique principal ACM)
+        t_plots_start = time.time()
         plan_factoriel = _generate_acm_plot(
             modalities_coords,
             inertia_pct,
@@ -1732,6 +1740,8 @@ def run_acm(df: pd.DataFrame,
         scree_plot = _generate_scree_plot(
             inertia_pct
         )
+        t_plots_end = time.time()
+        print(f"TIMING - ACM plots generation: {t_plots_end - t_plots_start:.3f}s", flush=True)
         
         result = {
             "status": "ok",
