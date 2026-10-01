@@ -116,6 +116,7 @@ def call_llm(
 
         for attempt in range(MAX_RETRIES_PER_PROVIDER):
             try:
+                t_req_start = time.monotonic()
                 response = requests.post(
                     f"{cfg['base_url']}/chat/completions",
                     headers={
@@ -133,6 +134,8 @@ def call_llm(
                     },
                     timeout=REQUEST_TIMEOUT_SECONDS,
                 )
+                t_req_end = time.monotonic()
+                print(f"TIMING - call_llm provider={provider_name} attempt={attempt+1} http={response.status_code} duration={t_req_end - t_req_start:.2f}s", flush=True)
 
                 if response.status_code == 200:
                     data = response.json()
@@ -148,10 +151,14 @@ def call_llm(
                 break
 
             except requests.exceptions.Timeout:
+                t_req_end = time.monotonic()
+                print(f"TIMING - call_llm provider={provider_name} attempt={attempt+1} exception=Timeout duration={t_req_end - t_req_start:.2f}s", flush=True)
                 logger.warning(f"LLM timeout from {provider_name} on attempt {attempt + 1}")
                 time.sleep(RETRY_BACKOFF_SECONDS)
                 continue
             except requests.exceptions.RequestException as e:
+                t_req_end = time.monotonic()
+                print(f"TIMING - call_llm provider={provider_name} attempt={attempt+1} exception=RequestException duration={t_req_end - t_req_start:.2f}s", flush=True)
                 logger.warning(f"LLM request exception from {provider_name} on attempt {attempt + 1}: {str(e)}")
                 time.sleep(RETRY_BACKOFF_SECONDS)
                 continue
@@ -593,9 +600,12 @@ def generate_interpretation(analysis_result: dict[str, Any]) -> dict[str, Any]:
     results_summary = _build_results_summary_for_prompt(analysis_result)
     user_prompt = f"Voici les résultats de l'analyse statistique à interpréter :\n\n{results_summary}"
 
+    t0 = time.monotonic()
     raw_response = call_llm(
         INTERPRETATION_SYSTEM_PROMPT, user_prompt, max_tokens=2500, temperature=0.2
     )
+    t1 = time.monotonic()
+    print(f"TIMING - generate_interpretation: {t1 - t0:.2f}s (resultat={'produite' if raw_response else 'None/degrade'})", flush=True)
 
     if raw_response is None:
         return {
