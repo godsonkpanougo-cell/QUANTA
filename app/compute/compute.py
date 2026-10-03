@@ -54,6 +54,17 @@ from app.compute.upload_validation import (
     load_and_diagnose,
 )
 
+# P1-bis (perf) : modules vectorisés exacts, validés A/B sur le dataset réel
+# L2_tobit.dta (scripts/ab_l2_tobit_real.py) : Delta r = Delta p = 0,
+# paires significatives et top-5 scatter identiques ; plots ACM 565
+# modalités 11,1 s -> 0,9 s en local (~55 s -> ~14 s attendus sur Render).
+from app.compute.correlation_fast import compute_correlation_pairs
+from app.compute.acm_plot_fast import (
+    DEFAULT_MAX_LABELED as _ACM_MAX_LABELED,
+    build_acm_plot as _build_acm_plot_fast,
+    contributions_rank_map as _contributions_rank_map,
+)
+
 warnings.filterwarnings("ignore")
 
 # ─── Palette QUANTA (harmonisée avec doc de specs Section 13) ────────────────
@@ -753,44 +764,27 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
     scatter_plots = {}
     t_scatter_start = time.time()
     n_scatter_generated = 0
-    
-    # Collecter d'abord toutes les paires significatives pour trier par |r|
-    significant_pairs = []
-    for i, c1 in enumerate(numeric_cols):
-        for j, c2 in enumerate(numeric_cols):
-            if i < j:
-                s1 = df[c1].dropna()
-                s2 = df[c2].dropna()
-                common = s1.index.intersection(s2.index)
-                if len(common) >= 3:
-                    if method == "pearson":
-                        r, p = pearsonr(s1[common], s2[common])
-                    else:
-                        r, p = spearmanr(s1[common], s2[common])
 
-                    p_matrix.loc[c1, c2] = p
-                    p_matrix.loc[c2, c1] = p
+    # P1-bis (perf) : calcul vectorisé exact des paires + p-values.
+    # compute_correlation_pairs garantit l'identité avec l'ancienne boucle
+    # (mêmes arrondis, mêmes champs ; repli boucle fidèle si NaN) et
+    # retourne p_matrix déjà peuplée (arrondie à 5 décimales ci-dessous).
+    t_pairs_start = time.time()
+    _corr = compute_correlation_pairs(df, numeric_cols, method)
+    if "error" in _corr:
+        return {"error": _corr["error"]}
+    pairs = _corr["pairs"]
+    significant_pairs = _corr["significant_pairs"]
+    p_matrix = _corr["p_matrix"].astype(float).round(5)
+    # Non-régression payload : la prod initialisait p_matrix a np.ones et ne
+    # touchait que les paires i<j -> diagonal a 1.0 (identique a l'ancien
+    # comportement, verifie par l'A/B sur donnees reelles).
+    np.fill_diagonal(p_matrix.values, 1.0)
+    logger.info(
+        f"TIMING - correlation pairs ({_corr['path']}): "
+        f"{time.time() - t_pairs_start:.3f}s pour {len(pairs)} paires"
+    )
 
-                    pair_key = f"{c1} x {c2}"
-                    pairs[pair_key] = {
-                        "r":        round(float(r), 4),
-                        "p_value":  round(float(p), 5),
-                        "n":        len(common),
-                        "decision": "Corrélation significative (p<0.05)" if p < 0.05
-                                    else "Pas de corrélation significative",
-                        "strength": (
-                            "Très forte" if abs(r) >= 0.8 else
-                            "Forte"      if abs(r) >= 0.6 else
-                            "Modérée"    if abs(r) >= 0.4 else
-                            "Faible"     if abs(r) >= 0.2 else "Négligeable"
-                        ),
-                        "direction": "Positive" if r > 0 else "Négative",
-                    }
-                    
-                    # Collecter les paires significatives pour génération limitée
-                    if p < 0.05:
-                        significant_pairs.append((pair_key, c1, c2, abs(r)))
-    
     # Trier par |r| décroissant et générer au maximum 5 scatter plots
     # Garde-fou pour éviter timeout sur datasets avec beaucoup de variables numériques
     MAX_SCATTER_PLOTS = 5
@@ -1729,11 +1723,18 @@ def run_acm(df: pd.DataFrame,
                 })
         
         # Générer le plan factoriel (graphique principal ACM)
+        # P1-bis (perf) : rendu via acm_plot_fast — sous 25 modalités le
+        # rendu est byte-à-byte identique à l'ancienne boucle ; au-delà,
+        # top 25 étiquetées par contribution (dim1+dim2) + nuage gris
+        # vectorisé. Payload JSON (modalities_coords) inchangé.
         t_plots_start = time.time()
-        plan_factoriel = _generate_acm_plot(
+        contribs_map = _contributions_rank_map(acm.column_contributions_)
+        plan_factoriel = _build_acm_plot_fast(
             modalities_coords,
             inertia_pct,
-            cat_cols
+            cat_cols,
+            contributions_map=contribs_map,
+            max_labeled=_ACM_MAX_LABELED,
         )
         
         # Générer le graphique des valeurs propres
@@ -1779,7 +1780,30 @@ def _generate_acm_plot(modalities_coords: list,
                         inertia_pct: list,
                         cat_cols: list,
                         theme: str = "dark") -> str | None:
-    """Plan factoriel ACM — graphique signature."""
+    """Plan factoriel ACM — graphique signature.
+
+    P1-bis (perf) : délègue le rendu à acm_plot_fast.build_acm_plot.
+      - <= 25 modalités : rendu byte-à-byte identique à l'ancienne
+        implémentation (verrouillé par tests/test_acm_plot_fast.py) ;
+      - > 25 modalités : top 25 étiquetées par contribution, le reste en
+        nuage gris vectorisé (L2_tobit réel : 565 modalités,
+        11,1 s -> 0,9 s local).
+    Signature inchangée : run_acm et report_generator ne changent pas.
+    """
+    try:
+        return _build_acm_plot_fast(
+            modalities_coords, inertia_pct, cat_cols, theme=theme
+        )
+    except Exception:
+        return None
+
+
+def _generate_acm_plot_legacy(modalities_coords: list,
+                              inertia_pct: list,
+                              cat_cols: list,
+                              theme: str = "dark") -> str | None:
+    """(P1-bis) Ancienne implémentation boucle/modalité, conservée pour
+    référence A/B (scripts/ab_l2_tobit_real.py). Ne plus appeler."""
     try:
         import matplotlib.pyplot as plt
         import matplotlib
