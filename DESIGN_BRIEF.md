@@ -91,33 +91,46 @@ ils se prennent l'un pour l'autre et s'annulent. Règle simple : or = statique
 
 ### 2. TYPOGRAPHIE
 
-**Duo retenu :**
-- **Space Grotesk** — affichage uniquement (H1, H2, titres de sections, score de confiance en grand).
-  Caractère : géométrique, aéré, une légère personnalité technique qui n'est pas Inter.
-  Usage : `font-weight: 300` à `500` exclusivement. Jamais Bold sur Space Grotesk — c'est contre son caractère.
-- **Geist** (via `next/font` — optimisé Next.js, zéro flash) — tout le reste.
-  Corps, labels, micro-UI, tableaux, erreurs, métadonnées. `font-weight: 400` standard.
+**Trio retenu :**
+- **Unbounded** (via `@fontsource/unbounded`) — marque et identité.
+  Logo "QUANTA", titre principal hero, titres de section majeurs.
+  Caractère : géométrique expansif, très aéré, signature visuelle.
+  Usage : `font-weight: 300` (font-extralight) exclusivement. Classe CSS : `font-brand`.
+- **Space Grotesk** (via `next/font/google`) — affichage secondaire.
+  Titres de cartes, sous-titres, score de confiance en grand, labels de section.
+  Caractère : géométrique, aéré, personnalité technique.
+  Usage : `font-weight: 300` à `500` exclusivement. Classe CSS : `font-display`.
+- **JetBrains Mono** (via `@fontsource/jetbrains-mono`) — données techniques.
+  Valeurs statistiques, codes, tailles de fichier, quotas, métadonnées numériques.
+  Caractère : monospace lisible, alignement précis.
+  Usage : `font-weight: 400` à `500`. Classe CSS : `font-mono`.
+
+**Police de corps par défaut :**
+- La police de corps (`font-sans`) utilise Space Grotesk via la variable `--font-display`.
+- Geist a été retirée du système (plus d'import `next/font/google`).
 
 **Échelle typographique :**
 ```
-/* ── Affichage ─────────────────────────────── */
-.display-xl:  Space Grotesk 300,  72px,  letter-spacing: -0.02em   /* Score de confiance en hero */
-.display-lg:  Space Grotesk 300,  48px,  letter-spacing: -0.01em   /* Titre principal landing */
-.display-md:  Space Grotesk 400,  36px,  letter-spacing: 0         /* Titres de sections */
+/* ── Marque (Unbounded) ───────────────────────── */
+.brand-hero:   Unbounded 300,  72px,  letter-spacing: 0.14em   /* Logo QUANTA hero */
+.brand-lg:     Unbounded 300,  48px,  letter-spacing: 0.22em   /* Logo header */
+.brand-md:     Unbounded 300,  36px,  letter-spacing: 0.14em   /* Titres section majeurs */
+.brand-sm:     Unbounded 300,  24px,  letter-spacing: 0.14em   /* Sous-titres insights */
 
-/* ── Interface ──────────────────────────────── */
-.heading-lg:  Geist 600,          24px,  letter-spacing: 0         /* Titres de cartes */
-.heading-md:  Geist 500,          18px,  letter-spacing: 0.01em    /* Sous-titres */
-.heading-sm:  Geist 500,          14px,  letter-spacing: 0.05em    /* Labels ALL CAPS */
+/* ── Affichage (Space Grotesk) ───────────────── */
+.display-xl:   Space Grotesk 300,  72px,  letter-spacing: -0.02em   /* Score de confiance hero */
+.display-lg:   Space Grotesk 300,  48px,  letter-spacing: -0.01em   /* Titres cards */
+.display-md:   Space Grotesk 400,  36px,  letter-spacing: 0         /* Titres sections */
+.display-sm:   Space Grotesk 300,  24px,  letter-spacing: 0         /* Labels upload */
 
-/* ── Corps ──────────────────────────────────── */
-.body-lg:     Geist 400,          16px,  line-height: 1.6          /* Corps principal */
-.body-md:     Geist 400,          14px,  line-height: 1.5          /* Corps secondaire */
-.body-sm:     Geist 400,          12px,  line-height: 1.4          /* Métadonnées */
+/* ── Corps (Space Grotesk) ───────────────────── */
+.body-lg:      Space Grotesk 400,  16px,  line-height: 1.6          /* Corps principal */
+.body-md:      Space Grotesk 400,  14px,  line-height: 1.5          /* Corps secondaire */
+.body-sm:      Space Grotesk 400,  12px,  line-height: 1.4          /* Métadonnées */
 
 /* ── HUD ────────────────────────────────────── */
-.micro:       Geist 400,          11px,  letter-spacing: 0.08em    /* Micro-UI HUD style */
-.mono:        JetBrains Mono 400, 13px,  letter-spacing: 0.02em    /* Valeurs statistiques, codes R */
+.micro:        Space Grotesk 400,  11px,  letter-spacing: 0.14em    /* Micro-UI HUD style */
+.mono:         JetBrains Mono 400, 13px,  letter-spacing: 0.02em    /* Valeurs statistiques */
 ```
 
 **Règle ALL CAPS :** Uniquement sur les éléments de navigation, badges,
@@ -127,7 +140,7 @@ Jamais sur plus de 4 mots consécutifs.
 **Règle monospace :** Toutes les valeurs statistiques (p-values, coefficients,
 statistiques de test) sont rendues en monospace `JetBrains Mono`. Cela renforce
 visuellement la rigueur académique et aide l'alignement des colonnes numériques.
-Ajouter via `next/font`.
+Ajouter via `@fontsource/jetbrains-mono`.
 
 ---
 
