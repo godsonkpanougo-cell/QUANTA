@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, FileText, Clock, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Download, FileText, Clock, CheckCircle, AlertCircle, Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/context/AuthContext";
 import { useAnalysisSteps } from "@/app/hooks/useAnalysisSteps";
 import { SiteHeader } from "@/app/components/SiteHeader";
 import { SiteFooter } from "@/app/components/SiteFooter";
+import { InsightsPanel } from "@/app/components/InsightsPanel";
 
 interface Analysis {
   analysis_id: string;
@@ -203,13 +204,25 @@ export default function HistoryPage() {
       <SiteHeader />
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 pb-20 pt-28 sm:px-6 lg:px-8">
         <div className="mb-10">
-          <p className="hud-label text-quanta-muted">Historique</p>
-          <h1 className="mt-2 font-display text-3xl font-light text-quanta-primary">
+          <Link
+            href="/"
+            className="inline-flex w-fit items-center gap-2 rounded-quanta border border-quanta-border-subtle px-3.5 py-2 font-sans text-sm text-quanta-secondary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
+          >
+            <ArrowLeft strokeWidth={1.5} className="size-4" aria-hidden />
+            Retour à QUANTA
+          </Link>
+          <p className="hud-label mt-8 text-quanta-muted">Historique</p>
+          <h1 className="mt-2 font-brand text-3xl font-extralight text-quanta-primary">
             Mes analyses
           </h1>
           <p className="mt-2 font-sans text-sm text-quanta-secondary">
             Toutes vos analyses statistiques, prêtes à être consultées ou
             téléchargées.
+          </p>
+          <p className="mt-3 flex items-center gap-2 font-sans text-xs text-quanta-muted">
+            <span className="hud-dot" aria-hidden />
+            Quitter cette page n&apos;interrompt pas une analyse en cours —
+            elle continue côté serveur.
           </p>
         </div>
 
@@ -225,7 +238,7 @@ export default function HistoryPage() {
             <p className="font-sans text-sm text-quanta-error">{error}</p>
           </div>
         ) : analyses.length === 0 ? (
-          <div className="rounded-card border border-quanta-border-subtle bg-quanta-surface px-6 py-14 text-center">
+          <div className="glass rounded-card px-6 py-14 text-center">
             <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-full border border-quanta-border-subtle bg-quanta-elevated">
               <Clock strokeWidth={1.5} className="size-6 text-quanta-muted" aria-hidden />
             </div>
@@ -249,7 +262,7 @@ export default function HistoryPage() {
               <div
                 key={analysis.analysis_id}
                 onClick={() => handleAnalysisClick(analysis.analysis_id, analysis.status)}
-                className={`rounded-card border border-quanta-border-subtle bg-quanta-surface px-6 py-5 transition-quanta hover:border-quanta-border-active ${
+                className={`glass rounded-card px-6 py-5 transition-quanta hover:border-quanta-border-active ${
                   (analysis.status === "running" || analysis.status === "pending")
                     ? "cursor-pointer hover:bg-quanta-elevated"
                     : ""
@@ -333,6 +346,11 @@ export default function HistoryPage() {
               </div>
             ))}
           </div>
+        )}
+
+        {/* Insight d'usage — agrégats dérivés de l'historique, jamais la mécanique interne */}
+        {!isLoadingAnalyses && !error && analyses.length > 0 && (
+          <InsightsPanel analyses={analyses} />
         )}
       </main>
       <SiteFooter />

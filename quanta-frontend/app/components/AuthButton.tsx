@@ -93,7 +93,7 @@ export function AuthButton({ compact = false }: { compact?: boolean }) {
       <button
         type="button"
         onClick={handleLogin}
-        className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-quanta bg-quanta-gold px-5 py-2 font-sans text-sm font-medium text-quanta-void transition-quanta hover:bg-quanta-gold-2"
+        className="btn-sheen inline-flex cursor-pointer items-center justify-center gap-2 rounded-quanta bg-quanta-gold px-5 py-2 font-sans text-sm font-medium text-quanta-void transition-all duration-300 hover:bg-quanta-gold-2 hover:shadow-[0_0_28px_rgba(201,168,76,0.2)]"
       >
         <svg
           className="size-4"
@@ -115,7 +115,7 @@ export function AuthButton({ compact = false }: { compact?: boolean }) {
     <div className="flex items-center gap-3">
       {/* Quota — or/warning/erreur = information de budget */}
       <div
-        className="flex items-center gap-2 rounded-quanta border border-quanta-border-subtle bg-quanta-surface px-3 py-1.5"
+        className="glass flex items-center gap-2 rounded-quanta px-3 py-1.5"
         title="Analyses restantes ce mois"
       >
         <span className="hud-label hidden text-quanta-muted sm:inline">

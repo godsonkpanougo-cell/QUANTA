@@ -1,23 +1,15 @@
 import type { Metadata } from "next";
-import { Geist, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/app/context/AuthContext";
-
-const geist = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist",
-});
+import "@fontsource/space-grotesk";
+import "@fontsource/jetbrains-mono";
+import "@fontsource/unbounded";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
   variable: "--font-display",
   weight: ["300", "400", "500"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-mono",
-  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
@@ -33,7 +25,7 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <body
-        className={`${geist.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} bg-quanta-void text-quanta-primary antialiased`}
+        className={`${spaceGrotesk.variable} font-sans bg-quanta-void text-quanta-primary antialiased`}
       >
         <AuthProvider>{children}</AuthProvider>
       </body>

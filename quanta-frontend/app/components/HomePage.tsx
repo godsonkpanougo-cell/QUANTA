@@ -9,6 +9,7 @@ import { AnalysisProgress } from "@/app/components/AnalysisProgress";
 import { AnalysisResults } from "@/app/components/AnalysisResults";
 import { UploadZone } from "@/app/components/UploadZone";
 import { AuthButton } from "@/app/components/AuthButton";
+import { LogoQ } from "@/app/components/LogoQ";
 import { SiteHeader } from "@/app/components/SiteHeader";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { useAuth } from "@/app/context/AuthContext";
@@ -214,11 +215,24 @@ function HomePageContent() {
             Moteur d&apos;analyse statistique
           </p>
 
+          <motion.div
+            initial={{ opacity: 0, scale: 0.82, rotate: -14 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            transition={{
+              duration: 0.9,
+              ease: [0.16, 1, 0.3, 1],
+              delay: 0.1,
+            }}
+            className="mt-8"
+          >
+            <LogoQ size={64} />
+          </motion.div>
+
           <motion.h1
             initial={{ opacity: 0, letterSpacing: "0.5em" }}
-            animate={{ opacity: 1, letterSpacing: "0.16em" }}
-            transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
-            className="mt-6 pl-[0.16em] font-display text-5xl font-light text-quanta-gold sm:text-6xl"
+            animate={{ opacity: 1, letterSpacing: "0.14em" }}
+            transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1], delay: 0.25 }}
+            className="mt-6 bg-gradient-to-b from-quanta-gold-2 via-quanta-gold to-quanta-gold bg-clip-text pl-[0.14em] font-brand text-6xl font-extralight text-transparent sm:text-7xl lg:text-8xl"
           >
             QUANTA
           </motion.h1>
@@ -263,7 +277,7 @@ function HomePageContent() {
             </div>
           ) : !isAuthenticated ? (
             /* Connexion requise */
-            <div className="flex flex-col items-center gap-6 rounded-hero border border-quanta-border-subtle bg-quanta-surface px-8 py-12 text-center">
+            <div className="glass flex flex-col items-center gap-6 rounded-hero px-8 py-12 text-center">
               <div className="flex size-12 items-center justify-center rounded-full border border-quanta-border-active">
                 <ShieldCheck
                   strokeWidth={1.5}
@@ -311,7 +325,7 @@ function HomePageContent() {
               ) : null}
 
               {phase === "error" ? (
-                <div className="flex flex-col items-center gap-5 rounded-hero border border-quanta-border-subtle bg-quanta-surface px-8 py-10 text-center">
+                <div className="glass flex flex-col items-center gap-5 rounded-hero px-8 py-10 text-center">
                   <FileWarning
                     strokeWidth={1.5}
                     className="size-8 text-quanta-warning"
@@ -401,7 +415,7 @@ function HomePageContent() {
                       aria-label={
                         isUploading ? "Envoi en cours" : "Analyser le fichier"
                       }
-                      className="group inline-flex cursor-pointer items-center justify-center gap-2.5 rounded-quanta bg-quanta-gold px-10 py-3.5 font-sans text-sm font-medium tracking-[0.04em] text-quanta-void transition-quanta hover:bg-quanta-gold-2 hover:shadow-[0_0_28px_rgba(201,168,76,0.18)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:shadow-none"
+                      className="group btn-sheen inline-flex cursor-pointer items-center justify-center gap-2.5 rounded-quanta bg-quanta-gold px-10 py-3.5 font-sans text-sm font-medium tracking-[0.04em] text-quanta-void shadow-[0_0_0_rgba(201,168,76,0)] transition-all duration-300 hover:bg-quanta-gold-2 hover:shadow-[0_0_36px_rgba(201,168,76,0.22)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:shadow-none"
                     >
                       {isUploading ? (
                         <>
