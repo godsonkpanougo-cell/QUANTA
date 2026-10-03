@@ -9,6 +9,7 @@
   --font-sans:    var(--font-geist);
   --font-display: var(--font-display);
   --font-mono:    var(--font-mono);
+  --font-brand:   var(--font-unbounded);
 
   /* ── Palette QUANTA ──────────────────────────────── */
   --color-quanta-void:      #0A0A0F;
@@ -18,6 +19,15 @@
   --color-quanta-gold-2:    #E8D5A3;
   --color-quanta-cyan:      #00D4FF;
   --color-quanta-cyan-2:    #00A8CC;
+
+  /* Accents complémentaires de l'or — harmonie split-complémentaire :
+     violet (pont froid), magenta (chaud-violet), champagne (teinte de l'or),
+     émeraude (lecture positive des métriques). */
+  --color-quanta-violet:    #8A63FF;
+  --color-quanta-violet-2:  #B9A3FF;
+  --color-quanta-magenta:   #E879F9;
+  --color-quanta-champagne: #F3E7C6;
+  --color-quanta-emerald:   #34D399;
   --color-quanta-primary:   #E8E8E8;
   --color-quanta-secondary: #9A9AA8;
   --color-quanta-muted:     #9A9AA8;
@@ -26,6 +36,7 @@
   --color-quanta-border-subtle: rgba(255,255,255,0.06);
   --color-quanta-border-active: rgba(201,168,76,0.3);
   --color-quanta-border-cyan:   rgba(0,212,255,0.2);
+  --color-quanta-border-violet: rgba(138,99,255,0.28);
 
   /* ── États ───────────────────────────────────────── */
   --color-quanta-success: #2ECC71;
@@ -97,5 +108,239 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Sélection or discrète */
+  ::selection {
+    background: rgba(201, 168, 76, 0.25);
+    color: #E8E8E8;
+  }
+
+  /* Scrollbar matière sombre */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Focus clavier visible, jamais souris */
+  :focus-visible {
+    outline: 1px solid rgba(201, 168, 76, 0.55);
+    outline-offset: 2px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   UTILITAIRES QUANTA — matière, HUD, révélation
+   ═══════════════════════════════════════════════════════════ */
+@layer utilities {
+  /* Micro-typographie HUD (labels périphériques 11px) */
+  .hud-label {
+    font-family: var(--font-geist), sans-serif;
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  /* Point de statut cyan pulsant (ambiance orbitale) */
+  .hud-dot {
+    position: relative;
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 9999px;
+    background: #00D4FF;
+  }
+  .hud-dot::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 9999px;
+    border: 1px solid rgba(0, 212, 255, 0.35);
+    animation: quanta-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  /* Motif de points — matière de fond (type DotPattern) */
+  .bg-dots {
+    background-image: radial-gradient(
+      rgba(255, 255, 255, 0.05) 1px,
+      transparent 1px
+    );
+    background-size: 26px 26px;
+  }
+
+  /* Halo or central, sanctuarisé — s'estompe vers les bords */
+  .bg-glow-gold {
+    background: radial-gradient(
+      ellipse 55% 42% at 50% 12%,
+      rgba(201, 168, 76, 0.09),
+      transparent 70%
+    );
+  }
+
+  /* Dégradé de masque pour faire disparaître les motifs aux bords */
+  .mask-fade-edges {
+    mask-image: radial-gradient(
+      ellipse 75% 65% at 50% 35%,
+      black 40%,
+      transparent 100%
+    );
+  }
+
+  /* Révélation d'entrée : translateY(8px) → 0 + fade */
+  .reveal {
+    animation: quanta-reveal 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .reveal-1 { animation-delay: 0.08s; }
+  .reveal-2 { animation-delay: 0.18s; }
+  .reveal-3 { animation-delay: 0.3s; }
+  .reveal-4 { animation-delay: 0.42s; }
+
+  /* Transition standard 200ms courbe QUANTA */
+  .transition-quanta {
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ── Verre liquide (matière des cartes) ─────────── */
+  .glass {
+    background:
+      linear-gradient(
+        160deg,
+        rgba(255, 255, 255, 0.05),
+        rgba(255, 255, 255, 0.012) 38%,
+        rgba(138, 99, 255, 0.035) 100%
+      ),
+      rgba(19, 19, 26, 0.66);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 18px 50px -24px rgba(0, 0, 0, 0.7);
+  }
+
+  /* Halo or au survol d'une carte */
+  .glow-card {
+    transition-property: border-color, box-shadow, transform;
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .glow-card:hover {
+    border-color: rgba(201, 168, 76, 0.35);
+    box-shadow:
+      0 0 0 1px rgba(201, 168, 76, 0.12),
+      0 20px 60px -30px rgba(201, 168, 76, 0.28);
+  }
+
+  /* Texte en dégradé or → champagne (wordmark, valeurs fortes) */
+  .text-gradient-gold {
+    background: linear-gradient(180deg, #F3E7C6 0%, #E8D5A3 45%, #C9A84C 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Balayage lumineux des boutons précieux */
+  .sheen {
+    position: relative;
+    overflow: hidden;
+  }
+  .sheen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      115deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.35) 50%,
+      transparent 70%
+    );
+    transform: translateX(-130%);
+    transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+  }
+  .sheen:hover::after {
+    transform: translateX(130%);
+  }
+
+  /* ── Aurores — nappes de couleur dérivantes ─────── */
+  .aurora-blob {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(90px);
+    will-change: transform;
+    animation: quanta-aurora 24s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes quanta-ping {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  70%,
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+@keyframes quanta-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes quanta-aurora {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(4%, -3%, 0) scale(1.12);
+  }
+  100% {
+    transform: translate3d(-3%, 3%, 0) scale(0.94);
+  }
+}
+
+/* Accessibilité : réduire le mouvement */
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal-1,
+  .reveal-2,
+  .reveal-3,
+  .reveal-4 {
+    animation-duration: 0.01s;
+    animation-delay: 0s;
+  }
+  .hud-dot::after {
+    animation: none;
+  }
+  .aurora-blob {
+    animation: none;
+  }
+  .sheen::after {
+    display: none;
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
+import { motion } from "framer-motion";
 import { Download, FileText } from "lucide-react";
 
 import {
@@ -75,6 +76,29 @@ const INTERPRETATION_LEVELS = [
     key: "niveau_decisionnel" as const,
   },
 ] as const;
+
+const REVEAL_TRANSITION = {
+  duration: 0.45,
+  ease: [0.16, 1, 0.3, 1] as const,
+};
+
+function RevealBlock({
+  index,
+  children,
+}: {
+  index: number;
+  children: ReactNode;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ ...REVEAL_TRANSITION, delay: 0.1 + index * 0.09 }}
+    >
+      {children}
+    </motion.div>
+  );
+}
 
 function isAnalysisResult(value: unknown): value is AnalysisResult {
   return typeof value === "object" && value !== null;
@@ -208,131 +232,156 @@ export function AnalysisResults({
 
   return (
     <div className="space-y-8 text-left">
-      <div className="text-center">
-        <span className="font-sans text-sm font-medium tracking-wide text-quanta-gold">
-          Analyse terminée
-        </span>
-      </div>
-
-      <div className="py-2">
-        {typeof scoreGlobal === "number" ? (
-          <ConfidenceScore
-            score={scoreGlobal}
-            niveau={niveau}
-            pointsDeVigilance={vigilancePoints}
-          />
-        ) : (
-          <p className="text-center font-display text-7xl font-light text-quanta-muted">
-            —
-          </p>
-        )}
-      </div>
-
-      <div className="rounded-card bg-quanta-surface p-4">
-        <h3 className="mb-4 font-sans text-sm font-medium tracking-wide text-quanta-primary">
-          Métadonnées de l'analyse
-        </h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {metadataItems.map(({ label, value }) => (
-            <div key={label} className="space-y-1.5">
-              <p className="font-mono text-xs uppercase tracking-widest text-quanta-muted">
-                {label}
-              </p>
-              <p className="font-sans text-sm text-quanta-primary">{value}</p>
-            </div>
-          ))}
+      <RevealBlock index={0}>
+        <div className="flex flex-col items-center gap-2 text-center">
+          <span className="hud-label text-quanta-muted">Analyse terminée</span>
+          <h2 className="font-display text-3xl font-light text-quanta-primary">
+            Vos résultats sont prêts
+          </h2>
+          <div aria-hidden className="h-px w-12 bg-quanta-gold/40" />
         </div>
-      </div>
+      </RevealBlock>
+
+      <RevealBlock index={1}>
+        <div className="py-2">
+          {typeof scoreGlobal === "number" ? (
+            <ConfidenceScore
+              score={scoreGlobal}
+              niveau={niveau}
+              pointsDeVigilance={vigilancePoints}
+            />
+          ) : (
+            <p className="text-center font-display text-7xl font-light text-quanta-muted">
+              —
+            </p>
+          )}
+        </div>
+      </RevealBlock>
+
+      <RevealBlock index={2}>
+        <div className="rounded-card border border-quanta-border-subtle bg-quanta-surface p-5">
+          <p className="hud-label mb-4 text-quanta-muted">Métadonnées de l&apos;analyse</p>
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+            {metadataItems.map(({ label, value }) => (
+              <div
+                key={label}
+                className="border-l border-quanta-border-subtle pl-3"
+              >
+                <p className="font-sans text-[10px] uppercase tracking-[0.14em] text-quanta-muted">
+                  {label}
+                </p>
+                <p
+                  className="mt-1 truncate font-mono text-sm text-quanta-primary"
+                  title={value}
+                >
+                  {value}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </RevealBlock>
 
       {!llmAvailable ? (
-        <p className="text-center font-sans text-sm text-quanta-muted">
-          Interprétation LLM indisponible — résultats statistiques bruts
-          disponibles
-        </p>
+        <RevealBlock index={3}>
+          <p className="rounded-card border border-quanta-border-subtle bg-quanta-elevated px-4 py-3 text-center font-sans text-sm text-quanta-secondary">
+            Interprétation LLM indisponible — résultats statistiques bruts
+            disponibles dans le rapport PDF.
+          </p>
+        </RevealBlock>
       ) : null}
 
       {llmAvailable && interpretation.resume_executif ? (
-        <div className="rounded-card bg-quanta-surface p-6">
-          <p className="font-sans text-sm leading-relaxed text-quanta-primary">
-            {interpretation.resume_executif}
-          </p>
-        </div>
+        <RevealBlock index={3}>
+          <div className="rounded-card border border-quanta-border-subtle bg-quanta-surface p-6">
+            <p className="hud-label mb-3 text-quanta-muted">Résumé exécutif</p>
+            <p className="border-l-2 border-quanta-gold/50 pl-4 font-sans text-sm leading-relaxed text-quanta-primary">
+              {interpretation.resume_executif}
+            </p>
+          </div>
+        </RevealBlock>
       ) : null}
 
       {llmAvailable && accordionLevels.length > 0 ? (
-        <Accordion
-          type="single"
-          collapsible
-          className="rounded-card border border-quanta-border-subtle bg-quanta-surface px-4"
-        >
-          {accordionLevels.map(({ id, label, key }) => (
-            <AccordionItem
-              key={id}
-              value={id}
-              className="border-quanta-border-subtle"
-            >
-              <AccordionTrigger className="font-sans text-sm text-quanta-primary hover:text-quanta-gold hover:no-underline">
-                {label}
-              </AccordionTrigger>
-              <AccordionContent className="pb-4">
-                <div className="rounded-card bg-quanta-elevated px-4 py-3 font-sans text-sm leading-relaxed text-quanta-secondary">
-                  {principale[key]}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
+        <RevealBlock index={4}>
+          <p className="hud-label mb-3 text-quanta-muted">Interprétation par niveau</p>
+          <Accordion
+            type="single"
+            collapsible
+            className="rounded-card border border-quanta-border-subtle bg-quanta-surface px-4"
+          >
+            {accordionLevels.map(({ id, label, key }) => (
+              <AccordionItem
+                key={id}
+                value={id}
+                className="border-quanta-border-subtle"
+              >
+                <AccordionTrigger className="font-sans text-sm text-quanta-primary transition-colors hover:text-quanta-gold-2 hover:no-underline">
+                  {label}
+                </AccordionTrigger>
+                <AccordionContent className="pb-4">
+                  <div className="rounded-quanta bg-quanta-elevated px-4 py-3 font-sans text-sm leading-relaxed text-quanta-secondary">
+                    {principale[key]}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+          </Accordion>
+        </RevealBlock>
       ) : null}
 
-      <div className="flex flex-col items-center gap-3">
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <button
-            type="button"
-            disabled={downloadingTheme !== null || !analysisId}
-            onClick={() => {
-              void handleDownloadPdf("dark");
-            }}
-            aria-label={downloadingTheme === "dark" ? "Génération du rapport en cours" : "Télécharger le rapport sombre"}
-            className="inline-flex items-center justify-center gap-2 rounded-quanta border border-quanta-border-active bg-quanta-surface px-8 py-3 font-sans text-sm font-medium text-quanta-gold transition-colors hover:bg-quanta-elevated disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Download
-              strokeWidth={1.5}
-              className="size-4 shrink-0"
-              aria-hidden
-            />
-            {downloadingTheme === "dark"
-              ? "Génération en cours..."
-              : "Rapport Dark"}
-          </button>
+      <RevealBlock index={5}>
+        <div className="flex flex-col items-center gap-4 border-t border-quanta-border-subtle pt-8">
+          <p className="hud-label text-quanta-muted">Rapport d&apos;analyse — PDF signable</p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              disabled={downloadingTheme !== null || !analysisId}
+              onClick={() => {
+                void handleDownloadPdf("light");
+              }}
+              aria-label={downloadingTheme === "light" ? "Génération du rapport en cours" : "Télécharger le rapport académique"}
+              className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-quanta bg-quanta-gold px-6 py-3 font-sans text-sm font-medium text-quanta-void transition-quanta hover:bg-quanta-gold-2 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <FileText
+                strokeWidth={1.5}
+                className="size-4 shrink-0"
+                aria-hidden
+              />
+              {downloadingTheme === "light"
+                ? "Génération en cours…"
+                : "Rapport académique"}
+            </button>
+
+            <button
+              type="button"
+              disabled={downloadingTheme !== null || !analysisId}
+              onClick={() => {
+                void handleDownloadPdf("dark");
+              }}
+              aria-label={downloadingTheme === "dark" ? "Génération du rapport en cours" : "Télécharger le rapport sombre"}
+              className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-quanta border border-quanta-border-subtle px-6 py-3 font-sans text-sm text-quanta-primary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Download
+                strokeWidth={1.5}
+                className="size-4 shrink-0"
+                aria-hidden
+              />
+              {downloadingTheme === "dark"
+                ? "Génération en cours…"
+                : "Rapport dark"}
+            </button>
+          </div>
 
           <button
             type="button"
-            disabled={downloadingTheme !== null || !analysisId}
-            onClick={() => {
-              void handleDownloadPdf("light");
-            }}
-            aria-label={downloadingTheme === "light" ? "Génération du rapport en cours" : "Télécharger le rapport académique"}
-            className="inline-flex items-center justify-center gap-2 rounded-quanta border border-quanta-border-active bg-quanta-surface px-8 py-3 font-sans text-sm font-medium text-quanta-gold transition-colors hover:bg-quanta-elevated disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={onNewAnalysis}
+            className="cursor-pointer font-sans text-sm text-quanta-secondary transition-quanta hover:text-quanta-cyan"
           >
-            <FileText
-              strokeWidth={1.5}
-              className="size-4 shrink-0"
-              aria-hidden
-            />
-            {downloadingTheme === "light"
-              ? "Génération en cours..."
-              : "Rapport Académique"}
+            ← Nouvelle analyse
           </button>
         </div>
-
-        <button
-          type="button"
-          onClick={onNewAnalysis}
-          className="rounded-quanta bg-quanta-gold px-8 py-3 font-sans text-sm font-medium text-quanta-void transition-opacity hover:opacity-90"
-        >
-          Nouvelle analyse
-        </button>
-      </div>
+      </RevealBlock>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { cn } from "@/lib/utils";
@@ -9,6 +10,20 @@ import { useAnalysisSteps, StepVisualState } from "@/app/hooks/useAnalysisSteps"
 const POLL_INTERVAL_MS = 2000;
 const COMPLETE_DELAY_MS = 500;
 const POLL_TIMEOUT_MS = 300000; // 5 minutes (300 secondes)
+
+/* Chargé en lazy : three.js n'arrive dans le bundle que quand une analyse démarre */
+const MorphBlob = dynamic(
+  () => import("@/app/components/MorphBlob").then((m) => m.MorphBlob),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        aria-hidden
+        className="size-full animate-pulse rounded-full bg-[radial-gradient(circle,rgba(0,212,255,0.10),transparent_65%)]"
+      />
+    ),
+  },
+);
 
 type AnalysisStatus = "pending" | "running" | "done" | "error" | "cancelled";
 
@@ -274,24 +289,65 @@ export function AnalysisProgress({
   };
 
   return (
-    <div className="rounded-card bg-quanta-surface p-8">
-      <div className="mb-8 flex items-center justify-between">
-        <h2 className="text-center font-display text-xl font-light text-quanta-primary">
-          Analyse en cours...
-        </h2>
+    <div className="glass rounded-hero p-8">
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          {status === "running" || status === "pending" ? (
+            <span className="hud-dot" aria-hidden />
+          ) : null}
+          <div>
+            <p className="hud-label text-quanta-muted">Pipeline d&apos;analyse</p>
+            <h2 className="mt-1 font-display text-xl font-light text-quanta-primary">
+              {status === "done"
+                ? "Analyse terminée"
+                : "Analyse en cours…"}
+            </h2>
+          </div>
+        </div>
         {(status === "running" || status === "pending") && !finishedRef.current && (
           <button
             type="button"
             onClick={handleCancel}
             disabled={isCancelling}
-            className="font-sans text-xs text-quanta-muted transition-colors hover:text-quanta-error disabled:opacity-50"
+            className="cursor-pointer rounded-quanta border border-quanta-border-subtle px-3.5 py-1.5 font-sans text-xs text-quanta-secondary transition-quanta hover:border-quanta-error/50 hover:text-quanta-error disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isCancelling ? "Annulation..." : "Annuler"}
+            {isCancelling ? "Annulation…" : "Annuler"}
           </button>
         )}
       </div>
 
-      <div className="flex flex-row items-start gap-2 overflow-x-auto">
+      {/* ── Sphère polymorphe : une morphologie par étape ── */}
+      <div className="flex flex-col items-center gap-2 py-4">
+        <div className="size-60 sm:size-72">
+          <MorphBlob
+            step={currentStep}
+            done={status === "done"}
+            error={status === "error"}
+          />
+        </div>
+        <AnimatePresence mode="wait">
+          <motion.p
+            key={`current-${currentStep}-${status}`}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={MOTION_TRANSITION}
+            className={cn(
+              "mt-2 font-display text-2xl font-light",
+              status === "error" ? "text-quanta-error" : "text-quanta-cyan",
+            )}
+          >
+            {status === "done"
+              ? "Rapport prêt"
+              : (steps[Math.min(currentStep, steps.length - 1)] ?? "")}
+          </motion.p>
+        </AnimatePresence>
+        <p className="hud-label text-quanta-muted">
+          Étape {Math.min(currentStep + 1, steps.length)} / {steps.length}
+        </p>
+      </div>
+
+      <div className="mt-6 flex flex-row items-start gap-2 overflow-x-auto border-t border-quanta-border-subtle pt-6">
         {steps.map((label, index) => {
           const stepState = getStepState(index, status);
           const connectorPast = index < currentStep || status === "done";
@@ -300,7 +356,7 @@ export function AnalysisProgress({
             <Fragment key={label}>
               <motion.div
                 layout
-                className="flex min-w-[88px] max-w-[120px] flex-col items-center gap-2"
+                className="flex min-w-[80px] max-w-[110px] flex-col items-center gap-3"
                 transition={MOTION_TRANSITION}
               >
                 <StepDot state={stepState} />
@@ -312,7 +368,7 @@ export function AnalysisProgress({
                     exit={{ opacity: 0.6, y: -4 }}
                     transition={MOTION_TRANSITION}
                     className={cn(
-                      "text-center font-sans text-sm leading-snug",
+                      "text-center font-sans text-xs leading-snug",
                       stepState === "past" && "text-quanta-secondary",
                       stepState === "active" &&
                         "font-medium text-quanta-cyan",

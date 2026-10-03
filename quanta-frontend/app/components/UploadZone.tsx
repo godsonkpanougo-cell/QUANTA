@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { UploadCloud } from "lucide-react";
+import { Check, FileSpreadsheet, UploadCloud } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -133,12 +133,13 @@ export function UploadZone({ onFileSelect, selectedFile = null }: UploadZoneProp
         role="button"
         tabIndex={0}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-hero bg-quanta-surface px-8 py-12",
+          "flex cursor-pointer flex-col items-center justify-center gap-4 rounded-hero bg-quanta-surface px-8 py-14",
           isActive ? "border border-solid" : "border border-dashed",
         )}
         animate={{
           borderColor: isActive ? BORDER_ACTIVE : BORDER_REST,
           boxShadow: isActive ? SHADOW_ACTIVE : SHADOW_REST,
+          backgroundColor: isActive ? "#16161F" : "#13131A",
         }}
         transition={MOTION_TRANSITION}
         onClick={openFilePicker}
@@ -167,35 +168,85 @@ export function UploadZone({ onFileSelect, selectedFile = null }: UploadZoneProp
           onChange={handleInputChange}
         />
 
-        <UploadCloud
-          className={cn(
-            "size-10 transition-colors duration-300",
-            isActive ? "text-quanta-gold" : "text-quanta-muted",
-          )}
-          strokeWidth={1.5}
-          aria-hidden
-        />
-
         {selectedFile ? (
-          <div className="flex flex-col items-center gap-1 text-center">
-            <p className="font-sans text-quanta-primary text-sm">
-              {selectedFile.name}
-            </p>
-            <p className="font-sans text-quanta-muted text-xs">
-              {formatFileSize(selectedFile.size)}
-            </p>
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div
+              className={cn(
+                "flex size-14 items-center justify-center rounded-full border transition-colors duration-300",
+                isActive
+                  ? "border-quanta-gold/40 bg-quanta-gold/10"
+                  : "border-quanta-border-subtle bg-quanta-elevated",
+              )}
+            >
+              {isActive ? (
+                <UploadCloud
+                  className="size-6 text-quanta-gold"
+                  strokeWidth={1.5}
+                  aria-hidden
+                />
+              ) : (
+                <Check
+                  className="size-6 text-quanta-gold"
+                  strokeWidth={1.5}
+                  aria-hidden
+                />
+              )}
+            </div>
+            <div className="flex flex-col items-center gap-1 text-center">
+              <p className="flex max-w-[280px] items-center gap-2 font-sans text-sm text-quanta-primary">
+                <FileSpreadsheet
+                  strokeWidth={1.5}
+                  className="size-4 shrink-0 text-quanta-gold"
+                  aria-hidden
+                />
+                <span className="truncate">{selectedFile.name}</span>
+              </p>
+              <p className="font-mono text-xs text-quanta-muted">
+                {formatFileSize(selectedFile.size)} · prêt pour l&apos;analyse
+              </p>
+            </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-1 text-center">
-            <p className="font-display text-lg font-light text-quanta-primary">
-              Déposez votre base de données
-            </p>
-            <p className="font-sans text-sm text-quanta-muted">
-              CSV, Excel, Stata, SPSS — jusqu&apos;à 10 Mo
-            </p>
-            <p className="font-sans text-xs text-quanta-muted">
-              ou cliquez pour parcourir
-            </p>
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div
+              className={cn(
+                "flex size-14 items-center justify-center rounded-full border transition-colors duration-300",
+                isActive
+                  ? "border-quanta-gold/40 bg-quanta-gold/10"
+                  : "border-quanta-border-subtle bg-quanta-elevated",
+              )}
+            >
+              <UploadCloud
+                className={cn(
+                  "size-6 transition-colors duration-300",
+                  isActive ? "text-quanta-gold" : "text-quanta-secondary",
+                )}
+                strokeWidth={1.5}
+                aria-hidden
+              />
+            </div>
+
+            <div className="flex flex-col items-center gap-1.5 text-center">
+              <p className="font-display text-lg font-light text-quanta-primary">
+                {isDragging
+                  ? "Relâchez pour déposer"
+                  : "Déposez votre base de données"}
+              </p>
+              <p className="font-sans text-sm text-quanta-muted">
+                ou cliquez pour parcourir vos fichiers
+              </p>
+            </div>
+
+            <div className="mt-2 flex items-center gap-1.5">
+              {ACCEPTED_EXTENSIONS.map((ext) => (
+                <span
+                  key={ext}
+                  className="rounded-quanta border border-quanta-border-subtle bg-quanta-elevated px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-quanta-muted"
+                >
+                  {ext.slice(1)}
+                </span>
+              ))}
+            </div>
           </div>
         )}
       </motion.div>

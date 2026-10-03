@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, FileText, Clock, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Download, FileText, Clock, CheckCircle, AlertCircle, Loader2, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/context/AuthContext";
 import { useAnalysisSteps } from "@/app/hooks/useAnalysisSteps";
+import { SiteHeader } from "@/app/components/SiteHeader";
+import { SiteFooter } from "@/app/components/SiteFooter";
+import { InsightsPanel } from "@/app/components/InsightsPanel";
 
 interface Analysis {
   analysis_id: string;
@@ -39,28 +43,28 @@ function getStatusBadge(status: Analysis["status"]) {
   switch (status) {
     case "done":
       return (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-quanta-gold/10 px-2.5 py-1 text-xs font-medium text-quanta-gold">
+        <span className="inline-flex items-center gap-1.5 rounded-quanta bg-quanta-gold/10 px-2.5 py-1 text-xs font-medium text-quanta-gold">
           <CheckCircle strokeWidth={1.5} className="size-3.5" aria-hidden />
           Terminé
         </span>
       );
     case "error":
       return (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-400">
+        <span className="inline-flex items-center gap-1.5 rounded-quanta bg-quanta-error/10 px-2.5 py-1 text-xs font-medium text-quanta-error">
           <AlertCircle strokeWidth={1.5} className="size-3.5" aria-hidden />
           Erreur
         </span>
       );
     case "running":
       return (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-quanta-cyan/10 px-2.5 py-1 text-xs font-medium text-quanta-cyan">
+        <span className="inline-flex items-center gap-1.5 rounded-quanta bg-quanta-cyan/10 px-2.5 py-1 text-xs font-medium text-quanta-cyan">
           <Loader2 strokeWidth={1.5} className="size-3.5 animate-spin" aria-hidden />
           En cours
         </span>
       );
     default:
       return (
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-quanta-muted/10 px-2.5 py-1 text-xs font-medium text-quanta-muted">
+        <span className="inline-flex items-center gap-1.5 rounded-quanta bg-quanta-muted/10 px-2.5 py-1 text-xs font-medium text-quanta-secondary">
           <Clock strokeWidth={1.5} className="size-3.5" aria-hidden />
           En attente
         </span>
@@ -178,21 +182,47 @@ export default function HistoryPage() {
 
   if (!isAuthenticated) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="font-sans text-sm text-quanta-muted">Vous devez être connecté pour accéder à cette page.</p>
+      <div className="flex min-h-screen flex-col bg-quanta-void">
+        <SiteHeader />
+        <main className="flex flex-1 items-center justify-center px-6">
+          <div className="rounded-card border border-quanta-border-subtle bg-quanta-surface px-8 py-10 text-center">
+            <p className="font-display text-lg font-light text-quanta-primary">
+              Session requise
+            </p>
+            <p className="mt-2 font-sans text-sm text-quanta-secondary">
+              Vous devez être connecté pour accéder à cette page.
+            </p>
+          </div>
+        </main>
+        <SiteFooter />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-quanta-void px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-8">
-          <h1 className="font-sans text-2xl font-semibold text-quanta-primary">
+    <div className="flex min-h-screen flex-col bg-quanta-void">
+      <SiteHeader />
+      <main className="mx-auto w-full max-w-4xl flex-1 px-4 pb-20 pt-28 sm:px-6 lg:px-8">
+        <div className="mb-10">
+          <Link
+            href="/"
+            className="inline-flex w-fit items-center gap-2 rounded-quanta border border-quanta-border-subtle px-3.5 py-2 font-sans text-sm text-quanta-secondary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
+          >
+            <ArrowLeft strokeWidth={1.5} className="size-4" aria-hidden />
+            Retour à QUANTA
+          </Link>
+          <p className="hud-label mt-8 text-quanta-muted">Historique</p>
+          <h1 className="mt-2 font-brand text-3xl font-extralight text-quanta-primary">
             Mes analyses
           </h1>
-          <p className="mt-2 font-sans text-sm text-quanta-muted">
-            Historique de vos analyses statistiques
+          <p className="mt-2 font-sans text-sm text-quanta-secondary">
+            Toutes vos analyses statistiques, prêtes à être consultées ou
+            téléchargées.
+          </p>
+          <p className="mt-3 flex items-center gap-2 font-sans text-xs text-quanta-muted">
+            <span className="hud-dot" aria-hidden />
+            Quitter cette page n&apos;interrompt pas une analyse en cours —
+            elle continue côté serveur.
           </p>
         </div>
 
@@ -200,22 +230,31 @@ export default function HistoryPage() {
           <div className="flex items-center justify-center py-12">
             <div className="flex items-center gap-2">
               <Loader2 strokeWidth={1.5} className="size-6 animate-spin text-quanta-gold" />
-              <span className="font-sans text-sm text-quanta-muted">Chargement de l'historique...</span>
+              <span className="font-sans text-sm text-quanta-muted">Chargement de l&apos;historique…</span>
             </div>
           </div>
         ) : error ? (
-          <div className="rounded-quanta border border-quanta-border-subtle bg-quanta-surface px-6 py-4">
-            <p className="font-sans text-sm text-red-400">{error}</p>
+          <div className="rounded-card border border-quanta-border-subtle bg-quanta-surface px-6 py-4">
+            <p className="font-sans text-sm text-quanta-error">{error}</p>
           </div>
         ) : analyses.length === 0 ? (
-          <div className="rounded-quanta border border-quanta-border-subtle bg-quanta-surface px-6 py-12 text-center">
-            <Clock strokeWidth={1.5} className="mx-auto mb-4 size-12 text-quanta-muted" aria-hidden />
-            <p className="font-sans text-base text-quanta-primary">
+          <div className="glass rounded-card px-6 py-14 text-center">
+            <div className="mx-auto mb-5 flex size-14 items-center justify-center rounded-full border border-quanta-border-subtle bg-quanta-elevated">
+              <Clock strokeWidth={1.5} className="size-6 text-quanta-muted" aria-hidden />
+            </div>
+            <p className="font-display text-lg font-light text-quanta-primary">
               Aucune analyse pour le moment
             </p>
-            <p className="mt-2 font-sans text-sm text-quanta-muted">
-              Uploadez un fichier et lancez votre première analyse pour voir l'historique ici.
+            <p className="mx-auto mt-2 max-w-sm font-sans text-sm leading-relaxed text-quanta-secondary">
+              Déposez un fichier sur la page d&apos;accueil et lancez votre
+              première analyse — elle apparaîtra ici.
             </p>
+            <Link
+              href="/"
+              className="mt-6 inline-flex items-center gap-2 rounded-quanta bg-quanta-gold px-6 py-2.5 font-sans text-sm font-medium text-quanta-void transition-quanta hover:bg-quanta-gold-2"
+            >
+              Lancer une analyse
+            </Link>
           </div>
         ) : (
           <div className="space-y-4">
@@ -223,7 +262,7 @@ export default function HistoryPage() {
               <div
                 key={analysis.analysis_id}
                 onClick={() => handleAnalysisClick(analysis.analysis_id, analysis.status)}
-                className={`rounded-quanta border border-quanta-border-subtle bg-quanta-surface px-6 py-4 transition-colors ${
+                className={`glass rounded-card px-6 py-5 transition-quanta hover:border-quanta-border-active ${
                   (analysis.status === "running" || analysis.status === "pending")
                     ? "cursor-pointer hover:bg-quanta-elevated"
                     : ""
@@ -308,7 +347,13 @@ export default function HistoryPage() {
             ))}
           </div>
         )}
-      </div>
+
+        {/* Insight d'usage — agrégats dérivés de l'historique, jamais la mécanique interne */}
+        {!isLoadingAnalyses && !error && analyses.length > 0 && (
+          <InsightsPanel analyses={analyses} />
+        )}
+      </main>
+      <SiteFooter />
     </div>
   );
 }
