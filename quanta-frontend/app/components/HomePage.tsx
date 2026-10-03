@@ -2,18 +2,27 @@
 
 import { useCallback, useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { motion } from "framer-motion";
+import { ArrowRight, FileWarning, Loader2, ShieldCheck } from "lucide-react";
 
 import { AnalysisProgress } from "@/app/components/AnalysisProgress";
 import { AnalysisResults } from "@/app/components/AnalysisResults";
 import { UploadZone } from "@/app/components/UploadZone";
 import { AuthButton } from "@/app/components/AuthButton";
+import { SiteHeader } from "@/app/components/SiteHeader";
+import { SiteFooter } from "@/app/components/SiteFooter";
 import { useAuth } from "@/app/context/AuthContext";
 
 const QUERY_EXAMPLES = [
   "Comparer le revenu entre régions",
   "Analyser l'association genre × diplôme",
   "Prédire le salaire par l'expérience",
+] as const;
+
+const TRUST_ITEMS = [
+  "37 méthodes statistiques",
+  "Score de confiance calibré",
+  "Rapport PDF signable",
 ] as const;
 
 type Phase = "idle" | "uploading" | "analyzing" | "done" | "error";
@@ -152,8 +161,8 @@ function HomePageContent() {
       setPhase("analyzing");
       
       // Rafraîchir le quota après analyse réussie (via window.refreshQuota exposé par AuthButton)
-      if (typeof window !== "undefined" && (window as any).refreshQuota) {
-        void (window as any).refreshQuota();
+      if (typeof window !== "undefined" && (window as { refreshQuota?: () => void }).refreshQuota) {
+        void (window as { refreshQuota?: () => void }).refreshQuota?.();
       }
     } catch (error) {
       const message =
@@ -189,28 +198,88 @@ function HomePageContent() {
   }, []);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-quanta-void">
-      <div className="w-full space-y-8 px-6 text-center">
-        <div className="flex justify-end">
-          <AuthButton />
-        </div>
-        <h1 className="font-display text-5xl font-light tracking-widest text-quanta-gold">
-          QUANTA
-        </h1>
-        <p className="mx-auto max-w-md font-sans text-sm text-quanta-secondary">
-          Tu déposes ta base. Tu reçois un rapport que tu peux signer.
-        </p>
-        <div className="mx-auto h-px w-16 bg-quanta-gold opacity-30" />
+    <div className="relative flex min-h-screen flex-col bg-quanta-void">
+      <SiteHeader />
 
-        <div className="mx-auto w-full max-w-xl space-y-4 text-left">
-          {!isAuthenticated && !isLoading ? (
-            <div className="flex min-h-[400px] flex-col items-center justify-center space-y-6 text-center">
-              <p className="font-sans text-base text-quanta-primary">
-                Connectez-vous pour analyser vos données
-              </p>
-              <p className="font-sans text-sm text-quanta-muted">
-                Une connexion Google est requise pour utiliser QUANTA
-              </p>
+      {/* Atmosphère : motif de points + halo or, hors flux */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="bg-dots mask-fade-edges absolute inset-0" />
+        <div className="bg-glow-gold absolute inset-0" />
+      </div>
+
+      <main className="relative z-10 flex flex-1 flex-col items-center px-6 pb-20 pt-36">
+        {/* ── Hero ─────────────────────────────────────────── */}
+        <section className="flex flex-col items-center text-center">
+          <p className="hud-label reveal text-quanta-muted">
+            Moteur d&apos;analyse statistique
+          </p>
+
+          <motion.h1
+            initial={{ opacity: 0, letterSpacing: "0.5em" }}
+            animate={{ opacity: 1, letterSpacing: "0.16em" }}
+            transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
+            className="mt-6 pl-[0.16em] font-display text-5xl font-light text-quanta-gold sm:text-6xl"
+          >
+            QUANTA
+          </motion.h1>
+
+          <motion.p
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1], delay: 0.7 }}
+            className="mt-6 max-w-md font-sans text-base leading-relaxed text-quanta-secondary"
+          >
+            Tu déposes ta base. Tu reçois un rapport que tu peux signer.
+          </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8, delay: 1.05 }}
+            className="mt-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2"
+          >
+            {TRUST_ITEMS.map((item, index) => (
+              <span key={item} className="flex items-center gap-5">
+                {index > 0 ? (
+                  <span aria-hidden className="h-3 w-px bg-quanta-border-subtle" />
+                ) : null}
+                <span className="font-sans text-[11px] uppercase tracking-[0.14em] text-quanta-muted">
+                  {item}
+                </span>
+              </span>
+            ))}
+          </motion.div>
+        </section>
+
+        {/* ── Panneau principal ───────────────────────────── */}
+        <section className="reveal reveal-2 mt-16 w-full max-w-xl space-y-6">
+          {isLoading ? (
+            <div className="flex min-h-[300px] items-center justify-center">
+              <Loader2
+                strokeWidth={1.5}
+                className="size-6 animate-spin text-quanta-gold"
+                aria-hidden
+              />
+            </div>
+          ) : !isAuthenticated ? (
+            /* Connexion requise */
+            <div className="flex flex-col items-center gap-6 rounded-hero border border-quanta-border-subtle bg-quanta-surface px-8 py-12 text-center">
+              <div className="flex size-12 items-center justify-center rounded-full border border-quanta-border-active">
+                <ShieldCheck
+                  strokeWidth={1.5}
+                  className="size-5 text-quanta-gold"
+                  aria-hidden
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="font-display text-xl font-light text-quanta-primary">
+                  Session requise
+                </p>
+                <p className="mx-auto max-w-xs font-sans text-sm leading-relaxed text-quanta-secondary">
+                  Une connexion Google est nécessaire pour déposer vos données
+                  et suivre vos analyses.
+                </p>
+              </div>
               <AuthButton />
             </div>
           ) : (
@@ -242,15 +311,20 @@ function HomePageContent() {
               ) : null}
 
               {phase === "error" ? (
-                <div className="space-y-4 text-center">
-                  <p className="font-sans text-sm text-quanta-error">
+                <div className="flex flex-col items-center gap-5 rounded-hero border border-quanta-border-subtle bg-quanta-surface px-8 py-10 text-center">
+                  <FileWarning
+                    strokeWidth={1.5}
+                    className="size-8 text-quanta-warning"
+                    aria-hidden
+                  />
+                  <p className="max-w-sm font-sans text-sm leading-relaxed text-quanta-primary">
                     {errorMessage ?? "Une erreur est survenue."}
                   </p>
                   <button
                     type="button"
                     onClick={retry}
                     aria-label="Réessayer l'analyse"
-                    className="rounded-quanta bg-quanta-gold px-8 py-3 font-sans text-sm font-medium text-quanta-void"
+                    className="cursor-pointer rounded-quanta border border-quanta-border-subtle px-6 py-2.5 font-sans text-sm text-quanta-primary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
                   >
                     Réessayer
                   </button>
@@ -259,86 +333,127 @@ function HomePageContent() {
 
               {phase === "idle" || phase === "uploading" ? (
                 <>
-                  <UploadZone
-                    selectedFile={selectedFile}
-                    onFileSelect={setSelectedFile}
-                  />
-
-                  <div className="text-center">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleLoadSample();
-                      }}
-                      aria-label="Charger un fichier d'exemple"
-                      className="font-sans text-xs text-quanta-muted transition-colors hover:text-quanta-cyan cursor-pointer"
-                    >
-                      Pas de fichier ? Tester avec un exemple →
-                    </button>
-                  </div>
-
-                  <label htmlFor="query-input" className="sr-only">
-                    Requête d'analyse (optionnel)
-                  </label>
-                  <textarea
-                    id="query-input"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    rows={3}
-                    placeholder={
-                      "Optionnel — Ex: comparer le revenu entre régions...\n" +
-                      "Si vide, QUANTA analyse automatiquement."
-                    }
-                    className="w-full resize-none rounded-quanta border border-quanta-border-subtle bg-quanta-elevated px-4 py-3 font-sans text-sm text-quanta-primary placeholder:text-quanta-muted focus:border-quanta-cyan focus:shadow-[0_0_0_3px_rgba(0,212,255,0.08)] focus:outline-none"
-                  />
-
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {QUERY_EXAMPLES.map((example) => (
+                  {/* 01 — Données */}
+                  <div className="space-y-3">
+                    <p className="hud-label pl-1 text-quanta-muted">
+                      01 · Votre base de données
+                    </p>
+                    <UploadZone
+                      selectedFile={selectedFile}
+                      onFileSelect={setSelectedFile}
+                    />
+                    <div className="text-right">
                       <button
-                        key={example}
                         type="button"
-                        onClick={() => setQuery(example)}
-                        aria-label={`Utiliser l'exemple: ${example}`}
-                        className="cursor-pointer rounded-full border border-quanta-border-subtle bg-quanta-surface px-3 py-1 font-sans text-xs text-quanta-muted"
+                        onClick={() => {
+                          void handleLoadSample();
+                        }}
+                        aria-label="Charger un fichier d'exemple"
+                        className="cursor-pointer font-sans text-xs text-quanta-muted transition-quanta hover:text-quanta-cyan"
                       >
-                        {example}
+                        Pas de fichier ? Tester avec un exemple →
                       </button>
-                    ))}
+                    </div>
                   </div>
 
-                  <div className="text-center">
+                  {/* 02 — Intention */}
+                  <div className="space-y-3">
+                    <label
+                      htmlFor="query-input"
+                      className="hud-label block pl-1 text-quanta-muted"
+                    >
+                      02 · Requête — optionnel
+                    </label>
+                    <textarea
+                      id="query-input"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      rows={3}
+                      placeholder={
+                        "Ex : comparer le revenu entre régions…\n" +
+                        "Si vide, QUANTA choisit l'analyse automatiquement."
+                      }
+                      className="w-full resize-none rounded-quanta border border-quanta-border-subtle bg-quanta-elevated px-4 py-3 font-sans text-sm leading-relaxed text-quanta-primary transition-quanta placeholder:text-quanta-muted focus:border-quanta-cyan focus:shadow-[0_0_0_3px_rgba(0,212,255,0.08)] focus:outline-none"
+                    />
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {QUERY_EXAMPLES.map((example) => (
+                        <button
+                          key={example}
+                          type="button"
+                          onClick={() => setQuery(example)}
+                          aria-label={`Utiliser l'exemple : ${example}`}
+                          className="cursor-pointer rounded-quanta border border-quanta-border-subtle px-3 py-1.5 font-sans text-xs text-quanta-secondary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
+                        >
+                          {example}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 03 — Exécution */}
+                  <div className="flex justify-center pt-2">
                     <button
                       type="button"
                       disabled={!canAnalyze || isUploading}
                       onClick={() => {
                         void handleAnalyze();
                       }}
-                      aria-label={isUploading ? "Envoi en cours" : "Analyser le fichier"}
-                      className="rounded-quanta bg-quanta-gold px-8 py-3 font-sans text-sm font-medium text-quanta-void transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={
+                        isUploading ? "Envoi en cours" : "Analyser le fichier"
+                      }
+                      className="group inline-flex cursor-pointer items-center justify-center gap-2.5 rounded-quanta bg-quanta-gold px-10 py-3.5 font-sans text-sm font-medium tracking-[0.04em] text-quanta-void transition-quanta hover:bg-quanta-gold-2 hover:shadow-[0_0_28px_rgba(201,168,76,0.18)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:shadow-none"
                     >
-                      {isUploading ? "Envoi..." : "Analyser"}
+                      {isUploading ? (
+                        <>
+                          <Loader2
+                            strokeWidth={1.5}
+                            className="size-4 animate-spin"
+                            aria-hidden
+                          />
+                          Envoi en cours…
+                        </>
+                      ) : (
+                        <>
+                          Lancer l&apos;analyse
+                          <ArrowRight
+                            strokeWidth={1.5}
+                            className="size-4 transition-transform duration-200 group-hover:translate-x-0.5"
+                            aria-hidden
+                          />
+                        </>
+                      )}
                     </button>
                   </div>
                 </>
               ) : null}
             </>
           )}
-        </div>
-      </div>
-    </main>
+        </section>
+      </main>
+
+      <SiteFooter />
+    </div>
   );
 }
 
 export function HomePage() {
   return (
-    <Suspense fallback={
-      <main className="flex min-h-screen items-center justify-center bg-quanta-void">
-        <div className="flex items-center gap-2">
-          <Loader2 strokeWidth={1.5} className="size-6 animate-spin text-quanta-gold" />
-          <span className="font-sans text-sm text-quanta-muted">Chargement...</span>
-        </div>
-      </main>
-    }>
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-quanta-void">
+          <div className="flex items-center gap-2">
+            <Loader2
+              strokeWidth={1.5}
+              className="size-6 animate-spin text-quanta-gold"
+              aria-hidden
+            />
+            <span className="font-sans text-sm text-quanta-muted">
+              Chargement...
+            </span>
+          </div>
+        </main>
+      }
+    >
       <HomePageContent />
     </Suspense>
   );

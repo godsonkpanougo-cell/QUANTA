@@ -98,4 +98,149 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Sélection or discrète */
+  ::selection {
+    background: rgba(201, 168, 76, 0.25);
+    color: #E8E8E8;
+  }
+
+  /* Scrollbar matière sombre */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Focus clavier visible, jamais souris */
+  :focus-visible {
+    outline: 1px solid rgba(201, 168, 76, 0.55);
+    outline-offset: 2px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   UTILITAIRES QUANTA — matière, HUD, révélation
+   ═══════════════════════════════════════════════════════════ */
+@layer utilities {
+  /* Micro-typographie HUD (labels périphériques 11px) */
+  .hud-label {
+    font-family: var(--font-geist), sans-serif;
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  /* Point de statut cyan pulsant (ambiance orbitale) */
+  .hud-dot {
+    position: relative;
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 9999px;
+    background: #00D4FF;
+  }
+  .hud-dot::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 9999px;
+    border: 1px solid rgba(0, 212, 255, 0.35);
+    animation: quanta-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  /* Motif de points — matière de fond (type DotPattern) */
+  .bg-dots {
+    background-image: radial-gradient(
+      rgba(255, 255, 255, 0.05) 1px,
+      transparent 1px
+    );
+    background-size: 26px 26px;
+  }
+
+  /* Halo or central, sanctuarisé — s'estompe vers les bords */
+  .bg-glow-gold {
+    background: radial-gradient(
+      ellipse 55% 42% at 50% 12%,
+      rgba(201, 168, 76, 0.09),
+      transparent 70%
+    );
+  }
+
+  /* Dégradé de masque pour faire disparaître les motifs aux bords */
+  .mask-fade-edges {
+    mask-image: radial-gradient(
+      ellipse 75% 65% at 50% 35%,
+      black 40%,
+      transparent 100%
+    );
+  }
+
+  /* Révélation d'entrée : translateY(8px) → 0 + fade */
+  .reveal {
+    animation: quanta-reveal 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .reveal-1 { animation-delay: 0.08s; }
+  .reveal-2 { animation-delay: 0.18s; }
+  .reveal-3 { animation-delay: 0.3s; }
+  .reveal-4 { animation-delay: 0.42s; }
+
+  /* Transition standard 200ms courbe QUANTA */
+  .transition-quanta {
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@keyframes quanta-ping {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  70%,
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+@keyframes quanta-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Accessibilité : réduire le mouvement */
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal-1,
+  .reveal-2,
+  .reveal-3,
+  .reveal-4 {
+    animation-duration: 0.01s;
+    animation-delay: 0s;
+  }
+  .hud-dot::after {
+    animation: none;
+  }
 }

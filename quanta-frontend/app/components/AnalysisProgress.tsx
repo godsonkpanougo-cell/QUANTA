@@ -274,19 +274,29 @@ export function AnalysisProgress({
   };
 
   return (
-    <div className="rounded-card bg-quanta-surface p-8">
-      <div className="mb-8 flex items-center justify-between">
-        <h2 className="text-center font-display text-xl font-light text-quanta-primary">
-          Analyse en cours...
-        </h2>
+    <div className="rounded-card border border-quanta-border-subtle bg-quanta-surface p-8">
+      <div className="mb-10 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          {status === "running" || status === "pending" ? (
+            <span className="hud-dot" aria-hidden />
+          ) : null}
+          <div>
+            <p className="hud-label text-quanta-muted">Pipeline d&apos;analyse</p>
+            <h2 className="mt-1 font-display text-xl font-light text-quanta-primary">
+              {status === "done"
+                ? "Analyse terminée"
+                : "Analyse en cours…"}
+            </h2>
+          </div>
+        </div>
         {(status === "running" || status === "pending") && !finishedRef.current && (
           <button
             type="button"
             onClick={handleCancel}
             disabled={isCancelling}
-            className="font-sans text-xs text-quanta-muted transition-colors hover:text-quanta-error disabled:opacity-50"
+            className="cursor-pointer rounded-quanta border border-quanta-border-subtle px-3.5 py-1.5 font-sans text-xs text-quanta-secondary transition-quanta hover:border-quanta-error/50 hover:text-quanta-error disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isCancelling ? "Annulation..." : "Annuler"}
+            {isCancelling ? "Annulation…" : "Annuler"}
           </button>
         )}
       </div>
@@ -300,7 +310,7 @@ export function AnalysisProgress({
             <Fragment key={label}>
               <motion.div
                 layout
-                className="flex min-w-[88px] max-w-[120px] flex-col items-center gap-2"
+                className="flex min-w-[80px] max-w-[110px] flex-col items-center gap-3"
                 transition={MOTION_TRANSITION}
               >
                 <StepDot state={stepState} />
@@ -312,7 +322,7 @@ export function AnalysisProgress({
                     exit={{ opacity: 0.6, y: -4 }}
                     transition={MOTION_TRANSITION}
                     className={cn(
-                      "text-center font-sans text-sm leading-snug",
+                      "text-center font-sans text-xs leading-snug",
                       stepState === "past" && "text-quanta-secondary",
                       stepState === "active" &&
                         "font-medium text-quanta-cyan",

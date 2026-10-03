@@ -19,35 +19,29 @@ interface QuotaInfo {
   renewal_at: string;
 }
 
-export function AuthButton() {
+export function AuthButton({ compact = false }: { compact?: boolean }) {
   const { user, isLoading, isAuthenticated, logout } = useAuth();
   const [quota, setQuota] = useState<QuotaInfo | null>(null);
   const [isLoadingQuota, setIsLoadingQuota] = useState(false);
 
   const fetchQuota = async () => {
     if (!isAuthenticated) {
-      console.log("fetchQuota: non authentifié, skip");
       return;
     }
-    
+
     try {
       setIsLoadingQuota(true);
       const baseUrl = getApiBaseUrl();
-      console.log("fetchQuota: appel à", `${baseUrl}/quota`);
       const response = await fetch(`${baseUrl}/quota`, {
         credentials: "include",
       });
-      
-      console.log("fetchQuota: response status", response.status);
+
       if (response.ok) {
         const data = (await response.json()) as QuotaInfo;
         setQuota(data);
-        console.log("Quota chargé dans AuthButton:", data);
-      } else {
-        console.error("fetchQuota: response non OK", response.status, response.statusText);
       }
-    } catch (error) {
-      console.error("Erreur chargement quota:", error);
+    } catch {
+      // Le quota reste indisponible silencieusement — non bloquant.
     } finally {
       setIsLoadingQuota(false);
     }
@@ -55,12 +49,14 @@ export function AuthButton() {
 
   useEffect(() => {
     fetchQuota();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   // Exposer fetchQuota globalement pour rafraîchissement après analyse
   useEffect(() => {
     if (typeof window !== "undefined") {
-      (window as any).refreshQuota = fetchQuota;
+      (window as unknown as { refreshQuota?: () => void }).refreshQuota =
+        fetchQuota;
     }
   }, [fetchQuota]);
 
@@ -81,9 +77,13 @@ export function AuthButton() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" aria-busy>
         <div className="size-4 animate-spin rounded-full border-2 border-quanta-gold border-t-transparent" />
-        <span className="font-sans text-sm text-quanta-muted">Chargement...</span>
+        {!compact && (
+          <span className="font-sans text-sm text-quanta-muted">
+            Chargement...
+          </span>
+        )}
       </div>
     );
   }
@@ -93,7 +93,7 @@ export function AuthButton() {
       <button
         type="button"
         onClick={handleLogin}
-        className="inline-flex items-center justify-center gap-2 rounded-quanta border border-quanta-border-active bg-quanta-surface px-6 py-2.5 font-sans text-sm font-medium text-quanta-gold transition-colors hover:bg-quanta-elevated"
+        className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-quanta bg-quanta-gold px-5 py-2 font-sans text-sm font-medium text-quanta-void transition-quanta hover:bg-quanta-gold-2"
       >
         <svg
           className="size-4"
@@ -106,57 +106,81 @@ export function AuthButton() {
           <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
           <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
         </svg>
-        Se connecter avec Google
+        {compact ? "Connexion" : "Se connecter avec Google"}
       </button>
     );
   }
 
   return (
-    <div className="flex items-center gap-4">
-      <div className="flex items-center gap-3">
-        {user?.picture_url && (
-          <img
-            src={user.picture_url}
-            alt={user.name}
-            className="size-8 rounded-full border border-quanta-border-subtle"
-          />
-        )}
-        <div className="text-left">
-          <p className="font-sans text-sm font-medium text-quanta-primary">
-            {user?.name}
-          </p>
-          <p className="font-sans text-xs text-quanta-muted">{user?.email}</p>
-        </div>
-      </div>
-      
-      {/* Affichage du quota - séparé des boutons d'action */}
-      <div className="flex items-center gap-2 px-3 py-2 rounded-quanta border border-quanta-border-subtle bg-quanta-surface">
+    <div className="flex items-center gap-3">
+      {/* Quota — or/warning/erreur = information de budget */}
+      <div
+        className="flex items-center gap-2 rounded-quanta border border-quanta-border-subtle bg-quanta-surface px-3 py-1.5"
+        title="Analyses restantes ce mois"
+      >
+        <span className="hud-label hidden text-quanta-muted sm:inline">
+          Analyses
+        </span>
         {isLoadingQuota ? (
-          <Loader2 strokeWidth={1.5} className="size-4 animate-spin text-quanta-muted" />
+          <Loader2
+            strokeWidth={1.5}
+            className="size-3.5 animate-spin text-quanta-muted"
+          />
         ) : quota !== null ? (
-          <span className={`font-sans text-sm font-medium ${getQuotaColor(quota.remaining)}`}>
-            {quota.remaining}/15
+          <span
+            className={`font-mono text-xs font-medium ${getQuotaColor(quota.remaining)}`}
+          >
+            {quota.remaining}/{quota.limit}
           </span>
         ) : (
-          <span className="font-sans text-sm text-quanta-muted">--/15</span>
+          <span className="font-mono text-xs text-quanta-muted">—</span>
         )}
       </div>
-      
+
+      {!compact && (
+        <div className="flex items-center gap-3">
+          {user?.picture_url && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={user.picture_url}
+              alt={user.name}
+              className="size-8 rounded-full border border-quanta-border-subtle"
+            />
+          )}
+          <div className="hidden text-left md:block">
+            <p className="font-sans text-sm font-medium text-quanta-primary">
+              {user?.name}
+            </p>
+            <p className="font-sans text-xs text-quanta-muted">{user?.email}</p>
+          </div>
+        </div>
+      )}
+
+      {compact && user?.picture_url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={user.picture_url}
+          alt={user.name}
+          className="size-8 rounded-full border border-quanta-border-subtle"
+        />
+      )}
+
       <div className="flex items-center gap-2">
         <a
           href="/history"
-          className="inline-flex items-center justify-center gap-2 rounded-quanta border border-quanta-border-subtle bg-quanta-surface px-4 py-2 font-sans text-sm text-quanta-muted transition-colors hover:bg-quanta-elevated hover:text-quanta-primary"
+          className="inline-flex items-center justify-center gap-2 rounded-quanta border border-quanta-border-subtle bg-transparent px-3 py-2 font-sans text-sm text-quanta-secondary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
         >
           <History strokeWidth={1.5} className="size-4" aria-hidden />
-          <span className="hidden sm:inline">Mes analyses</span>
+          <span className="hidden lg:inline">Mes analyses</span>
         </a>
         <button
           type="button"
           onClick={handleLogout}
-          className="inline-flex items-center justify-center gap-2 rounded-quanta border border-quanta-border-subtle bg-quanta-surface px-4 py-2 font-sans text-sm text-quanta-muted transition-colors hover:bg-quanta-elevated hover:text-quanta-primary"
+          aria-label="Se déconnecter"
+          className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-quanta border border-quanta-border-subtle bg-transparent px-3 py-2 font-sans text-sm text-quanta-secondary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
         >
           <LogOut strokeWidth={1.5} className="size-4" aria-hidden />
-          <span className="hidden sm:inline">Déconnexion</span>
+          <span className="hidden lg:inline">Quitter</span>
         </button>
       </div>
     </div>

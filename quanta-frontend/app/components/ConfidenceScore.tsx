@@ -87,8 +87,6 @@ export function ConfidenceScore({
 
   useEffect(() => {
     motionScore.set(0);
-    setDisplayScore(0);
-    setStrokeDashoffset(CIRCLE_CIRCUMFERENCE);
 
     const controls = animate(motionScore, clampedScore, {
       duration: ANIMATION_DURATION_S,
