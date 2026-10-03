@@ -14,9 +14,10 @@ export interface MorphBlobProps {
 
 /**
  * Paramètres de déformation par étape du pipeline :
- * chaque étape donne au maillage une personnalité distincte
- * (respiration lente, vagues de nettoyage, agitation des calculs,
- * cristallisation finale dorée).
+ * chaque étape donne au maillage une personnalité distincte.
+ * Registre « goutte liquide » : basses fréquences (grosses houles lentes),
+ * amplitudes contenues — la silhouette reste un cercle presque parfait
+ * qui ondule, jamais un tissu froissé.
  */
 const STEP_PARAMS: Array<{
   amp: number;
@@ -24,18 +25,18 @@ const STEP_PARAMS: Array<{
   speed: number;
   mix: number;
 }> = [
-  { amp: 0.22, freq: 1.6, speed: 0.35, mix: 0.7 }, // Réception
-  { amp: 0.34, freq: 2.2, speed: 0.55, mix: 0.7 }, // Diagnostic
-  { amp: 0.28, freq: 3.4, speed: 0.85, mix: 0.75 }, // Nettoyage
-  { amp: 0.45, freq: 1.3, speed: 0.5, mix: 0.6 }, // Sélection des tests
-  { amp: 0.55, freq: 2.7, speed: 1.15, mix: 0.85 }, // Calculs
-  { amp: 0.26, freq: 4.2, speed: 1.0, mix: 0.8 }, // Vérification
-  { amp: 0.5, freq: 1.9, speed: 0.7, mix: 0.55 }, // Interprétation
-  { amp: 0.1, freq: 1.2, speed: 0.22, mix: 0.15 }, // Finalisation
+  { amp: 0.07, freq: 1.2, speed: 0.25, mix: 0.7 }, // Réception
+  { amp: 0.1, freq: 1.4, speed: 0.35, mix: 0.7 }, // Diagnostic
+  { amp: 0.09, freq: 1.8, speed: 0.45, mix: 0.75 }, // Nettoyage
+  { amp: 0.12, freq: 1.1, speed: 0.3, mix: 0.6 }, // Sélection des tests
+  { amp: 0.16, freq: 1.6, speed: 0.55, mix: 0.85 }, // Calculs
+  { amp: 0.09, freq: 2.0, speed: 0.45, mix: 0.8 }, // Vérification
+  { amp: 0.13, freq: 1.3, speed: 0.4, mix: 0.55 }, // Interprétation
+  { amp: 0.04, freq: 1.0, speed: 0.15, mix: 0.15 }, // Finalisation
 ];
 
-const DONE_PARAMS = { amp: 0.05, freq: 1.0, speed: 0.12, mix: 0.12 };
-const ERROR_PARAMS = { amp: 0.4, freq: 3.0, speed: 1.6, mix: 0.0 };
+const DONE_PARAMS = { amp: 0.02, freq: 1.0, speed: 0.1, mix: 0.12 };
+const ERROR_PARAMS = { amp: 0.18, freq: 2.4, speed: 0.9, mix: 0.0 };
 
 /* Bruit simplex 3D (Ashima Arts / Stefan Gustavson — MIT) */
 const NOISE_GLSL = `
@@ -100,11 +101,15 @@ ${NOISE_GLSL}
 void main() {
   vec3 dir = normalize(position);
   float t = uTime * uSpeed;
+  /* Deux octaves : grosses houles liquides + shimmer discret.
+     Somme normalisée par son amplitude max (1 + 0.15) → n ∈ [-1, 1] garanti,
+     donc le rayon reste borné et la caméra peut cadrer sans jamais rogner. */
   float n = snoise(dir * uFreq + t * 0.7);
-  n += 0.35 * snoise(dir * uFreq * 2.3 - t);
+  n += 0.15 * snoise(dir * uFreq * 2.2 - t * 1.3);
+  n /= 1.15;
   vNoise = n;
   vec3 pos = position;
-  float angle = position.y * uTwist + t * 0.4;
+  float angle = position.y * uTwist + t * 0.15;
   float c = cos(angle);
   float s = sin(angle);
   pos.xz = mat2(c, -s, s, c) * pos.xz;
@@ -129,12 +134,14 @@ void main() {
   float k = clamp(uMix * (vNoise * 0.5 + 0.5), 0.0, 1.0);
   vec3 base = mix(uColorA, uColorB, k);
   vec3 col = base * (0.20 + 0.9 * fres) + vec3(1.0, 0.95, 0.82) * fres * 0.30;
-  float alpha = 0.14 + 0.72 * fres;
+  /* Corps un peu plus plein : goutte liquide plutôt que voile */
+  float alpha = 0.18 + 0.74 * fres;
   gl_FragColor = vec4(col, alpha);
 }
 `;
 
-/* Maillage polygonal discret par-dessus la surface */
+/* Maillage polygonal discret par-dessus la surface — très discret :
+   il structure la matière sans jamais évoquer un tissu. */
 const FRAG_WIRE = `
 uniform vec3 uColorA;
 uniform vec3 uColorB;
@@ -144,7 +151,7 @@ varying vec3 vNormalV;
 varying vec3 vViewDir;
 void main() {
   vec3 col = mix(uColorA, uColorB, clamp(uMix * (vNoise * 0.5 + 0.5), 0.0, 1.0));
-  float alpha = 0.05 + 0.13 * max(vNoise, 0.0);
+  float alpha = 0.02 + 0.06 * max(vNoise, 0.0);
   gl_FragColor = vec4(col, alpha);
 }
 `;
@@ -207,17 +214,18 @@ export function MorphBlob({ step, done = false, error = false }: MorphBlobProps)
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 10);
-    camera.position.z = 3.1;
+    // FOV serré (38°) : perspective douce, la sphère lit « ronde » sans distorsion
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 10);
+    camera.position.z = 4.1;
 
-    // Géométrie partagée entre la surface et le maillage (un seul buffer GPU)
-    const geometry = new THREE.IcosahedronGeometry(1.05, 32);
+    // Détail 24 : lignes du maillage plus douces (effet liquide, pas tissue)
+    const geometry = new THREE.IcosahedronGeometry(1.05, 24);
     const uniforms = {
       uTime: { value: 0 },
       uAmp: { value: 0.3 },
       uFreq: { value: 2 },
       uSpeed: { value: 0.5 },
-      uTwist: { value: 0.6 },
+      uTwist: { value: 0.25 },
       uMix: { value: 0.7 },
       uColorA: { value: new THREE.Color("#C9A84C") },
       uColorB: { value: new THREE.Color("#00D4FF") },
@@ -246,11 +254,26 @@ export function MorphBlob({ step, done = false, error = false }: MorphBlobProps)
     group.add(wire);
     scene.add(group);
 
+    /* Cadrage garanti : la caméra recule juste assez pour que même le pic
+       de déformation maximal (+ fil de fer) reste ENTIER dans le cadre,
+       quelle que soit la proportion du conteneur. Jamais de coupe carrée. */
+    const noiseCeiling = 1.0; // n ∈ [-1, 1] après normalisation dans le shader
+    const maxAmp = Math.max(
+      ...STEP_PARAMS.map((p) => p.amp),
+      DONE_PARAMS.amp,
+      ERROR_PARAMS.amp,
+    );
+    const maxRadius = (1.05 + noiseCeiling * maxAmp) * 1.012; // × échelle du fil
+
     const setSize = () => {
       const w = container.clientWidth || 280;
       const h = container.clientHeight || 280;
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
+      const halfV = Math.tan((camera.fov * Math.PI) / 360);
+      const fitVertical = maxRadius / halfV;
+      const fitHorizontal = maxRadius / (halfV * camera.aspect);
+      camera.position.z = Math.max(fitVertical, fitHorizontal) + 0.22;
       camera.updateProjectionMatrix();
     };
     setSize();
@@ -278,7 +301,8 @@ export function MorphBlob({ step, done = false, error = false }: MorphBlobProps)
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     const lerp = (u: { value: number }, target: number, dt: number) => {
-      u.value += (target - u.value) * Math.min(1, dt * 2.8);
+      // Transition lente entre étapes : la matière se déforme, elle ne saute pas
+      u.value += (target - u.value) * Math.min(1, dt * 1.6);
     };
 
     const applyTargets = (dt: number) => {
@@ -304,6 +328,8 @@ export function MorphBlob({ step, done = false, error = false }: MorphBlobProps)
       const dt = Math.min(clock.getDelta(), 0.05);
       uniforms.uTime.value += dt;
       applyTargets(dt);
+      // Respiration infinitésimale : vie « liquide » sans casser le cercle
+      group.scale.setScalar(1 + Math.sin(uniforms.uTime.value * 0.5) * 0.008);
       group.rotation.y += dt * 0.18;
       group.rotation.x += (mouse.y * 0.28 - group.rotation.x) * 0.04;
       group.rotation.z += (mouse.x * 0.16 - group.rotation.z) * 0.04;
