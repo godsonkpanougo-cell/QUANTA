@@ -30,19 +30,30 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: http://localhost:3000
 
-      - name: Start production server in background
+      - name: Start production server
         working-directory: quanta-frontend
-        run: npm start &
+        run: |
+          mkdir -p .logs
+          nohup npm start > .logs/server.log 2>&1 &
+          echo $! > .logs/server.pid
         env:
           PORT: 3000
           NEXT_PUBLIC_API_URL: http://localhost:3000
+          NODE_ENV: production
 
-      - name: Wait for server to be ready
+      - name: Wait for server
         run: |
-          timeout 60 bash -c 'until curl -s http://localhost:3000 > /dev/null; do sleep 2; done'
-          echo "Server is ready"
+          for i in {1..30}; do
+            if curl -s http://localhost:3000 > /dev/null; then
+              echo "Server ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server failed"
+          exit 1
 
-      - name: Run Lighthouse CI (accessibility only)
+      - name: Run Lighthouse CI
         working-directory: quanta-frontend
         run: |
           npx lhci autorun \
@@ -56,7 +67,7 @@ jobs:
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run axe-core CLI
+      - name: Run axe-core
         working-directory: quanta-frontend
         run: |
           npx axe http://localhost:3000 --tags wcag2a,wcag2aa,wcag21aa,wcag22aa --json > axe-home.json || true
@@ -76,35 +87,10 @@ jobs:
           name: axe-reports
           path: quanta-frontend/axe-*.json
 
-      - name: Display Lighthouse accessibility scores
+      - name: Display scores
         if: always()
         run: |
-          if [ -f quanta-frontend/.lighthouseci/lhr-*.json ]; then
-            echo "=== Lighthouse Accessibility Scores ==="
-            for file in quanta-frontend/.lighthouseci/lhr-*.json; do
-              if [ -f "$file" ]; then
-                echo "File: $file"
-                python3 -c "import json; data=json.load(open('$file')); print(f\"Accessibility Score: {data['categories']['accessibility']['score'] * 100:.0f}/100\")"
-              fi
-            done
-          else
-            echo "No Lighthouse reports found"
-          fi
-
-      - name: Display axe-core violations
-        if: always()
-        run: |
-          echo "=== axe-core Violations ==="
-          for file in quanta-frontend/axe-*.json; do
-            if [ -f "$file" ]; then
-              echo "File: $file"
-              python3 -c "
-import json
-data = json.load(open('$file'))
-violations = data.get('violations', [])
-print(f'Total violations: {len(violations)}')
-for v in violations:
-    print(f\"  - {v['id']} ({v['impact'] if v['impact'] else 'N/A'}): {len(v['nodes'])} occurrences\")
-"
-            fi
-          done
+          echo "=== Lighthouse Scores ==="
+          ls quanta-frontend/.lighthouseci/ || echo "No Lighthouse reports"
+          echo "=== axe-core violations ==="
+          cat quanta-frontend/axe-home.json 2>/dev/null || echo "No axe report"
