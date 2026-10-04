@@ -26,6 +26,7 @@ desktop.ini
 18.17
 machineid
 package-lock.json
+!quanta-frontend/package-lock.json
 node_modules/
 
 # Frontend Next.js
