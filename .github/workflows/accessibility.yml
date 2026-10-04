@@ -1,0 +1,114 @@
+name: Accessibility Audit
+
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - "quanta-frontend/**"
+  pull_request:
+    branches: [main, "feature/**"]
+    paths:
+      - "quanta-frontend/**"
+
+jobs:
+  accessibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: quanta-frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: quanta-frontend
+        run: npm ci
+
+      - name: Build application
+        working-directory: quanta-frontend
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3000
+
+      - name: Start production server in background
+        working-directory: quanta-frontend
+        run: npm start &
+        env:
+          PORT: 3000
+          NEXT_PUBLIC_API_URL: http://localhost:3000
+
+      - name: Wait for server to be ready
+        run: |
+          timeout 60 bash -c 'until curl -s http://localhost:3000 > /dev/null; do sleep 2; done'
+          echo "Server is ready"
+
+      - name: Run Lighthouse CI (accessibility only)
+        working-directory: quanta-frontend
+        run: |
+          npx lhci autorun \
+            --collect.url=http://localhost:3000 \
+            --collect.url=http://localhost:3000/history \
+            --collect.numberOfRuns=1 \
+            --only-categories=accessibility \
+            --assert.presets=lighthouse:recommended \
+            --assert.preset-thresholds=-1 \
+            || true
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run axe-core CLI
+        working-directory: quanta-frontend
+        run: |
+          npx axe http://localhost:3000 --tags wcag2a,wcag2aa,wcag21aa,wcag22aa --json > axe-home.json || true
+          npx axe http://localhost:3000/history --tags wcag2a,wcag2aa,wcag21aa,wcag22aa --json > axe-history.json || true
+
+      - name: Upload Lighthouse reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-reports
+          path: quanta-frontend/.lighthouseci/
+
+      - name: Upload axe-core reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: axe-reports
+          path: quanta-frontend/axe-*.json
+
+      - name: Display Lighthouse accessibility scores
+        if: always()
+        run: |
+          if [ -f quanta-frontend/.lighthouseci/lhr-*.json ]; then
+            echo "=== Lighthouse Accessibility Scores ==="
+            for file in quanta-frontend/.lighthouseci/lhr-*.json; do
+              if [ -f "$file" ]; then
+                echo "File: $file"
+                python3 -c "import json; data=json.load(open('$file')); print(f\"Accessibility Score: {data['categories']['accessibility']['score'] * 100:.0f}/100\")"
+              fi
+            done
+          else
+            echo "No Lighthouse reports found"
+          fi
+
+      - name: Display axe-core violations
+        if: always()
+        run: |
+          echo "=== axe-core Violations ==="
+          for file in quanta-frontend/axe-*.json; do
+            if [ -f "$file" ]; then
+              echo "File: $file"
+              python3 -c "
+import json
+data = json.load(open('$file'))
+violations = data.get('violations', [])
+print(f'Total violations: {len(violations)}')
+for v in violations:
+    print(f\"  - {v['id']} ({v['impact'] if v['impact'] else 'N/A'}): {len(v['nodes'])} occurrences\")
+"
+            fi
+          done
