@@ -38,8 +38,12 @@ def clean_project_tables():
 
 
 def _user(n: str) -> str:
+    # google_sub unique par run (DB de test persistante entre les runs).
+    import uuid as _uuid
+    tag = _uuid.uuid4().hex[:8]
     return db.create_or_update_user(
-        google_sub=f"proj-{n}", email=f"proj-{n}@test.com",
+        google_sub=f"proj-{n}-{tag}",
+        email=f"proj-{n}-{tag}@test.com",
         name=f"Proj Test {n}", picture_url="http://example.com/a.png",
     )
 
@@ -96,24 +100,30 @@ def test_versions_idempotent_by_hash_and_increment():
 # ── Replay : identité garantie par le cache (file_hash, query) ────────────────
 
 def _make_cached_analysis(uid: str, file_hash: str, query: str) -> str:
+    # ids uniques par run : la DB de test persiste entre les runs pytest
+    # (uploads/analyses ont des contraintes UNIQUE).
+    import uuid as _uuid
+    tag = _uuid.uuid4().hex[:8]
+    file_id = f"f-{tag}"
     db.save_upload(
-        file_id=f"f-{file_hash[:8]}", user_id=uid,
+        file_id=file_id, user_id=uid,
         data={"path": "x.csv", "filename": "L2.dta", "numeric_cols": [],
               "cat_cols": [], "id_cols": [], "n_rows": 301, "n_cols": 121,
               "dataset_type": "x", "uploaded_at": "2024-01-01T00:00:00Z"},
     )
+    analysis_id = f"a-{tag}"
     db.create_analysis(
-        analysis_id=f"a-{file_hash[:8]}", user_id=uid, file_id=f"f-{file_hash[:8]}",
+        analysis_id=analysis_id, user_id=uid, file_id=file_id,
         query=query, created_at="2024-01-01T00:00:00Z", file_hash=file_hash,
     )
     db.update_analysis(
-        analysis_id=f"a-{file_hash[:8]}", status="done",
+        analysis_id=analysis_id, status="done",
         result={"confidence_score": {"score_global": 82.5},
                 "tests_effectues": [{"name": "Spearman", "p_value": 0.001,
                                      "decision": "significative"}]},
         updated_at="2024-01-01T00:00:00Z", user_id=uid, file_hash=file_hash,
     )
-    return f"a-{file_hash[:8]}"
+    return analysis_id
 
 
 def test_replay_returns_identical_cached_result():
@@ -151,27 +161,31 @@ def test_compare_versions_delta_confidence_and_tests():
     va = projects.add_dataset_version(pid, uid, ha, "avec.dta")["version_id"]
     vb = projects.add_dataset_version(pid, uid, hb, "sans.dta")["version_id"]
 
-    _make_cached_analysis(uid, ha, "q1")
+    analysis_a = _make_cached_analysis(uid, ha, "q1")
     run_a = projects.add_run(pid, uid, va, "q1")
-    projects.attach_analysis(run_a["run_id"], uid, f"a-{ha[:8]}", "done")
+    projects.attach_analysis(run_a["run_id"], uid, analysis_a, "done")
     # deuxième version : autre résultat (même query, autre hash)
+    import uuid as _uuid
+    tag_b = _uuid.uuid4().hex[:8]
+    file_b = f"f-b-{tag_b}"
+    analysis_b = f"a-b-{tag_b}"
     db.save_upload(
-        file_id="f-b", user_id=uid,
+        file_id=file_b, user_id=uid,
         data={"path": "y.csv", "filename": "b.dta", "numeric_cols": [],
               "cat_cols": [], "id_cols": [], "n_rows": 280, "n_cols": 121,
               "dataset_type": "x", "uploaded_at": "2024-01-02T00:00:00Z"},
     )
-    db.create_analysis(analysis_id="a-b", user_id=uid, file_id="f-b",
+    db.create_analysis(analysis_id=analysis_b, user_id=uid, file_id=file_b,
                        query="q1", created_at="2024-01-02T00:00:00Z", file_hash=hb)
     db.update_analysis(
-        analysis_id="a-b", status="done",
+        analysis_id=analysis_b, status="done",
         result={"confidence_score": {"score_global": 88.0},
                 "tests_effectues": [{"name": "Spearman", "p_value": 0.03,
                                      "decision": "significative"}]},
         updated_at="2024-01-02T00:00:00Z", user_id=uid, file_hash=hb,
     )
     run_b = projects.add_run(pid, uid, vb, "q1")
-    projects.attach_analysis(run_b["run_id"], uid, "a-b", "done")
+    projects.attach_analysis(run_b["run_id"], uid, analysis_b, "done")
 
     cmp = projects.compare_versions(pid, uid, va, vb)
     assert cmp["comparable"] is True

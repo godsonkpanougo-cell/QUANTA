@@ -66,6 +66,7 @@ from app import auth
 from app import projects  # Pilier 1 : Projet de recherche persistant (module isolé)
 from app import conversation  # Pilier 2 : sessions conversationnelles (module isolé)
 from app import repro_pack  # Pilier 3 : Repro Pack ZIP auditable (module isolé)
+from app import defense  # Pilier 4 : Mode Soutenance (module isolé, déterministe)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -230,6 +231,8 @@ app.include_router(projects.router)
 app.include_router(conversation.router)
 # Pilier 3 : Repro Pack ZIP auditable (lecture pure, aucune table nouvelle).
 app.include_router(repro_pack.router)
+# Pilier 4 : Mode Soutenance (déterministe, sans LLM ni recalcul).
+app.include_router(defense.router)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

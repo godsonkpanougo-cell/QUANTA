@@ -14,6 +14,7 @@ import hashlib
 import os
 import sqlite3
 import tempfile
+import uuid as _uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -49,8 +50,13 @@ def reset_dispatcher():
 
 
 def _user(n: str) -> str:
+    # google_sub unique par run : la DB de test persiste entre les runs
+    # pytest et un utilisateur déterministe réutiliserait un ancien compte
+    # (avec ses sessions résiduelles après un run interrompu).
+    tag = _uuid.uuid4().hex[:8]
     return db.create_or_update_user(
-        google_sub=f"conv-{n}", email=f"conv-{n}@test.com",
+        google_sub=f"conv-{n}-{tag}",
+        email=f"conv-{n}-{tag}@test.com",
         name=f"Conv Test {n}", picture_url="http://example.com/a.png",
     )
 
