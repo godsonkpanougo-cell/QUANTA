@@ -64,11 +64,25 @@ jobs:
   accessibility:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: contains(github.event.head_commit.modified, 'quanta-frontend/') || contains(github.event.head_commit.modified, '.github/workflows/ci.yml')
     steps:
       - uses: actions/checkout@v4
 
+      - name: Detect changes
+        id: changes
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            frontend:
+              - 'quanta-frontend/**'
+            workflow:
+              - '.github/workflows/ci.yml'
+
+      - name: Check if accessibility should run
+        if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
+        run: echo "Accessibility job will run"
+
       - name: Setup Node.js
+        if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -76,16 +90,19 @@ jobs:
           cache-dependency-path: quanta-frontend/package-lock.json
 
       - name: Install dependencies
+        if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
         working-directory: quanta-frontend
         run: npm ci
 
       - name: Build application
+        if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
         working-directory: quanta-frontend
         run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:3000
 
       - name: Start production server
+        if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
         working-directory: quanta-frontend
         run: |
           mkdir -p .logs
@@ -97,6 +114,7 @@ jobs:
           NODE_ENV: production
 
       - name: Wait for server
+        if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
         run: |
           for i in {1..30}; do
             if curl -s http://localhost:3000 > /dev/null; then
@@ -109,6 +127,7 @@ jobs:
           exit 1
 
       - name: Run Lighthouse CI
+        if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
         working-directory: quanta-frontend
         run: |
           npx lhci autorun \
@@ -123,27 +142,28 @@ jobs:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run axe-core
+        if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
         working-directory: quanta-frontend
         run: |
           npx axe http://localhost:3000 --tags wcag2a,wcag2aa,wcag21aa,wcag22aa --json > axe-home.json || true
           npx axe http://localhost:3000/history --tags wcag2a,wcag2aa,wcag21aa,wcag22aa --json > axe-history.json || true
 
       - name: Upload Lighthouse reports
+        if: always() && (steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true')
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: lighthouse-reports
           path: quanta-frontend/.lighthouseci/
 
       - name: Upload axe-core reports
+        if: always() && (steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true')
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: axe-reports
           path: quanta-frontend/axe-*.json
 
       - name: Display scores
-        if: always()
+        if: always() && (steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true')
         run: |
           echo "=== Lighthouse Scores ==="
           ls quanta-frontend/.lighthouseci/ || echo "No Lighthouse reports"
