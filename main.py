@@ -65,6 +65,7 @@ from app import analysis_core
 from app import auth
 from app import projects  # Pilier 1 : Projet de recherche persistant (module isolé)
 from app import conversation  # Pilier 2 : sessions conversationnelles (module isolé)
+from app import repro_pack  # Pilier 3 : Repro Pack ZIP auditable (module isolé)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -227,6 +228,8 @@ db.init_db()
 app.include_router(projects.router)
 # Pilier 2 : endpoints /conversations (module isolé, tables conversation_*).
 app.include_router(conversation.router)
+# Pilier 3 : Repro Pack ZIP auditable (lecture pure, aucune table nouvelle).
+app.include_router(repro_pack.router)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
