@@ -136,6 +136,17 @@ jobs:
             --numberOfRuns=1 \
             --only-categories=accessibility
 
+      - name: Debug - list lighthouse output
+        if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
+        working-directory: quanta-frontend
+        run: |
+          echo "=== PWD ==="
+          pwd
+          echo "=== Recherche .lighthouseci n'importe où ==="
+          find / -iname ".lighthouseci" -type d 2>/dev/null
+          echo "=== Contenu si trouvé dans quanta-frontend ==="
+          ls -la .lighthouseci/ 2>&1 || echo "ABSENT à ce chemin"
+
       - name: Run axe-core
         if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
         working-directory: quanta-frontend
