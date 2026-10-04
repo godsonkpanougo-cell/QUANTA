@@ -11,6 +11,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { ConfidenceScore } from "@/app/components/ConfidenceScore";
+import { DatasetSnapshot } from "@/app/components/DatasetSnapshot";
 
 interface ConfidenceScoreData {
   score_global?: number;
@@ -230,6 +231,10 @@ export function AnalysisResults({
     ({ key }) => (principale[key] ?? "").trim().length > 0,
   );
 
+  /* Snapshot affiché dès qu'on connaît au moins les dimensions du dataset */
+  const hasSnapshotData =
+    typeof diagnosis.n_rows === "number" || typeof diagnosis.n_cols === "number";
+
   return (
     <div className="space-y-8 text-left">
       <RevealBlock index={0}>
@@ -259,6 +264,16 @@ export function AnalysisResults({
       </RevealBlock>
 
       <RevealBlock index={2}>
+        {hasSnapshotData ? (
+          <DatasetSnapshot
+            rows={diagnosis.n_rows}
+            cols={diagnosis.n_cols}
+            datasetType={diagnosis.dataset_type}
+          />
+        ) : null}
+      </RevealBlock>
+
+      <RevealBlock index={3}>
         <div className="rounded-card border border-quanta-border-subtle bg-quanta-surface p-5">
           <p className="hud-label mb-4 text-quanta-muted">Métadonnées de l&apos;analyse</p>
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -283,7 +298,7 @@ export function AnalysisResults({
       </RevealBlock>
 
       {!llmAvailable ? (
-        <RevealBlock index={3}>
+        <RevealBlock index={4}>
           <p className="rounded-card border border-quanta-border-subtle bg-quanta-elevated px-4 py-3 text-center font-sans text-sm text-quanta-secondary">
             Interprétation LLM indisponible — résultats statistiques bruts
             disponibles dans le rapport PDF.
@@ -292,7 +307,7 @@ export function AnalysisResults({
       ) : null}
 
       {llmAvailable && interpretation.resume_executif ? (
-        <RevealBlock index={3}>
+        <RevealBlock index={4}>
           <div className="rounded-card border border-quanta-border-subtle bg-quanta-surface p-6">
             <p className="hud-label mb-3 text-quanta-muted">Résumé exécutif</p>
             <p className="border-l-2 border-quanta-gold/50 pl-4 font-sans text-sm leading-relaxed text-quanta-primary">
@@ -303,7 +318,7 @@ export function AnalysisResults({
       ) : null}
 
       {llmAvailable && accordionLevels.length > 0 ? (
-        <RevealBlock index={4}>
+        <RevealBlock index={5}>
           <p className="hud-label mb-3 text-quanta-muted">Interprétation par niveau</p>
           <Accordion
             type="single"
@@ -330,7 +345,7 @@ export function AnalysisResults({
         </RevealBlock>
       ) : null}
 
-      <RevealBlock index={5}>
+      <RevealBlock index={6}>
         <div className="flex flex-col items-center gap-4 border-t border-quanta-border-subtle pt-8">
           <p className="hud-label text-quanta-muted">Rapport d&apos;analyse — PDF signable</p>
           <div className="flex flex-wrap items-center justify-center gap-3">

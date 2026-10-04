@@ -125,13 +125,15 @@ void main() {
 const FRAG_SOLID = `
 uniform vec3 uColorA;
 uniform vec3 uColorB;
-uniform float uMix;
+uniform float uMix2;
 varying float vNoise;
 varying vec3 vNormalV;
 varying vec3 vViewDir;
 void main() {
   float fres = pow(1.0 - abs(dot(normalize(vNormalV), normalize(vViewDir))), 2.0);
-  float k = clamp(uMix * (vNoise * 0.5 + 0.5), 0.0, 1.0);
+  /* uMix2 = valeur LISSÉE en CPU (voir mixSmooth) : la couleur glisse
+     en douceur d'une étape à l'autre, jamais de saut. */
+  float k = clamp(uMix2 * (vNoise * 0.5 + 0.5), 0.0, 1.0);
   vec3 base = mix(uColorA, uColorB, k);
   vec3 col = base * (0.20 + 0.9 * fres) + vec3(1.0, 0.95, 0.82) * fres * 0.30;
   /* Corps un peu plus plein : goutte liquide plutôt que voile */
@@ -145,12 +147,12 @@ void main() {
 const FRAG_WIRE = `
 uniform vec3 uColorA;
 uniform vec3 uColorB;
-uniform float uMix;
+uniform float uMix2;
 varying float vNoise;
 varying vec3 vNormalV;
 varying vec3 vViewDir;
 void main() {
-  vec3 col = mix(uColorA, uColorB, clamp(uMix * (vNoise * 0.5 + 0.5), 0.0, 1.0));
+  vec3 col = mix(uColorA, uColorB, clamp(uMix2 * (vNoise * 0.5 + 0.5), 0.0, 1.0));
   float alpha = 0.02 + 0.06 * max(vNoise, 0.0);
   gl_FragColor = vec4(col, alpha);
 }
@@ -227,6 +229,7 @@ export function MorphBlob({ step, done = false, error = false }: MorphBlobProps)
       uSpeed: { value: 0.5 },
       uTwist: { value: 0.25 },
       uMix: { value: 0.7 },
+      uMix2: { value: 0.7 },
       uColorA: { value: new THREE.Color("#C9A84C") },
       uColorB: { value: new THREE.Color("#00D4FF") },
     };
@@ -300,9 +303,14 @@ export function MorphBlob({ step, done = false, error = false }: MorphBlobProps)
 
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    const lerp = (u: { value: number }, target: number, dt: number) => {
-      // Transition lente entre étapes : la matière se déforme, elle ne saute pas
-      u.value += (target - u.value) * Math.min(1, dt * 1.6);
+    /* Lissage exponentiel indépendant par uniforme : chaque étape impose
+       sa CIBLE (vitesse/vigueur), mais la valeur suit un glide — la
+       transition entre deux étapes est une métamorphose continue, pas
+       un saut de paramètres. facteur dt*rate borné pour rester stable
+       même à fps instable. */
+    const lerp = (u: { value: number }, target: number, dt: number, rate = 1.6) => {
+      const k = 1 - Math.exp(-rate * Math.min(dt, 0.1));
+      u.value += (target - u.value) * k;
     };
 
     const applyTargets = (dt: number) => {
@@ -312,10 +320,13 @@ export function MorphBlob({ step, done = false, error = false }: MorphBlobProps)
           ? DONE_PARAMS
           : (STEP_PARAMS[Math.min(stepRef.current, STEP_PARAMS.length - 1)] ??
             STEP_PARAMS[0]);
-      lerp(uniforms.uAmp, params.amp, dt);
-      lerp(uniforms.uFreq, params.freq, dt);
-      lerp(uniforms.uSpeed, params.speed, dt);
-      lerp(uniforms.uMix, params.mix, dt);
+      /* Décalage des vitesses de glide (stagger) : l'amplitude et la
+         fréquence évoluent légèrement différemment — la surface se
+         déforme de façon organique au lieu d'interpoler en bloc. */
+      lerp(uniforms.uAmp, params.amp, dt, 1.4);
+      lerp(uniforms.uFreq, params.freq, dt, 1.1);
+      lerp(uniforms.uSpeed, params.speed, dt, 1.8);
+      lerp(uniforms.uMix2, params.mix, dt, 1.3);
     };
 
     const clock = new THREE.Clock();

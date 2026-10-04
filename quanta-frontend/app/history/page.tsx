@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Download, FileText, Clock, CheckCircle, AlertCircle, Loader2, ArrowLeft } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Download, FileText, Clock, CheckCircle, AlertCircle, Loader2, ArrowLeft, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/context/AuthContext";
@@ -106,6 +106,8 @@ export default function HistoryPage() {
   const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(true);
   const [downloadingTheme, setDownloadingTheme] = useState<"dark" | "light" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | Analysis["status"]>("all");
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -140,6 +142,31 @@ export default function HistoryPage() {
       router.push(`/?analysisId=${analysisId}`);
     }
   };
+
+  /* Recherche (nom de fichier + requête) et filtre par statut — dérivés, sans état dupliqué */
+  const visibleAnalyses = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return analyses.filter((a) => {
+      const matchStatus =
+        statusFilter === "all" || a.status === statusFilter;
+      const matchQuery =
+        q.length === 0 ||
+        a.filename.toLowerCase().includes(q) ||
+        (a.query ?? "").toLowerCase().includes(q);
+      return matchStatus && matchQuery;
+    });
+  }, [analyses, search, statusFilter]);
+
+  const STATUS_FILTERS: Array<{
+    value: "all" | Analysis["status"];
+    label: string;
+  }> = [
+    { value: "all", label: "Toutes" },
+    { value: "done", label: "Terminées" },
+    { value: "running", label: "En cours" },
+    { value: "pending", label: "En attente" },
+    { value: "error", label: "Erreur" },
+  ];
 
   const handleDownloadPdf = async (analysisId: string, theme: "dark" | "light") => {
     try {
@@ -226,6 +253,70 @@ export default function HistoryPage() {
           </p>
         </div>
 
+        {/* Recherche + filtres par statut */}
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <label className="glass flex flex-1 items-center gap-2.5 rounded-quanta px-4 py-2.5 transition-quanta focus-within:border-quanta-border-active">
+            <Search
+              strokeWidth={1.5}
+              className="size-4 shrink-0 text-quanta-muted"
+              aria-hidden
+            />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher un fichier ou une requête…"
+              aria-label="Rechercher dans l'historique"
+              className="w-full bg-transparent font-sans text-sm text-quanta-primary outline-none placeholder:text-quanta-muted"
+            />
+          </label>
+          <div
+            role="group"
+            aria-label="Filtrer par statut"
+            className="flex flex-wrap gap-1.5"
+          >
+            {STATUS_FILTERS.map(({ value, label }) => {
+              const active = statusFilter === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setStatusFilter(value)}
+                  aria-pressed={active}
+                  className={`rounded-quanta border px-3 py-1.5 font-sans text-xs transition-quanta ${
+                    active
+                      ? "border-quanta-gold/50 bg-quanta-gold/10 text-quanta-gold"
+                      : "border-quanta-border-subtle text-quanta-secondary hover:border-quanta-border-active hover:text-quanta-primary"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {!isLoadingAnalyses && !error && analyses.length > 0 && visibleAnalyses.length === 0 ? (
+          <div className="glass rounded-card px-6 py-10 text-center">
+            <p className="font-display text-base font-light text-quanta-primary">
+              Aucun résultat pour cette recherche
+            </p>
+            <p className="mt-2 font-sans text-sm text-quanta-secondary">
+              Essaie un autre mot-clé ou réinitialise les filtres.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setSearch("");
+                setStatusFilter("all");
+              }}
+              className="mt-5 cursor-pointer rounded-quanta border border-quanta-border-subtle px-4 py-2 font-sans text-sm text-quanta-secondary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
+            >
+              Réinitialiser
+            </button>
+          </div>
+        ) : null}
+
         {isLoadingAnalyses ? (
           <div className="flex items-center justify-center py-12">
             <div className="flex items-center gap-2">
@@ -258,7 +349,7 @@ export default function HistoryPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {analyses.map((analysis) => (
+            {visibleAnalyses.map((analysis) => (
               <div
                 key={analysis.analysis_id}
                 onClick={() => handleAnalysisClick(analysis.analysis_id, analysis.status)}
