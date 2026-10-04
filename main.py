@@ -64,6 +64,7 @@ from app.orchestrator import run_full_analysis
 from app import analysis_core
 from app import auth
 from app import projects  # Pilier 1 : Projet de recherche persistant (module isolé)
+from app import conversation  # Pilier 2 : sessions conversationnelles (module isolé)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -224,6 +225,8 @@ app.include_router(auth.router)
 db.init_db()
 # Pilier 1 : endpoints /projects (module isolé, tables project_* dédiées).
 app.include_router(projects.router)
+# Pilier 2 : endpoints /conversations (module isolé, tables conversation_*).
+app.include_router(conversation.router)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -542,6 +545,20 @@ def _run_analysis_background(analysis_id: str, user_id: str, file_id: str, query
             pass
 
 
+# Pilier 2 : le worker d'analyse est injecté dans conversation (DI —
+# évite tout import circulaire). Même dispatch que /analyze : exécution
+# DÉFÉRÉE dans un thread (BackgroundTasks = threadpool), la requête HTTP
+# reste non bloquante et le frontend poll /status.
+def _deferred_analysis_background(analysis_id, user_id, file_id, query):
+    threading.Thread(
+        target=_run_analysis_background,
+        args=(analysis_id, user_id, file_id, query),
+        daemon=True,
+    ).start()
+
+conversation.set_background_dispatcher(_deferred_analysis_background)
+
+
 @app.post("/analyze")
 @limiter.limit("5/minute")
 def analyze(
@@ -644,6 +661,10 @@ def get_status(
         response["result"] = analysis["result"]
     elif analysis["status"] == "error":
         response["error"] = analysis["error"]
+
+    # Pilier 2 : synchronise le turn de conversation lié à cette analyse
+    # (idempotent, no-op si l'analyse ne vient pas d'une conversation).
+    conversation.set_turn_status(analysis_id, current_user["user_id"], analysis["status"])
 
     return response
 
