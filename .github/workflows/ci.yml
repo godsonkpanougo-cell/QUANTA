@@ -90,7 +90,7 @@ jobs:
       - name: Install dependencies
         if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
         working-directory: quanta-frontend
-        run: npm ci
+        run: npm install
 
       - name: Build application
         if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
