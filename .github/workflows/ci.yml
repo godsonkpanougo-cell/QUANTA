@@ -64,7 +64,7 @@ jobs:
   accessibility:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: contains(github.event.head_commit.modified, 'quanta-frontend/')
+    if: contains(github.event.head_commit.modified, 'quanta-frontend/') || contains(github.event.head_commit.modified, '.github/workflows/ci.yml')
     steps:
       - uses: actions/checkout@v4
 
