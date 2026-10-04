@@ -63,6 +63,7 @@ from app.llm import brain
 from app.orchestrator import run_full_analysis
 from app import analysis_core
 from app import auth
+from app import projects  # Pilier 1 : Projet de recherche persistant (module isolé)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -221,6 +222,8 @@ app.add_middleware(
 app.include_router(auth.router)
 
 db.init_db()
+# Pilier 1 : endpoints /projects (module isolé, tables project_* dédiées).
+app.include_router(projects.router)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
