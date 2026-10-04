@@ -273,7 +273,6 @@ def test_eta_squared_with_ci_reproducibility():
     assert ci1_upper == ci2_upper
 
 
-@pytest.mark.xfail(reason="BUG DÉTECTÉ : l'IC bootstrap pour η² ne contient PAS la valeur ponctuelle. Exemple observé : eta=0.0637, IC=[0.126, ...]. La valeur ponctuelle est en dehors de l'IC, ce qui indique un problème dans le calcul bootstrap (possiblement approximation SS_between/SS_total incorrecte ou problème de seed). À corriger avant utilisation en production.")
 def test_eta_squared_with_ci_range():
     """Test que l'IC de η² contient la valeur ponctuelle."""
     np.random.seed(42)
@@ -281,8 +280,12 @@ def test_eta_squared_with_ci_range():
     g2 = np.random.normal(105, 10, 50)
     g3 = np.random.normal(110, 10, 50)
     
+    # Calcul du vrai F-stat (au lieu de 5.0 en dur)
+    from scipy import stats
+    f_stat, _ = stats.f_oneway(g1, g2, g3)
+    
     eta, ci_lower, ci_upper = _eta_squared_with_ci(
-        [g1, g2, g3], 5.0, n_bootstrap=1000, seed=42
+        [g1, g2, g3], f_stat, n_bootstrap=1000, seed=42
     )
     
     # La valeur ponctuelle doit être dans l'IC
@@ -352,7 +355,6 @@ def test_epsilon_squared_with_ci_reproducibility():
     assert ci1_upper == ci2_upper
 
 
-@pytest.mark.xfail(reason="BUG DÉTECTÉ : l'IC bootstrap pour ε² ne contient PAS la valeur ponctuelle. Exemple observé : eps=0.0336, IC=[0.126, ...]. La valeur ponctuelle est en dehors de l'IC, ce qui indique un problème dans le calcul bootstrap (possiblement approximation SS_between/SS_total incorrecte ou problème de seed). À corriger avant utilisation en production.")
 def test_epsilon_squared_with_ci_range():
     """Test que l'IC de ε² contient la valeur ponctuelle."""
     np.random.seed(42)
@@ -360,8 +362,12 @@ def test_epsilon_squared_with_ci_range():
     g2 = np.random.normal(105, 10, 50)
     g3 = np.random.normal(110, 10, 50)
     
+    # Calcul du vrai H-stat (Kruskal-Wallis)
+    from scipy import stats
+    h_stat, _ = stats.kruskal(g1, g2, g3)
+    
     eps, ci_lower, ci_upper = _epsilon_squared_with_ci(
-        [g1, g2, g3], 5.0, n_bootstrap=1000, seed=42
+        [g1, g2, g3], h_stat, n_bootstrap=1000, seed=42
     )
     
     # La valeur ponctuelle doit être dans l'IC
