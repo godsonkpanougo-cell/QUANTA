@@ -64,6 +64,7 @@ from app.compute.acm_plot_fast import (
     build_acm_plot as _build_acm_plot_fast,
     contributions_rank_map as _contributions_rank_map,
 )
+from app.compute.multiplicity import apply_fdr_correction_to_pairs, count_significant_pairs
 
 warnings.filterwarnings("ignore")
 
@@ -784,6 +785,17 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
         f"TIMING - correlation pairs ({_corr['path']}): "
         f"{time.time() - t_pairs_start:.3f}s pour {len(pairs)} paires"
     )
+    
+    # Correction FDR (Benjamini-Hochberg) sur la famille de paires de corrélation
+    # Ajoute p_adjusted et significant_adjusted à chaque paire, sans modifier p_value brut
+    t_fdr_start = time.time()
+    pairs = apply_fdr_correction_to_pairs(pairs, method="bh")
+    sig_counts = count_significant_pairs(pairs, threshold=0.05)
+    logger.info(
+        f"TIMING - FDR correction: {time.time() - t_fdr_start:.3f}s, "
+        f"paires sig. brut: {sig_counts['significant_raw']}, "
+        f"après FDR: {sig_counts['significant_adjusted']}"
+    )
 
     # Trier par |r| décroissant et générer au maximum 5 scatter plots
     # Garde-fou pour éviter timeout sur datasets avec beaucoup de variables numériques
@@ -836,6 +848,11 @@ def correlation_analysis(df: pd.DataFrame, numeric_cols: list[str], normality_re
         "pairs":      pairs,
         "scatter_plots": scatter_plots,
         "charts":     charts,
+        "multiplicity_correction": {
+            "method": "benjamini_hochberg",
+            "significant_raw": sig_counts["significant_raw"],
+            "significant_adjusted": sig_counts["significant_adjusted"],
+        },
     }
 
 # ═══════════════════════════════════════════════════════════════════════════════

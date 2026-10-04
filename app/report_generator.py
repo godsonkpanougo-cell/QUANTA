@@ -2419,6 +2419,11 @@ def _html_apa_results(
         ("ddl", _extract_degrees_of_freedom(data), True),
         ("p", _fmt_pvalue(data.get("p_value")), True),
     ]
+    
+    # Ajouter p_adjusted (q-value FDR) si disponible pour les corrélations
+    p_adj = data.get("p_adjusted")
+    if p_adj is not None:
+        rows.append(("q (FDR)", _fmt_pvalue(p_adj), True))
     rows.extend(_apa_effect_rows(data))
     rows.extend(_apa_power_rows(data))
 
@@ -3068,6 +3073,14 @@ def _resume_bullet_from_test(
         v2 = data.get("col2") or group or "variable 2"
         r_val = data.get("r", data.get("rho", data.get("correlation")))
         r_txt = _fmt_number(r_val)
+        p_adj = data.get("p_adjusted")
+        
+        # Formatter p_adjusted si disponible
+        p_adj_txt = _fmt_pvalue(p_adj) if p_adj is not None else None
+        p_display = f"p={_esc(p_txt)}"
+        if p_adj_txt is not None:
+            p_display += f", q={_esc(p_adj_txt)} (FDR)"
+        
         if p < 0.05:
             qual = ""
             if r_val is not None:
@@ -3078,11 +3091,11 @@ def _resume_bullet_from_test(
             effet_txt = f", effet={qual}" if qual else ""
             return (
                 f"{check} Corrélation significative entre {_esc(v1)} et "
-                f"{_esc(v2)} (r={_esc(r_txt)}, p={_esc(p_txt)}{effet_txt})"
+                f"{_esc(v2)} (r={_esc(r_txt)}, {p_display}{effet_txt})"
             )
         return (
             f"{cross} Pas de corrélation significative entre {_esc(v1)} et "
-            f"{_esc(v2)} (r={_esc(r_txt)}, p={_esc(p_txt)})"
+            f"{_esc(v2)} (r={_esc(r_txt)}, {p_display})"
         )
 
     if not target or not group:
