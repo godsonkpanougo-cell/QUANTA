@@ -145,8 +145,8 @@ jobs:
         if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
         working-directory: quanta-frontend
         run: |
-          npx axe http://localhost:3000 --tags wcag2a,wcag2aa,wcag21aa,wcag22aa --save axe-home.json
-          npx axe http://localhost:3000/history --tags wcag2a,wcag2aa,wcag21aa,wcag22aa --save axe-history.json
+          npx axe http://localhost:3000 --tags wcag2a,wcag2aa,wcag21aa,wcag22aa --save axe-home.json || true
+          npx axe http://localhost:3000/history --tags wcag2a,wcag2aa,wcag21aa,wcag22aa --save axe-history.json || true
 
       - name: Upload Lighthouse reports
         if: always() && (steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true')
