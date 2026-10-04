@@ -68,6 +68,16 @@ print(f"LLM Fallback model: {OPENROUTER_MODEL}")
 REQUEST_TIMEOUT_SECONDS = 25
 MAX_RETRIES_PER_PROVIDER = 2
 RETRY_BACKOFF_SECONDS = 3
+#
+# BUG PROUVE (01/10/2026, logs run 0090a4af + reproductions) : le timeout
+# `requests` borne CHAQUE opération socket et est réarmé par chaque octet
+# keep-alive -> une réponse HTTP 200 "canuleuse" a duré 44,8 s et 72,4 s
+# SANS lever Timeout, bien au-delà des 25 s nominal. Correctif P0 :
+# budget wall-clock TOTAL par provider (tous retries confondus), vérifié
+# pendant la lecture streaming du corps de réponse.
+PROVIDER_TOTAL_BUDGET_SECONDS = float(
+    os.environ.get("LLM_PROVIDER_BUDGET_SECONDS", "100")
+)
 
 
 def _llm_config() -> dict[str, dict[str, str]]:
@@ -89,6 +99,23 @@ def _llm_config() -> dict[str, dict[str, str]]:
 class LLMUnavailableError(Exception):
     """Levée uniquement en interne -- jamais propagée au-delà de ce module."""
     pass
+
+
+def _consume_with_deadline(response, provider_deadline: float, t_req_start: float) -> bytes:
+    """Lit le corps de la réponse en bornant la durée TOTALE de la requête.
+
+    Le timeout `requests` borne chaque opération socket, pas la durée totale
+    (chaque octet keep-alive le réarme). Ici on lève Timeout dès que le
+    budget wall-clock du provider est dépassé, pendant la lecture du corps.
+    """
+    chunks: list[bytes] = []
+    for chunk in response.iter_content(chunk_size=2048):
+        if time.monotonic() > provider_deadline:
+            raise requests.exceptions.Timeout(
+                f"Budget LLM provider dépassé ({PROVIDER_TOTAL_BUDGET_SECONDS:.0f}s)"
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def call_llm(
@@ -114,7 +141,14 @@ def call_llm(
 
         logger.info(f"Attempting LLM call with provider {provider_name}, model {cfg['model']}")
 
+        provider_deadline = time.monotonic() + PROVIDER_TOTAL_BUDGET_SECONDS
         for attempt in range(MAX_RETRIES_PER_PROVIDER):
+            if time.monotonic() >= provider_deadline:
+                print(
+                    f"TIMING - call_llm provider={provider_name} budget_exhausted before attempt={attempt+1}",
+                    flush=True,
+                )
+                break
             try:
                 t_req_start = time.monotonic()
                 response = requests.post(
@@ -132,15 +166,22 @@ def call_llm(
                         "max_tokens": max_tokens,
                         "temperature": temperature,
                     },
-                    timeout=REQUEST_TIMEOUT_SECONDS,
+                    stream=True,
+                    timeout=(REQUEST_TIMEOUT_SECONDS, REQUEST_TIMEOUT_SECONDS),
                 )
-                t_req_end = time.monotonic()
-                print(f"TIMING - call_llm provider={provider_name} attempt={attempt+1} http={response.status_code} duration={t_req_end - t_req_start:.2f}s", flush=True)
 
                 if response.status_code == 200:
-                    data = response.json()
+                    # Lecture bornée par le budget TOTAL du provider (bug timeout prouvé).
+                    body = _consume_with_deadline(response, provider_deadline, t_req_start)
+                    t_req_end = time.monotonic()
+                    print(f"TIMING - call_llm provider={provider_name} attempt={attempt+1} http=200 duration={t_req_end - t_req_start:.2f}s", flush=True)
+                    data = json.loads(body.decode("utf-8", errors="replace"))
                     logger.info(f"LLM call succeeded with provider {provider_name} on attempt {attempt + 1}")
                     return data["choices"][0]["message"]["content"]
+
+                t_req_end = time.monotonic()
+                print(f"TIMING - call_llm provider={provider_name} attempt={attempt+1} http={response.status_code} duration={t_req_end - t_req_start:.2f}s", flush=True)
+                response.close()
 
                 if response.status_code == 429:
                     logger.warning(f"LLM rate limit (429) from {provider_name}, attempt {attempt + 1}, backing off")
@@ -379,6 +420,12 @@ def _build_results_summary_for_prompt(analysis_result: dict[str, Any]) -> str:
             )[:5],
         },
     }
+    
+    # Ajouter les informations de correction de multiplicité si disponibles
+    analysis = analysis_result.get("analysis", {})
+    correlation = dict(analysis.get("correlation_base") or {}) or dict(analysis.get("correlation") or {})
+    if correlation and correlation.get("multiplicity_correction"):
+        summary["multiplicity_correction"] = correlation["multiplicity_correction"]
     
     # Mode autonome : fournir l'ensemble des tests pour une interprétation globale.
     tests_effectues = analysis_result.get("tests_effectues")
