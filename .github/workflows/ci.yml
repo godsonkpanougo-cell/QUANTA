@@ -130,16 +130,11 @@ jobs:
         if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
         working-directory: quanta-frontend
         run: |
-          npx lhci autorun \
-            --collect.url=http://localhost:3000 \
-            --collect.url=http://localhost:3000/history \
-            --collect.numberOfRuns=1 \
-            --only-categories=accessibility \
-            --assert.presets=lighthouse:recommended \
-            --assert.preset-thresholds=-1 \
-            || true
-        env:
-          LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          npx lhci collect \
+            --url=http://localhost:3000 \
+            --url=http://localhost:3000/history \
+            --numberOfRuns=1 \
+            --only-categories=accessibility
 
       - name: Run axe-core
         if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
