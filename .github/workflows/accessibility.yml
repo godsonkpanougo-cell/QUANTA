@@ -3,14 +3,8 @@ name: Accessibility Audit
 on:
   push:
     branches: [main, "feature/**"]
-    paths:
-      - "quanta-frontend/**"
-      - ".github/workflows/accessibility.yml"
   pull_request:
     branches: [main, "feature/**"]
-    paths:
-      - "quanta-frontend/**"
-      - ".github/workflows/accessibility.yml"
 
 jobs:
   accessibility:
