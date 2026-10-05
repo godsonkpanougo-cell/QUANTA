@@ -135,6 +135,11 @@ jobs:
             --url=http://localhost:3000/history \
             --numberOfRuns=1 \
             --only-categories=accessibility
+          echo "=== Exit code lhci collect: $? ==="
+          echo "=== Contenu .lighthouseci (ls direct, pas de find global) ==="
+          ls -la .lighthouseci/ 2>&1 || echo "DOSSIER ABSENT OU VIDE"
+          echo "=== Nombre de fichiers ==="
+          find .lighthouseci -type f 2>&1 | wc -l
 
       - name: Run axe-core
         if: steps.changes.outputs.frontend == 'true' || steps.changes.outputs.workflow == 'true'
