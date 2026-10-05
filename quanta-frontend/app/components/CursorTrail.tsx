@@ -3,7 +3,8 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Traînée du curseur — étoile filante v3 « ruban continu ».
+ * Traînée du curseur — étoile filante v4 « ruban continu, embrasée par
+ * la vitesse ».
  *
  * La v2 dessinait la queue en segments successifs : si fluides soient
  * les échantillons, chaque raccord restait visible (bandes, perles) dès
@@ -23,16 +24,26 @@ import { useEffect, useRef } from "react";
  * - Couleur : dégradé or → champagne projeté le long de l'axe du
  *   ruban (axes principaux), recalculé par frame.
  * - Blending additif + halo radial doux sur la tête.
+ * - RÉACTIVITÉ À LA VITESSE : la vitesse du geste pilote un facteur
+ *   d'embrasement (attaque rapide, extinction lente — comme un métal
+ *   chauffé). Il allonge la queue (12 → 46 points), augmente la
+ *   luminosité du dégradé, l'épaisseur du ruban et le rayon du halo :
+ *   geste vif = étoile filante éblouissante, geste posé = lueur discrète.
  *
  * Mort douce : le curseur posé, la queue se rétracte (~0,8 s) par
  * décalage d'historique. Tactile et prefers-reduced-motion : rien.
  */
 
-const HISTORY_MAX = 42; // points bruts conservés (≈ 0,35 s de vol)
+const HISTORY_MAX = 46; // points bruts conservés (≈ 0,38 s de vol)
 const CURVE_SUBDIV = 5; // subdivisions Catmull-Rom entre deux points
 const WIDTH_HEAD = 1.6; // px — demi-épaisseur au niveau de la tête
 const WIDTH_TAIL = 0.25; // px — demi-épaisseur au bout de la queue
 const RETRACT_STEP = 0.018; // s par point retiré à la mort → ~0,8 s
+/* ── Embrasement : pilotage par la vitesse ── */
+const TAIL_MIN = 12; // points de queue au repos
+const SPEED_FULL = 2200; // px/s — geste considéré à pleine vitesse
+const ATTACK = 12; // embrase vite (s^-1)
+const DECAY = 2.2; // s'éteint lentement (s^-1)
 const GOLD = { r: 201, g: 168, b: 76 }; // quanta-gold #C9A84C
 const CHAMPAGNE = { r: 232, g: 213, b: 163 }; // quanta-gold-2 #E8D5A3
 const HEADGLOW = "243, 231, 198"; // champagne clair pour le halo
@@ -73,6 +84,10 @@ export function CursorTrail() {
     let running = false;
     let settleClock = 0;
     let lastTime = performance.now();
+    /* 0 = repos, 1 = geste éblouissant. Attaque rapide, queue lente. */
+    let speedFactor = 0;
+    let prevTargetX = target.x;
+    let prevTargetY = target.y;
 
     const wake = () => {
       if (!running && !document.hidden) {
@@ -137,6 +152,21 @@ export function CursorTrail() {
       head.x += headV.x * dt;
       head.y += headV.y * dt;
 
+      /* 1bis — Vitesse du geste (la main, pas le ressort) : embrase
+         vite, s'éteint lentement. Les téléportations du pointeur sont
+         plafonnées pour ne pas créer de pic artificiel. */
+      const gestSpeed = Math.min(
+        Math.hypot(target.x - prevTargetX, target.y - prevTargetY) / dt,
+        4000,
+      );
+      prevTargetX = target.x;
+      prevTargetY = target.y;
+      const raw = Math.min(gestSpeed / SPEED_FULL, 1);
+      /* Attaque rapide (montée), extinction lente (descente). */
+      const rate = raw > speedFactor ? ATTACK : DECAY;
+      speedFactor += (raw - speedFactor) * Math.min(1, dt * rate);
+      speedFactor = Math.min(1, Math.max(0, speedFactor));
+
       /* 2 — Historique temporel : un point par frame. */
       const lastPt = history[history.length - 1];
       if (!lastPt || Math.hypot(head.x - lastPt.x, head.y - lastPt.y) > 0.4) {
@@ -148,16 +178,22 @@ export function CursorTrail() {
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      /* 3 — Courbe unique Catmull-Rom le long de l'historique. */
+      /* 3 — Courbe unique Catmull-Rom. La vitesse de l'embrasement
+         allonge la queue : on ne donne à la spline que les
+         `tailCount` points les plus récents de l'historique. */
       const curve: { x: number; y: number }[] = [];
-      const n = history.length;
+      const tailCount = Math.round(
+        TAIL_MIN + (HISTORY_MAX - TAIL_MIN) * speedFactor,
+      );
+      const used = history.slice(Math.max(0, history.length - tailCount));
+      const n = used.length;
       if (n >= 2) {
-        curve.push(history[n - 1]); // la tête fait partie de la courbe
+        curve.push(used[n - 1]); // la tête fait partie de la courbe
         for (let i = 0; i < n - 1; i += 1) {
-          const p1 = history[n - 1 - i];
-          const p2 = history[n - 2 - i];
-          const p0 = history[Math.max(0, n - i - 3)];
-          const p3 = n - i - 4 >= 0 ? history[n - i - 4] : p2;
+          const p1 = used[n - 1 - i];
+          const p2 = used[n - 2 - i];
+          const p0 = used[Math.max(0, n - i - 3)];
+          const p3 = n - i - 4 >= 0 ? used[n - i - 4] : p2;
           curve.push(...catmullRom(p0, p1, p2, p3, CURVE_SUBDIV));
         }
 
@@ -176,7 +212,12 @@ export function CursorTrail() {
           const nx = -ty / len;
           const ny = tx / len;
           const t = i / (m - 1); // 0 tête → 1 queue
-          const half = (WIDTH_TAIL + (WIDTH_HEAD - WIDTH_TAIL) * Math.pow(1 - t, 1.6)) * dpr;
+          /* L'embrasement gonfle légèrement le ruban (jusqu'à +35 %). */
+          const widthScale = 1 + 0.35 * speedFactor;
+          const half =
+            (WIDTH_TAIL + (WIDTH_HEAD - WIDTH_TAIL) * Math.pow(1 - t, 1.6)) *
+            widthScale *
+            dpr;
           left.push({ x: p.x + nx * half, y: p.y + ny * half });
           right.push({ x: p.x - nx * half, y: p.y - ny * half });
         }
@@ -215,14 +256,23 @@ export function CursorTrail() {
           dotMax = Math.max(dotMax, d);
         }
 
+        /* L'embrasement augmente la luminosité aux deux premiers stops. */
+        const headAlpha = 0.75 + 0.25 * speedFactor;
+        const midAlpha = 0.55 + 0.3 * speedFactor;
         const grad = ctx.createLinearGradient(
           (cx + axisX * dotMin) * dpr,
           (cy + axisY * dotMin) * dpr,
           (cx + axisX * dotMax) * dpr,
           (cy + axisY * dotMax) * dpr,
         );
-        grad.addColorStop(0, `rgba(${CHAMPAGNE.r}, ${CHAMPAGNE.g}, ${CHAMPAGNE.b}, 0.92)`);
-        grad.addColorStop(0.45, `rgba(${GOLD.r}, ${GOLD.g}, ${GOLD.b}, 0.75)`);
+        grad.addColorStop(
+          0,
+          `rgba(${CHAMPAGNE.r}, ${CHAMPAGNE.g}, ${CHAMPAGNE.b}, ${headAlpha})`,
+        );
+        grad.addColorStop(
+          0.45,
+          `rgba(${GOLD.r}, ${GOLD.g}, ${GOLD.b}, ${midAlpha})`,
+        );
         grad.addColorStop(1, `rgba(${GOLD.r}, ${GOLD.g}, ${GOLD.b}, 0)`);
 
         ctx.globalCompositeOperation = "lighter";
@@ -242,17 +292,23 @@ export function CursorTrail() {
         ctx.lineWidth = 0.6 * dpr;
         ctx.stroke();
 
-        /* Halo de la tête — l'étoile de l'étoile filante. */
+        /* Halo de la tête — l'étoile de l'étoile filante. Il grandit
+           et s'éblouit avec l'embrasement. */
         const h = curve[0];
         const hx = h.x * dpr;
         const hy = h.y * dpr;
-        const glow = ctx.createRadialGradient(hx, hy, 0, hx, hy, 15 * dpr);
-        glow.addColorStop(0, `rgba(${HEADGLOW}, 0.42)`);
-        glow.addColorStop(0.4, `rgba(${CHAMPAGNE.r}, ${CHAMPAGNE.g}, ${CHAMPAGNE.b}, 0.16)`);
+        const glowR = (14 + 10 * speedFactor) * dpr;
+        const glowA = 0.38 + 0.3 * speedFactor;
+        const glow = ctx.createRadialGradient(hx, hy, 0, hx, hy, glowR);
+        glow.addColorStop(0, `rgba(${HEADGLOW}, ${glowA})`);
+        glow.addColorStop(
+          0.4,
+          `rgba(${CHAMPAGNE.r}, ${CHAMPAGNE.g}, ${CHAMPAGNE.b}, ${glowA * 0.4})`,
+        );
         glow.addColorStop(1, `rgba(${CHAMPAGNE.r}, ${CHAMPAGNE.g}, ${CHAMPAGNE.b}, 0)`);
         ctx.fillStyle = glow;
         ctx.beginPath();
-        ctx.arc(hx, hy, 15 * dpr, 0, Math.PI * 2);
+        ctx.arc(hx, hy, glowR, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalCompositeOperation = "source-over";
       }
