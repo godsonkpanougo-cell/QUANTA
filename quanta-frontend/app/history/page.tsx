@@ -9,6 +9,7 @@ import { useAnalysisSteps } from "@/app/hooks/useAnalysisSteps";
 import { SiteHeader } from "@/app/components/SiteHeader";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { InsightsPanel } from "@/app/components/InsightsPanel";
+import { Reveal } from "@/app/components/Reveal";
 
 interface Analysis {
   analysis_id: string;
@@ -209,7 +210,7 @@ export default function HistoryPage() {
 
   if (!isAuthenticated) {
     return (
-      <div className="flex min-h-screen flex-col bg-quanta-void">
+      <div className="flex min-h-screen flex-col">
         <SiteHeader />
         <main className="flex flex-1 items-center justify-center px-6">
           <div className="rounded-card border border-quanta-border-subtle bg-quanta-surface px-8 py-10 text-center">
@@ -227,10 +228,10 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-quanta-void">
+    <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 pb-20 pt-28 sm:px-6 lg:px-8">
-        <div className="mb-10">
+        <Reveal className="mb-10">
           <Link
             href="/"
             className="inline-flex w-fit items-center gap-2 rounded-quanta border border-quanta-border-subtle px-3.5 py-2 font-sans text-sm text-quanta-secondary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
@@ -251,10 +252,13 @@ export default function HistoryPage() {
             Quitter cette page n&apos;interrompt pas une analyse en cours —
             elle continue côté serveur.
           </p>
-        </div>
+        </Reveal>
 
         {/* Recherche + filtres par statut */}
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Reveal
+          className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center"
+          delay={0.07}
+        >
           <label className="glass flex flex-1 items-center gap-2.5 rounded-quanta px-4 py-2.5 transition-quanta focus-within:border-quanta-border-active">
             <Search
               strokeWidth={1.5}
@@ -294,7 +298,7 @@ export default function HistoryPage() {
               );
             })}
           </div>
-        </div>
+        </Reveal>
 
         {!isLoadingAnalyses && !error && analyses.length > 0 && visibleAnalyses.length === 0 ? (
           <div className="glass rounded-card px-6 py-10 text-center">
@@ -349,9 +353,12 @@ export default function HistoryPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {visibleAnalyses.map((analysis) => (
-              <div
+            {visibleAnalyses.map((analysis, index) => (
+              <Reveal
                 key={analysis.analysis_id}
+                delay={Math.min(index * 0.05, 0.25)}
+              >
+              <div
                 onClick={() => handleAnalysisClick(analysis.analysis_id, analysis.status)}
                 className={`glass rounded-card px-6 py-5 transition-quanta hover:border-quanta-border-active ${
                   (analysis.status === "running" || analysis.status === "pending")
@@ -459,13 +466,16 @@ export default function HistoryPage() {
                   )}
                 </div>
               </div>
+              </Reveal>
             ))}
           </div>
         )}
 
         {/* Insight d'usage — agrégats dérivés de l'historique, jamais la mécanique interne */}
         {!isLoadingAnalyses && !error && analyses.length > 0 && (
-          <InsightsPanel analyses={analyses} />
+          <Reveal>
+            <InsightsPanel analyses={analyses} />
+          </Reveal>
         )}
       </main>
       <SiteFooter />

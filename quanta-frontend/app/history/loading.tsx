@@ -1,7 +1,7 @@
 /** Skeleton du chargement de l'historique — même allure que la vraie page. */
 export default function HistoryLoading() {
   return (
-    <div className="flex min-h-screen flex-col bg-quanta-void">
+    <div className="flex min-h-screen flex-col">
       <main className="mx-auto w-full max-w-4xl flex-1 px-4 pb-20 pt-28 sm:px-6 lg:px-8">
         {/* Titre */}
         <div className="mb-10 space-y-4">

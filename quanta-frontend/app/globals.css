@@ -281,6 +281,33 @@
     transform: translateX(130%);
   }
 
+  /* ── Pluie de symboles mathématiques (toutes pages, calque fixe) ──── */
+  .symbol-flake {
+    position: absolute;
+    line-height: 1;
+    font-family: var(--font-cormorant), Georgia, serif;
+    /* Halo or doux : les glyphes restent lisibles sur le fond étoilé. */
+    text-shadow:
+      0 0 6px rgba(201, 168, 76, 0.55),
+      0 0 16px rgba(232, 213, 163, 0.3);
+    animation-name: quanta-symbol-drift, quanta-symbol-twinkle;
+    animation-iteration-count: infinite, infinite;
+    animation-timing-function: ease-in-out, ease-in-out;
+    will-change: transform, opacity;
+  }
+  /* Onglet masqué : la pluie dort (piloté par visibilitychange). */
+  .symbol-rain[data-paused="true"] .symbol-flake {
+    animation-play-state: paused;
+  }
+
+  /* Défilement horizontal sans barre visible (nav du header mobile). */
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   /* ── Aurores — nappes de couleur dérivantes ─────── */
   .aurora-blob {
     position: absolute;
@@ -314,6 +341,29 @@
   }
 }
 
+@keyframes quanta-symbol-drift {
+  from {
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    transform: translate3d(
+      var(--drift, 8px),
+      calc(-1 * var(--rise, 44px)),
+      0
+    );
+  }
+}
+
+@keyframes quanta-symbol-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: var(--peak, 0.4);
+  }
+}
+
 @keyframes quanta-aurora {
   0% {
     transform: translate3d(0, 0, 0) scale(1);
@@ -343,6 +393,10 @@
     animation: none;
   }
   .sheen::after {
+    display: none;
+  }
+  /* Pluie de symboles : cachée entièrement (les glyphes sont animes). */
+  .symbol-flake {
     display: none;
   }
 }

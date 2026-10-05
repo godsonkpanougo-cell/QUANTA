@@ -113,9 +113,12 @@ export function AuthButton({ compact = false }: { compact?: boolean }) {
 
   return (
     <div className="flex items-center gap-3">
-      {/* Quota — or/warning/erreur = information de budget */}
+      {/* Quota — or/warning/erreur = information de budget.
+          Dans le header (compact) : masqué sous md pour tenir sur une ligne. */}
       <div
-        className="glass flex items-center gap-2 rounded-quanta px-3 py-1.5"
+        className={`glass flex items-center gap-2 rounded-quanta px-3 py-1.5 ${
+          compact ? "hidden md:flex" : ""
+        }`}
         title="Analyses restantes ce mois"
       >
         <span className="hud-label hidden text-quanta-muted sm:inline">
@@ -165,24 +168,27 @@ export function AuthButton({ compact = false }: { compact?: boolean }) {
         />
       )}
 
-      <div className="flex items-center gap-2">
+      {/* Lien historique : réservé aux usages non-compact — le header
+          expose déjà « Historique » dans sa navigation. */}
+      {!compact && (
         <a
           href="/history"
-          className="inline-flex items-center justify-center gap-2 rounded-quanta border border-quanta-border-subtle bg-transparent px-3 py-2 font-sans text-sm text-quanta-secondary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
+          className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-quanta border border-quanta-border-subtle bg-transparent px-3 py-2 font-sans text-sm text-quanta-secondary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
         >
           <History strokeWidth={1.5} className="size-4" aria-hidden />
           <span className="hidden lg:inline">Mes analyses</span>
         </a>
-        <button
-          type="button"
-          onClick={handleLogout}
-          aria-label="Se déconnecter"
-          className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-quanta border border-quanta-border-subtle bg-transparent px-3 py-2 font-sans text-sm text-quanta-secondary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
-        >
-          <LogOut strokeWidth={1.5} className="size-4" aria-hidden />
-          <span className="hidden lg:inline">Quitter</span>
-        </button>
-      </div>
+      )}
+
+      <button
+        type="button"
+        onClick={handleLogout}
+        aria-label="Se déconnecter"
+        className="inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-quanta border border-quanta-border-subtle bg-transparent px-3 py-2 font-sans text-sm text-quanta-secondary transition-quanta hover:border-quanta-cyan hover:text-quanta-cyan"
+      >
+        <LogOut strokeWidth={1.5} className="size-4" aria-hidden />
+        <span className="hidden lg:inline">Se déconnecter</span>
+      </button>
     </div>
   );
 }

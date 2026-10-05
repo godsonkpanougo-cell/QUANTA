@@ -11,7 +11,7 @@ export const metadata = { title: "Page introuvable — QUANTA" };
  */
 export default function NotFound() {
   return (
-    <div className="flex min-h-screen flex-col bg-quanta-void">
+    <div className="flex min-h-screen flex-col">
       <main className="flex flex-1 flex-col items-center justify-center px-6 text-center">
         <LogoQ size={72} className="opacity-70" />
         <p className="hud-label mt-10 text-quanta-muted">Erreur 404</p>

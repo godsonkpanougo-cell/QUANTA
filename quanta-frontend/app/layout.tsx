@@ -6,6 +6,8 @@ import {
   Space_Grotesk,
 } from "next/font/google";
 import "./globals.css";
+import { GoldDust } from "@/app/components/GoldDust";
+import { SymbolRain } from "@/app/components/SymbolRain";
 import { AuthProvider } from "@/app/context/AuthContext";
 import "@fontsource/jetbrains-mono";
 
@@ -76,7 +78,16 @@ export default function RootLayout({
       <body
         className={`${orbitron.variable} ${cormorant.variable} ${jost.variable} ${spaceGrotesk.variable} font-sans bg-quanta-void text-quanta-primary antialiased`}
       >
-        <AuthProvider>{children}</AuthProvider>
+        {/* Calque contenu : au-dessus de la pluie de symboles (z-0).
+            Aucun transform/filtre : les fixed descendants restent ancrés
+            au viewport. */}
+        <AuthProvider>
+          <div className="relative z-10">{children}</div>
+        </AuthProvider>
+        {/* Pluie de symboles mathématiques — décorative, toutes les pages. */}
+        <SymbolRain />
+        {/* Poussière d'or au curseur — décoratif, toutes les pages. */}
+        <GoldDust />
       </body>
     </html>
   );

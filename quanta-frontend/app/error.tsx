@@ -23,7 +23,7 @@ export default function RouteError({
   }, [error]);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-quanta-void px-6 text-center">
+    <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
       <div className="glass rounded-hero flex max-w-md flex-col items-center gap-6 px-8 py-12">
         <LogoQ size={56} />
         <p className="hud-label text-quanta-muted">Une perturbation est survenue</p>

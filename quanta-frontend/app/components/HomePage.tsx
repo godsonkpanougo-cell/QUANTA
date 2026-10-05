@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useState, useEffect, Suspense } from "react";
+import { useCallback, useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
+import {
+  animate,
+  motion,
+  useInView,
+  useReducedMotion,
+  useScroll,
+  useTransform,
+} from "framer-motion";
 import { ArrowRight, FileWarning, Loader2, ShieldCheck } from "lucide-react";
 
 import { AnalysisProgress } from "@/app/components/AnalysisProgress";
@@ -13,6 +20,7 @@ import { LogoQ } from "@/app/components/LogoQ";
 import { SiteHeader } from "@/app/components/SiteHeader";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SplashScreen } from "@/app/components/SplashScreen";
+import { Reveal } from "@/app/components/Reveal";
 import { useAuth } from "@/app/context/AuthContext";
 
 const QUERY_EXAMPLES = [
@@ -21,8 +29,9 @@ const QUERY_EXAMPLES = [
   "Prédire le salaire par l'expérience",
 ] as const;
 
+const TRUST_METHOD_COUNT = 37;
+
 const TRUST_ITEMS = [
-  "37 méthodes statistiques",
   "Score de confiance calibré",
   "Rapport PDF signable",
 ] as const;
@@ -68,9 +77,52 @@ async function parseErrorResponse(response: Response): Promise<string> {
   return `Erreur HTTP ${response.status}`;
 }
 
+/**
+ * « 37 méthodes statistiques » — le compteur s'incrémente à l'entrée
+ * dans le viewport (une seule fois). Au premier chargement de session,
+ * il attend la fin du splash pour que l'incrément soit visible.
+ */
+function TrustStat() {
+  const ref = useRef<HTMLSpanElement>(null);
+  const inView = useInView(ref, { once: true, margin: "-24px" });
+  const [value, setValue] = useState(0);
+
+  useEffect(() => {
+    if (!inView) {
+      return;
+    }
+    let delay = 0.15;
+    try {
+      if (sessionStorage.getItem("quanta-splash-shown") !== "1") {
+        delay = 4.2;
+      }
+    } catch {
+      // sessionStorage indisponible : comptage immédiat.
+    }
+    const controls = animate(0, TRUST_METHOD_COUNT, {
+      duration: 1.8,
+      ease: [0.16, 1, 0.3, 1],
+      delay,
+      onUpdate: (v) => setValue(Math.round(v)),
+    });
+    return () => controls.stop();
+  }, [inView]);
+
+  return (
+    <span ref={ref} className="tabular-nums text-quanta-gold">
+      {value}
+    </span>
+  );
+}
+
 function HomePageContent() {
   const searchParams = useSearchParams();
   const { isAuthenticated, isLoading } = useAuth();
+  const { scrollY } = useScroll();
+  const reduceMotion = useReducedMotion();
+  /* Parallaxe : le fond glisse plus lentement que le contenu. */
+  const atmosphereY = useTransform(scrollY, [0, 1400], [0, 240]);
+  const atmosphereOpacity = useTransform(scrollY, [0, 1000], [1, 0.45]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [query, setQuery] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
@@ -200,15 +252,25 @@ function HomePageContent() {
   }, []);
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-quanta-void">
+    <div className="relative flex min-h-screen flex-col">
       <SplashScreen />
       <SiteHeader />
 
-      {/* Atmosphère : motif de points + halo or, hors flux */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      {/* Atmosphère : points + halo or, hors flux (la pluie de symboles
+          est un calque fixe global rendu par le layout). Parallaxe : le
+          fond défile plus lentement que le contenu. */}
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 overflow-hidden"
+        style={
+          reduceMotion
+            ? undefined
+            : { y: atmosphereY, opacity: atmosphereOpacity }
+        }
+      >
         <div className="bg-dots mask-fade-edges absolute inset-0" />
         <div className="bg-glow-gold absolute inset-0" />
-      </div>
+      </motion.div>
 
       <main className="relative z-10 flex flex-1 flex-col items-center px-6 pb-20 pt-36">
         {/* ── Hero ─────────────────────────────────────────── */}
@@ -254,11 +316,13 @@ function HomePageContent() {
             transition={{ duration: 0.8, delay: 3.75 }}
             className="mt-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2"
           >
-            {TRUST_ITEMS.map((item, index) => (
+            <span className="flex items-baseline gap-1.5 font-sans text-[11px] uppercase tracking-[0.14em] text-quanta-muted">
+              <TrustStat />
+              <span>méthodes statistiques</span>
+            </span>
+            {TRUST_ITEMS.map((item) => (
               <span key={item} className="flex items-center gap-5">
-                {index > 0 ? (
-                  <span aria-hidden className="h-3 w-px bg-quanta-border-subtle" />
-                ) : null}
+                <span aria-hidden className="h-3 w-px bg-quanta-border-subtle" />
                 <span className="font-sans text-[11px] uppercase tracking-[0.14em] text-quanta-muted">
                   {item}
                 </span>
@@ -279,6 +343,7 @@ function HomePageContent() {
             </div>
           ) : !isAuthenticated ? (
             /* Connexion requise */
+            <Reveal>
             <div className="glass flex flex-col items-center gap-6 rounded-hero px-8 py-12 text-center">
               <div className="flex size-12 items-center justify-center rounded-full border border-quanta-border-active">
                 <ShieldCheck
@@ -298,9 +363,11 @@ function HomePageContent() {
               </div>
               <AuthButton />
             </div>
+            </Reveal>
           ) : (
             <>
               {phase === "analyzing" && analysisId ? (
+                <Reveal>
                 <AnalysisProgress
                   analysisId={analysisId}
                   onComplete={(res) => {
@@ -316,17 +383,21 @@ function HomePageContent() {
                     setAnalysisId(null);
                   }}
                 />
+                </Reveal>
               ) : null}
 
               {phase === "done" && result !== null && analysisId ? (
+                <Reveal>
                 <AnalysisResults
                   result={result}
                   analysisId={analysisId}
                   onNewAnalysis={resetAll}
                 />
+                </Reveal>
               ) : null}
 
               {phase === "error" ? (
+                <Reveal>
                 <div className="glass flex flex-col items-center gap-5 rounded-hero px-8 py-10 text-center">
                   <FileWarning
                     strokeWidth={1.5}
@@ -345,11 +416,13 @@ function HomePageContent() {
                     Réessayer
                   </button>
                 </div>
+                </Reveal>
               ) : null}
 
               {phase === "idle" || phase === "uploading" ? (
                 <>
                   {/* 01 — Données */}
+                  <Reveal delay={2.85}>
                   <div className="space-y-3">
                     <p className="hud-label pl-1 text-quanta-muted">
                       01 · Votre base de données
@@ -371,8 +444,10 @@ function HomePageContent() {
                       </button>
                     </div>
                   </div>
+                  </Reveal>
 
                   {/* 02 — Intention */}
+                  <Reveal delay={2.95}>
                   <div className="space-y-3">
                     <label
                       htmlFor="query-input"
@@ -405,8 +480,10 @@ function HomePageContent() {
                       ))}
                     </div>
                   </div>
+                  </Reveal>
 
                   {/* 03 — Exécution */}
+                  <Reveal delay={3.05}>
                   <div className="flex justify-center pt-2">
                     <button
                       type="button"
@@ -440,6 +517,7 @@ function HomePageContent() {
                       )}
                     </button>
                   </div>
+                  </Reveal>
                 </>
               ) : null}
             </>
@@ -456,7 +534,7 @@ export function HomePage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-quanta-void">
+        <main className="flex min-h-screen items-center justify-center">
           <div className="flex items-center gap-2">
             <Loader2
               strokeWidth={1.5}
