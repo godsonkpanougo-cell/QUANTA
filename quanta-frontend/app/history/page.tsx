@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, FileText, Clock, CheckCircle, AlertCircle, Loader2, ArrowLeft, Search } from "lucide-react";
+import { Download, FileText, Clock, CheckCircle, AlertCircle, Loader2, ArrowLeft, Search, GraduationCap, FileArchive } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/context/AuthContext";
@@ -391,6 +391,30 @@ export default function HistoryPage() {
 
                   {analysis.status === "done" && (
                     <div className="flex flex-col gap-2 sm:flex-row">
+                      <Link
+                        href={`/defense/${analysis.analysis_id}`}
+                        aria-label={`Préparer la soutenance de ${analysis.filename ?? "cette analyse"}`}
+                        className="inline-flex items-center justify-center gap-2 rounded-quanta border border-quanta-border-active bg-quanta-surface px-4 py-2 font-sans text-sm font-medium text-quanta-gold transition-colors hover:bg-quanta-elevated"
+                      >
+                        <GraduationCap
+                          strokeWidth={1.5}
+                          className="size-4 shrink-0"
+                          aria-hidden
+                        />
+                        Soutenance
+                      </Link>
+                      <Link
+                        href={`/audit/${analysis.analysis_id}`}
+                        aria-label={`Ouvrir le dossier d'audit de ${analysis.filename ?? "cette analyse"}`}
+                        className="inline-flex items-center justify-center gap-2 rounded-quanta border border-quanta-border-active bg-quanta-surface px-4 py-2 font-sans text-sm font-medium text-quanta-gold transition-colors hover:bg-quanta-elevated"
+                      >
+                        <FileArchive
+                          strokeWidth={1.5}
+                          className="size-4 shrink-0"
+                          aria-hidden
+                        />
+                        Dossier d&apos;audit
+                      </Link>
                       <button
                         type="button"
                         disabled={downloadingTheme !== null}

@@ -440,7 +440,7 @@ def list_analyses(user_id: str, limit: int = 100) -> list[dict[str, Any]]:
     """
     with _get_conn() as conn:
         rows = conn.execute(
-            """SELECT a.analysis_id, a.status, a.query, a.created_at, a.updated_at, a.result,
+            """SELECT a.analysis_id, a.file_id, a.status, a.query, a.created_at, a.updated_at, a.result,
                       u.filename
                FROM analyses a
                JOIN uploads u ON a.file_id = u.file_id
@@ -452,6 +452,7 @@ def list_analyses(user_id: str, limit: int = 100) -> list[dict[str, Any]]:
     for r in rows:
         analysis = {
             "analysis_id": r["analysis_id"],
+            "file_id": r["file_id"],
             "status": r["status"],
             "query": r["query"],
             "created_at": r["created_at"],

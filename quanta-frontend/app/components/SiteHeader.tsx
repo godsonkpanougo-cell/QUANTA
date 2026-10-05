@@ -8,8 +8,18 @@ import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
   { href: "/", label: "Accueil" },
+  { href: "/workspace", label: "Workspace" },
+  { href: "/conversation", label: "Conversation" },
   { href: "/history", label: "Historique" },
+  { href: "/defense", label: "Préparer ma soutenance" },
 ] as const;
+
+// La page Méthodologie (A3) est servie par l'API FastAPI, pas par Next.js :
+// lien externe construit sur NEXT_PUBLIC_API_URL.
+function methodologieHref(): string {
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? "";
+  return `${baseUrl.replace(/\/$/, "")}/methodologie`;
+}
 
 /**
  * Header QUANTA — verre liquide, wordmark, statut HUD.
@@ -75,6 +85,16 @@ export function SiteHeader() {
                   </li>
                 );
               })}
+              <li>
+                <a
+                  href={methodologieHref()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="relative block px-3 py-2 font-sans text-sm text-quanta-secondary transition-quanta hover:text-quanta-primary"
+                >
+                  Méthodologie
+                </a>
+              </li>
             </ul>
           </nav>
 
