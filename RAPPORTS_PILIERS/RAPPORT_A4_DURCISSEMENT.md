@@ -76,6 +76,13 @@ Orchestrateur sur données normales → **Student/Welch sélectionné** (normali
   - `monkeypatch.setattr(main, "_run_analysis_background", lambda *a, **k: None)` — sinon le test déclenche 15 **vraies** analyses LLM (timeout garanti, hors périmètre du test qui vérifie le quota, pas le LLM).
 - **Preuve** : **3/3 passed**.
 
+### 3.3 `tests/test_cache.py` — non-déterminisme découvert lors du re-test final (05/10/2026)
+
+- **Symptôme** : 2 échecs locaux non reproductibles en CI (`remaining == 15` au lieu de 14).
+- **Cause racine** : le worker d'analyse réel partait avec les **vraies clés .env** → 429 rate-limit → l'analyse finissait en `error` → le `finally` du worker **remboursait le quota** (`refund_quota`) → le compteur remontait à 15 entre le POST et l'assertion. La CI passait faute de clés (chemin dégradé propre) ; la machine locale échouait selon la charge.
+- **Fix** (même pattern que §3.2) : la fixture autouse neutralise `main._run_analysis_background` — le test vérifie le compteur de quota, pas le LLM.
+- **Preuve** : **4/4 passed** en local avec clés réelles présentes.
+
 ---
 
 ## 4. HC3 automatique sur hétéroscédasticité (`ols_regression`)

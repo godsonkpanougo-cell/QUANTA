@@ -4,6 +4,7 @@ import pytest
 import db
 import hashlib
 from fastapi.testclient import TestClient
+import main
 from main import app
 import app.auth as auth
 
@@ -12,10 +13,18 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def setup_db():
+def setup_db(monkeypatch):
     """Initialise et nettoie la base de données pour chaque test."""
     db.init_db()
     db.clear_all()
+    # Déterminisme : ces tests vérifient le COMPTEUR DE QUOTA, pas le LLM.
+    # Sans ce no-op, le worker réel part avec les vraies clés .env -> 429
+    # rate-limit -> l'analyse finit en 'error' -> le finally du worker
+    # rembourse le quota (refund_quota) -> remaining repasse à 15 et
+    # l'assertion remaining == 14 échoue de façon non déterministe (c'est
+    # pourquoi la CI verte passait alors que la machine locale échouait).
+    # Même remède que tests/test_quota.py (fixture établie).
+    monkeypatch.setattr(main, "_run_analysis_background", lambda *a, **k: None)
     yield
     db.clear_all()
 
