@@ -3,42 +3,39 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Traînée du curseur — étoile filante : une lique ultra fluide qui ne
- * se casse jamais en segments. Trois clés du rendu :
+ * Traînée du curseur — étoile filante v3 « ruban continu ».
  *
- * 1. Échantillonnage TEMPOREL (à chaque frame) et non au déplacement :
- *    les virages serrés et les arrêts produisent autant de points que
- *    les lignes droites — la courbe garde une densité constante.
- * 2. Un seul chemin par frame avec dégradé continu d'alpha et
- *    d'épaisseur : aucun raccord entre segments, donc aucune bande.
- * 3. Blending additif (« lighter ») : les chevauchements s'additionnent
- *    en lumière au lieu de dessiner des jonctions plus sombres.
+ * La v2 dessinait la queue en segments successifs : si fluides soient
+ * les échantillons, chaque raccord restait visible (bandes, perles) dès
+ * que le geste forçait des virages serrés. La v3 change de méthode :
  *
- * Physique : la tête poursuit le curseur avec un ressort amorti
- * (interpolation indépendante du framerate) — elle glisse, ne saute
- * jamais, même quand la souris téléporte. Le corps suit la tête :
- * trajectoire lissée deux fois, d'où l'élégance d'une comète.
+ * - Échantillonnage TEMPOREL : la tête poursuit le curseur en ressort
+ *   amorti et un point d'historique est ajouté à chaque frame — densité
+ *   constante, même dans les mouvements brusques.
+ * - Lissage Catmull-Rom (centripète) : le centre du ruban est une
+ *   courbe unique dérivée des points bruts ; les virages deviennent des
+ *   arcs, jamais des coudes.
+ * - La SILHOUETTE du ruban est construite en un seul polygone : pour
+ *   chaque échantillon de la courbe, deux points décalés
+ *   perpendiculairement à l'axe, épaisseur croissante vers la tête,
+ *   puis remplissage d'un trait — un seul draw call, donc
+ *   mathématiquement aucun segment ni raccord visible.
+ * - Couleur : dégradé or → champagne projeté le long de l'axe du
+ *   ruban (axes principaux), recalculé par frame.
+ * - Blending additif + halo radial doux sur la tête.
  *
- * Canvas décoratif (pointer-events-none), sous le header. Boucle rAF
- * arrêtée quand la comète est éteinte ; désactivée sur tactile
- * (pointer: fine requis) et sous prefers-reduced-motion.
+ * Mort douce : le curseur posé, la queue se rétracte (~0,8 s) par
+ * décalage d'historique. Tactile et prefers-reduced-motion : rien.
  */
 
-const TAIL_POINTS = 44; // longueur de la comète (en points de courbe)
-const RETRACT_STEP = 0.018; // s par point à la retraite → mort en ~0,8 s
+const HISTORY_MAX = 42; // points bruts conservés (≈ 0,35 s de vol)
+const CURVE_SUBDIV = 5; // subdivisions Catmull-Rom entre deux points
+const WIDTH_HEAD = 1.6; // px — demi-épaisseur au niveau de la tête
+const WIDTH_TAIL = 0.25; // px — demi-épaisseur au bout de la queue
+const RETRACT_STEP = 0.018; // s par point retiré à la mort → ~0,8 s
 const GOLD = { r: 201, g: 168, b: 76 }; // quanta-gold #C9A84C
 const CHAMPAGNE = { r: 232, g: 213, b: 163 }; // quanta-gold-2 #E8D5A3
-
-/** Alpha continu le long de la queue — jamais de rupture de pente. */
-function tailAlpha(t: number): number {
-  // t=0 tête → t=1 bout de queue. Sans palier : dérivée continue.
-  return Math.pow(1 - t, 1.7) * 0.9;
-}
-
-/** Épaisseur continue : comète fine qui s'effile en aiguille. */
-function tailWidth(t: number): number {
-  return 0.4 + 1.1 * Math.pow(1 - t, 2.2);
-}
+const HEADGLOW = "243, 231, 198"; // champagne clair pour le halo
 
 export function CursorTrail() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -71,8 +68,7 @@ export function CursorTrail() {
     const target = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
     const head = { ...target };
     const headV = { x: 0, y: 0 };
-    /* Historique de positions de la tête (le corps de la comète). */
-    const trail: { x: number; y: number }[] = [];
+    const history: { x: number; y: number }[] = [];
     let raf = 0;
     let running = false;
     let settleClock = 0;
@@ -92,17 +88,48 @@ export function CursorTrail() {
       wake();
     };
 
+    /** Spline Catmull-Rom centripète : retourne `subdiv` points entre
+     *  p1 et p2 (p0, p3 = voisines), jamais de rebond. */
+    const catmullRom = (
+      p0: { x: number; y: number },
+      p1: { x: number; y: number },
+      p2: { x: number; y: number },
+      p3: { x: number; y: number },
+      subdiv: number,
+    ): { x: number; y: number }[] => {
+      const out: { x: number; y: number }[] = [];
+      for (let i = 0; i < subdiv; i += 1) {
+        const t = i / subdiv;
+        const t2 = t * t;
+        const t3 = t2 * t;
+        out.push({
+          x:
+            0.5 *
+            (2 * p1.x +
+              (-p0.x + p2.x) * t +
+              (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+              (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+          y:
+            0.5 *
+            (2 * p1.y +
+              (-p0.y + p2.y) * t +
+              (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+              (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+        });
+      }
+      return out;
+    };
+
     const tick = (now: number) => {
       let dt = (now - lastTime) / 1000;
       lastTime = now;
       if (dt > 0.05) {
-        dt = 0.05; // onglet repris : pas de saut
+        dt = 0.05;
       }
 
-      /* 1 — Ressort amorti : la tête glisse vers le curseur.
-         Indépendant du framerate (compensation exponentielle). */
-      const stiffness = 260;
-      const damping = 22;
+      /* 1 — Ressort amorti sur la tête (framerate-indépendant). */
+      const stiffness = 300;
+      const damping = 26;
       const ax = (target.x - head.x) * stiffness - headV.x * damping;
       const ay = (target.y - head.y) * stiffness - headV.y * damping;
       headV.x += ax * dt;
@@ -110,80 +137,140 @@ export function CursorTrail() {
       head.x += headV.x * dt;
       head.y += headV.y * dt;
 
-      /* 2 — Le corps enregistre la tête à chaque frame : densité
-         constante, virages aussi bien servis que les lignes droites. */
-      const lastPt = trail[trail.length - 1];
-      if (!lastPt || Math.hypot(head.x - lastPt.x, head.y - lastPt.y) > 0.35) {
-        trail.push({ x: head.x, y: head.y });
-        if (trail.length > TAIL_POINTS) {
-          trail.shift();
+      /* 2 — Historique temporel : un point par frame. */
+      const lastPt = history[history.length - 1];
+      if (!lastPt || Math.hypot(head.x - lastPt.x, head.y - lastPt.y) > 0.4) {
+        history.push({ x: head.x, y: head.y });
+        if (history.length > HISTORY_MAX) {
+          history.shift();
         }
       }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      /* 3 — Un seul chemin continu : dégradé d'alpha et d'épaisseur
-         dessinés dans la même passe, blending additif. */
-      const n = trail.length;
+      /* 3 — Courbe unique Catmull-Rom le long de l'historique. */
+      const curve: { x: number; y: number }[] = [];
+      const n = history.length;
       if (n >= 2) {
-        ctx.globalCompositeOperation = "lighter";
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-        for (let i = 1; i < n; i += 1) {
-          /* trail[n-1] = tête (t=0) → trail[0] = bout de queue (t≈1). */
-          const tMid = (n - i - 0.5) / n;
-          const p0 = trail[i - 1];
-          const p1 = trail[i];
-          const alpha = tailAlpha(tMid);
-          if (alpha < 0.015) {
-            continue;
-          }
-          // Teinte : champagne à la tête → or vers la queue.
-          const k = 0.55 * (1 - tMid);
-          const r = Math.round(GOLD.r + (CHAMPAGNE.r - GOLD.r) * k);
-          const g = Math.round(GOLD.g + (CHAMPAGNE.g - GOLD.g) * k);
-          const b = Math.round(GOLD.b + (CHAMPAGNE.b - GOLD.b) * k);
-          ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-          ctx.lineWidth = tailWidth(tMid) * dpr;
-          ctx.beginPath();
-          ctx.moveTo(p0.x * dpr, p0.y * dpr);
-          ctx.lineTo(p1.x * dpr, p1.y * dpr);
-          ctx.stroke();
+        curve.push(history[n - 1]); // la tête fait partie de la courbe
+        for (let i = 0; i < n - 1; i += 1) {
+          const p1 = history[n - 1 - i];
+          const p2 = history[n - 2 - i];
+          const p0 = history[Math.max(0, n - i - 3)];
+          const p3 = n - i - 4 >= 0 ? history[n - i - 4] : p2;
+          curve.push(...catmullRom(p0, p1, p2, p3, CURVE_SUBDIV));
         }
 
-        /* Halo de la tête : la « étoile » de l'étoile filante.
-           Il s'éteint avec la comète quand le mouvement cesse. */
-        const headAlpha = tailAlpha(0) * (n / TAIL_POINTS);
-        const hx = head.x * dpr;
-        const hy = head.y * dpr;
-        const grad = ctx.createRadialGradient(hx, hy, 0, hx, hy, 16 * dpr);
-        grad.addColorStop(0, `rgba(243, 231, 198, ${0.5 * headAlpha})`);
-        grad.addColorStop(0.35, `rgba(${CHAMPAGNE.r}, ${CHAMPAGNE.g}, ${CHAMPAGNE.b}, ${0.22 * headAlpha})`);
-        grad.addColorStop(1, "rgba(232, 213, 163, 0)");
-        ctx.fillStyle = grad;
+        /* 4 — Silhouette : un seul polygone épaisseur variable. */
+        const left: { x: number; y: number }[] = [];
+        const right: { x: number; y: number }[] = [];
+        const m = curve.length;
+        for (let i = 0; i < m; i += 1) {
+          const p = curve[i];
+          const prev = curve[Math.max(0, i - 1)];
+          const next = curve[Math.min(m - 1, i + 1)];
+          // Tangente centrée puis normale : direction lisse du ruban.
+          const tx = next.x - prev.x;
+          const ty = next.y - prev.y;
+          const len = Math.hypot(tx, ty) || 1;
+          const nx = -ty / len;
+          const ny = tx / len;
+          const t = i / (m - 1); // 0 tête → 1 queue
+          const half = (WIDTH_TAIL + (WIDTH_HEAD - WIDTH_TAIL) * Math.pow(1 - t, 1.6)) * dpr;
+          left.push({ x: p.x + nx * half, y: p.y + ny * half });
+          right.push({ x: p.x - nx * half, y: p.y - ny * half });
+        }
+
+        /* Dégradé or → champagne le long de l'axe du ruban. */
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        for (const p of curve) {
+          minX = Math.min(minX, p.x);
+          minY = Math.min(minY, p.y);
+          maxX = Math.max(maxX, p.x);
+          maxY = Math.max(maxY, p.y);
+        }
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        let sxx = 0;
+        let syy = 0;
+        let sxy = 0;
+        for (const p of curve) {
+          const dx = p.x - cx;
+          const dy = p.y - cy;
+          sxx += dx * dx;
+          syy += dy * dy;
+          sxy += dx * dy;
+        }
+        const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+        const axisX = Math.cos(angle);
+        const axisY = Math.sin(angle);
+        let dotMin = Infinity;
+        let dotMax = -Infinity;
+        for (const p of curve) {
+          const d = (p.x - cx) * axisX + (p.y - cy) * axisY;
+          dotMin = Math.min(dotMin, d);
+          dotMax = Math.max(dotMax, d);
+        }
+
+        const grad = ctx.createLinearGradient(
+          (cx + axisX * dotMin) * dpr,
+          (cy + axisY * dotMin) * dpr,
+          (cx + axisX * dotMax) * dpr,
+          (cy + axisY * dotMax) * dpr,
+        );
+        grad.addColorStop(0, `rgba(${CHAMPAGNE.r}, ${CHAMPAGNE.g}, ${CHAMPAGNE.b}, 0.92)`);
+        grad.addColorStop(0.45, `rgba(${GOLD.r}, ${GOLD.g}, ${GOLD.b}, 0.75)`);
+        grad.addColorStop(1, `rgba(${GOLD.r}, ${GOLD.g}, ${GOLD.b}, 0)`);
+
+        ctx.globalCompositeOperation = "lighter";
         ctx.beginPath();
-        ctx.arc(hx, hy, 16 * dpr, 0, Math.PI * 2);
+        ctx.moveTo(left[0].x * dpr, left[0].y * dpr);
+        for (let i = 1; i < left.length; i += 1) {
+          ctx.lineTo(left[i].x * dpr, left[i].y * dpr);
+        }
+        for (let i = right.length - 1; i >= 0; i -= 1) {
+          ctx.lineTo(right[i].x * dpr, right[i].y * dpr);
+        }
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+        /* Liseré : même dessin en trait, résout l'antialiasing de bord. */
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 0.6 * dpr;
+        ctx.stroke();
+
+        /* Halo de la tête — l'étoile de l'étoile filante. */
+        const h = curve[0];
+        const hx = h.x * dpr;
+        const hy = h.y * dpr;
+        const glow = ctx.createRadialGradient(hx, hy, 0, hx, hy, 15 * dpr);
+        glow.addColorStop(0, `rgba(${HEADGLOW}, 0.42)`);
+        glow.addColorStop(0.4, `rgba(${CHAMPAGNE.r}, ${CHAMPAGNE.g}, ${CHAMPAGNE.b}, 0.16)`);
+        glow.addColorStop(1, `rgba(${CHAMPAGNE.r}, ${CHAMPAGNE.g}, ${CHAMPAGNE.b}, 0)`);
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(hx, hy, 15 * dpr, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalCompositeOperation = "source-over";
       }
 
-      /* La comète vit tant que la tête n'est pas posée sur le curseur.
-         Posée : la queue se rétracte à vitesse constante (horloge,
-         indépendante du framerate) — l'étoile filante meurt en ~0,8 s
-         au lieu de rester figée à l'écran. */
+      /* 5 — Mort douce : curseur posé → la queue se rétracte. */
       const settled =
         Math.hypot(target.x - head.x, target.y - head.y) < 0.5 &&
         Math.hypot(headV.x, headV.y) < 5;
       if (settled) {
         settleClock += dt;
-        while (settleClock >= RETRACT_STEP && trail.length > 0) {
+        while (settleClock >= RETRACT_STEP && history.length > 0) {
           settleClock -= RETRACT_STEP;
-          trail.shift();
+          history.shift();
         }
       } else {
         settleClock = 0;
       }
-      if (!settled || trail.length > 0) {
+      if (!settled || history.length > 0) {
         raf = requestAnimationFrame(tick);
       } else {
         running = false;
