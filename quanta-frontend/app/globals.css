@@ -5,11 +5,13 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  /* ── Polices ─────────────────────────────────────── */
-  --font-sans:    var(--font-geist);
+  /* ── Polices ── Orbitron (brand) · Cormorant (élégance) ·
+     Jost (corps) · Space Grotesk (display) · JetBrains (mono) ── */
+  --font-sans:    var(--font-jost);
   --font-display: var(--font-display);
-  --font-mono:    var(--font-mono);
-  --font-brand:   var(--font-unbounded);
+  --font-serif:   var(--font-cormorant);
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+  --font-brand:   var(--font-orbitron);
 
   /* ── Palette QUANTA ──────────────────────────────── */
   --color-quanta-void:      #0A0A0F;
@@ -149,7 +151,7 @@
 @layer utilities {
   /* Micro-typographie HUD (labels périphériques 11px) */
   .hud-label {
-    font-family: var(--font-geist), sans-serif;
+    font-family: var(--font-jost), sans-serif;
     font-size: 11px;
     font-weight: 400;
     letter-spacing: 0.14em;

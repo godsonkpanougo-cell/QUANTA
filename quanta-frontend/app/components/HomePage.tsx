@@ -223,17 +223,17 @@ function HomePageContent() {
             transition={{
               duration: 0.9,
               ease: [0.16, 1, 0.3, 1],
-              delay: 2.6,
+              delay: 2.8,
             }}
             className="mt-8"
           >
-            <LogoQ size={64} animated durationMs={1000} delayMs={2600} />
+            <LogoQ size={64} animated durationMs={1000} delayMs={2800} />
           </motion.div>
 
           <motion.h1
             initial={{ opacity: 0, letterSpacing: "0.5em" }}
             animate={{ opacity: 1, letterSpacing: "0.14em" }}
-            transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1], delay: 2.85 }}
+            transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1], delay: 3.05 }}
             className="mt-6 bg-gradient-to-b from-quanta-gold-2 via-quanta-gold to-quanta-gold bg-clip-text pl-[0.14em] font-brand text-6xl font-extralight text-transparent sm:text-7xl lg:text-8xl"
           >
             QUANTA
@@ -242,8 +242,8 @@ function HomePageContent() {
           <motion.p
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1], delay: 3.3 }}
-            className="mt-6 max-w-md font-sans text-base leading-relaxed text-quanta-secondary"
+            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1], delay: 3.45 }}
+            className="mt-6 max-w-md font-serif text-xl italic leading-relaxed text-quanta-secondary"
           >
             Tu déposes ta base. Tu reçois un rapport que tu peux signer.
           </motion.p>
@@ -251,7 +251,7 @@ function HomePageContent() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.8, delay: 3.65 }}
+            transition={{ duration: 0.8, delay: 3.75 }}
             className="mt-10 flex flex-wrap items-center justify-center gap-x-5 gap-y-2"
           >
             {TRUST_ITEMS.map((item, index) => (

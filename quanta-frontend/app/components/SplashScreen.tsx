@@ -6,20 +6,31 @@ import { useEffect, useState } from "react";
 import { LogoQ } from "@/app/components/LogoQ";
 
 const SESSION_KEY = "quanta-splash-shown";
-/* Durées calées sur le tracé du logo (1100 ms) + respiration du wordmark. */
-const SPLASH_MS = 2400;
-const EXIT_MS = 700;
+
+/* Choreographie (ms) :
+   0–250  : le vide. 250–1350 : l'anneau se trace, le vecteur le traverse,
+   ~1500  : le point s'allume. 1050–1600 : « QUANTA » monte en suivi de
+   lettres. 1850–2550 : le logo rétrécit et glisse vers sa place dans le
+   header (fondu de l'overlay) — le hero prend le relais à l'identique. */
+const SPLASH_MS = 2550;
+const LOGO_SIZE = 320;
+const HOLD_MS = 1850;
+const GLIDE_MS = 700;
+
+/* Cible : logo du header (32px) — centre du carré à gauche du header. */
+const TARGET_SIZE = 32;
+const TARGET_CENTER = { x: 40, y: 32 };
 
 /**
  * Écran de démarrage QUANTA — une fois par session (sessionStorage).
- * Fond void, le logo se trace (anneau → vecteur → point), le wordmark
- * « QUANTA » apparaît en suivi de lettres, puis l'ensemble se dissout
- * vers la page. Respecte prefers-reduced-motion (sortie immédiate).
+ * Le logo se trace en très grand, seul, au centre exact de l'écran ;
+ * complet, il rétrécit et se déplace vers le header tandis que le
+ * wordmark s'efface — une seule entité, jamais deux logos. Respecte
+ * prefers-reduced-motion (sortie immédiate).
  */
 export function SplashScreen() {
   /* Décision de montage lue au premier render client : sessionStorage est
-     disponible dès l'hydratation, pas besoin d'un effet + setState (qui
-     provoquerait un render en cascade). SSR rend null via typeof window. */
+     disponible dès l'hydratation — pas d'effet + setState en cascade. */
   const [visible, setVisible] = useState(() => {
     if (typeof window === "undefined") return false;
     try {
@@ -46,6 +57,21 @@ export function SplashScreen() {
     return () => clearTimeout(timer);
   }, [visible]);
 
+  /* Décalage du centre de l'écran vers le centre du logo du header.
+     Le wrapper est centré par flex ; on compense exactement. */
+  const [target, setTarget] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    const onResize = () => {
+      setTarget({
+        x: TARGET_CENTER.x - window.innerWidth / 2,
+        y: TARGET_CENTER.y - window.innerHeight / 2,
+      });
+    };
+    onResize();
+    window.addEventListener("resize", onResize, { passive: true });
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   return (
     <AnimatePresence>
       {visible ? (
@@ -53,48 +79,90 @@ export function SplashScreen() {
           key="quanta-splash"
           aria-hidden
           initial={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: EXIT_MS / 1000, ease: "easeInOut" }}
-          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#0A0A0F]"
+          exit={{ opacity: 0, transition: { duration: 0.3 } }}
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden"
         >
-          {/* Halo or discret derrière le logo */}
-          <div
-            className="pointer-events-none absolute size-72 rounded-full"
-            style={{
-              background:
-                "radial-gradient(circle, rgba(201,168,76,0.10), transparent 65%)",
+          {/* Fond void — s'estompe pendant le glissement pour révéler la page
+              (et le header) sous le logo volant. */}
+          <motion.div
+            className="absolute inset-0 bg-[#07070C]"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 0 }}
+            transition={{
+              delay: HOLD_MS / 1000,
+              duration: GLIDE_MS / 1000,
+              ease: "easeInOut",
             }}
           />
 
-          <LogoQ size={88} animated durationMs={1100} delayMs={250} />
+          {/* Halo or derrière le logo en train de se tracer */}
+          <motion.div
+            className="pointer-events-none absolute size-[480px] rounded-full"
+            style={{
+              background:
+                "radial-gradient(circle, rgba(201,168,76,0.10), transparent 62%)",
+            }}
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: [0, 1, 1, 0], scale: [0.85, 1, 1, 0.6] }}
+            transition={{ duration: SPLASH_MS / 1000, times: [0, 0.18, 0.72, 1] }}
+          />
 
-          <div className="mt-7 overflow-hidden">
+          {/* Le logo : se trace en géant, puis rétrécit vers le header */}
+          <motion.div
+            className="flex items-center justify-center"
+            style={{ width: LOGO_SIZE, height: LOGO_SIZE }}
+            initial={{ scale: 1, x: 0, y: 0 }}
+            animate={{
+              scale: [1, 1, TARGET_SIZE / LOGO_SIZE],
+              x: [0, 0, target.x],
+              y: [0, 0, target.y],
+            }}
+            transition={{
+              duration: SPLASH_MS / 1000,
+              times: [0, HOLD_MS / SPLASH_MS, 1],
+              ease: [0.7, 0, 0.25, 1],
+            }}
+          >
+            <LogoQ size={LOGO_SIZE} animated durationMs={1100} delayMs={250} />
+          </motion.div>
+
+          {/* Wordmark — monte sous le logo, repart avant le glissement */}
+          <div className="mt-10 overflow-hidden">
             <motion.p
-              className="font-brand text-xl font-extralight tracking-[0.42em] text-quanta-primary"
+              className="font-brand text-3xl font-extralight tracking-[0.5em] text-quanta-primary sm:text-4xl"
               initial={{ y: "110%" }}
-              animate={{ y: 0 }}
+              animate={{ y: ["110%", "0%", "0%", "130%"] }}
               transition={{
-                duration: 0.7,
+                duration: SPLASH_MS / 1000,
+                times: [0.41, 0.63, 0.75, 0.9],
                 ease: [0.16, 1, 0.3, 1],
-                delay: 1.15,
               }}
             >
               QUANTA
             </motion.p>
           </div>
 
+          {/* Ligne or — se déploie puis se résorbe */}
           <motion.div
-            className="mt-5 h-px bg-gradient-to-r from-transparent via-quanta-gold/60 to-transparent"
+            className="mt-6 h-px bg-gradient-to-r from-transparent via-quanta-gold/60 to-transparent"
             initial={{ width: 0 }}
-            animate={{ width: 120 }}
-            transition={{ duration: 0.6, delay: 1.6, ease: "easeOut" }}
+            animate={{ width: [0, 180, 180, 0], opacity: [0, 1, 1, 0] }}
+            transition={{
+              duration: SPLASH_MS / 1000,
+              times: [0.5, 0.66, 0.75, 0.9],
+              ease: "easeOut",
+            }}
           />
 
+          {/* Signature basale — paraît, disparaît */}
           <motion.p
             className="hud-label absolute bottom-16 text-quanta-muted"
             initial={{ opacity: 0 }}
-            animate={{ opacity: 0.7 }}
-            transition={{ delay: 1.9, duration: 0.4 }}
+            animate={{ opacity: [0, 0.7, 0.7, 0] }}
+            transition={{
+              duration: SPLASH_MS / 1000,
+              times: [0.5, 0.62, 0.74, 0.88],
+            }}
           >
             Intelligence statistique
           </motion.p>

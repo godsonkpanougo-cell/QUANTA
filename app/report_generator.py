@@ -23,6 +23,19 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+try:
+    from app.quanta_fonts import (
+        get_fontface_css,
+        quanta_signature_page_background,
+        quanta_signature_svg,
+    )
+except ImportError:  # import en tant que module racine (worker)
+    from quanta_fonts import (
+        get_fontface_css,
+        quanta_signature_page_background,
+        quanta_signature_svg,
+    )
+
 logger = logging.getLogger(__name__)
 
 # Limite de graphiques dans le PDF (subprocess PDF Worker peut utiliser toute la RAM)
@@ -79,16 +92,27 @@ def _weasyprint_safe(html: str) -> bytes | None:
 
 
 def _split_html_by_sections(full_html: str) -> list[str]:
-    """Divise le HTML complet en sections basées sur les balises <section>."""
+    """Divise le HTML complet en sections basées sur les balises <section>.
+
+    Les balises <section> sont conservées : les styles portés par la
+    section elle-même (page nommée @page cover de la page de garde,
+    sauts de page .section) doivent s'appliquer dans chaque document
+    WeasyPrint séparé du mode chunked."""
     import re
-    # Trouver toutes les sections avec leur contenu (peu importe la classe)
-    pattern = r'<section[^>]*>(.*?)</section>'
+    pattern = r'(<section[^>]*>.*?</section>)'
     sections = re.findall(pattern, full_html, re.DOTALL)
     return sections
 
 
 def _wrap_section_in_html(section_html: str, theme: str = "dark") -> str:
-    """Enveloppe une section dans un HTML complet avec CSS."""
+    """Enveloppe une section dans un HTML complet avec CSS.
+
+    La signature (background de @page) est portée par le CSS : elle est
+    donc automatiquement présente sur chaque page de chaque chunk.
+    NB : la numérotation repart à 1 dans chaque chunk (limite connue du
+    mode chunked, présente avant la refonte — le mode complet numérote
+    lui continûment, la garde comptant comme page 1).
+    """
     css = _css(theme)
     return f"""<!DOCTYPE html>
 <html>
@@ -115,6 +139,15 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         except Exception:
             pass  # resource non disponible sur certaines plateformes
 
+    def _rss_mb() -> float:
+        """Mémoire max du processus (Mo) — 0 si `resource` indisponible
+        (module Unix-only : absent sous Windows)."""
+        try:
+            import resource
+            return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        except Exception:
+            return 0.0
+
     try:
         import gc
         from pypdf import PdfWriter
@@ -123,13 +156,12 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         logger.info("PDF chunked: Début génération")
         
         # Générer le HTML complet
-        import resource
-        mb_avant_acm = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        mb_avant_acm = _rss_mb()
         logger.info("PDF chunked: AVANT construction HTML (incluant ACM) : {mb_avant_acm:.1f} Mo")
         
         full_html = _build_html(analysis_result, theme)
         
-        mb_apres_acm = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+        mb_apres_acm = _rss_mb()
         logger.info("PDF chunked: APRÈS construction HTML (incluant ACM) : {mb_apres_acm:.1f} Mo (delta: {mb_apres_acm - mb_avant_acm:.1f} Mo)")
         logger.info("PDF chunked: HTML généré, longueur: {len(full_html)}")
 
@@ -144,7 +176,7 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         writer = PdfWriter()
         
         # Checkpoint avant boucle de rendu
-        logger.info("PDF chunked: AVANT boucle de rendu, {len(sections)} sections construites : {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.1f} Mo")
+        logger.info("PDF chunked: AVANT boucle de rendu, {len(sections)} sections construites : {_rss_mb():.1f} Mo")
         
         # Générer chaque section comme un chunk séparé
         for i, section_html in enumerate(sections):
@@ -163,15 +195,14 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
             logger.info("PDF chunked: HTML enveloppé pour section {i+1}, longueur: {len(wrapped_html)}")
 
             # Générer PDF pour ce chunk
-            import resource
             section_id = section_html[:80].replace("\n", " ") if len(section_html) > 80 else section_html.replace("\n", " ")
-            mb_avant = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            mb_avant = _rss_mb()
             logger.info("PDF chunked: Section {i+1} ({len(section_html)} car.) - ID: {section_id} - AVANT rendu : {mb_avant:.1f} Mo")
             
             pdf_chunk = _weasyprint_safe(wrapped_html)
             
             if pdf_chunk:
-                mb_apres = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+                mb_apres = _rss_mb()
                 logger.info("PDF chunked: Section {i+1} - APRÈS rendu : {mb_apres:.1f} Mo (delta: {mb_apres - mb_avant:.1f} Mo)")
             if pdf_chunk:
                 logger.info("PDF chunked: PDF chunk {i+1} généré, taille: {len(pdf_chunk)}")
@@ -195,7 +226,7 @@ def generate_pdf_chunked(analysis_result: dict[str, Any], theme: str = "dark") -
         return result
 
     except Exception as e:
-        logger.error("PDF chunked generation failed", error=str(e), exc_info=True)
+        logger.error("PDF chunked generation failed: %s", e, exc_info=True)
         import traceback
         traceback.print_exc()
         return None
@@ -354,7 +385,7 @@ def _effect_interpretation_html(name: str, value: Any) -> str | None:
         return None
     qual = interpret_effect_size(name, num)
     return (
-        f'<em style="color:#9A9AA8;">effet {_esc(qual)} selon Cohen (1988)</em>'
+        f'<em class="muted">effet {_esc(qual)} selon Cohen (1988)</em>'
     )
 
 
@@ -362,9 +393,7 @@ def _next_table_caption(table_counter: list[int], title: str) -> str:
     """Incrémente le compteur et retourne la légende APA au-dessus du tableau."""
     table_counter[0] += 1
     return (
-        f'<p style="color:#C9A84C; font-size:12px; font-weight:700; '
-        f'text-transform:uppercase; letter-spacing:0.04em; '
-        f'margin:16px 0 4px 0;">'
+        f'<p class="tbl-caption">'
         f"Tableau {table_counter[0]}. {_esc(title)}"
         f"</p>"
     )
@@ -520,16 +549,14 @@ def _html_methodology_bibliography(reference_keys: list[str]) -> str:
     if not reference_keys:
         return ""
     items = "\n".join(
-        f'<p style="color:#9A9AA8; font-family:Courier New,monospace; '
-        f'font-size:10px; margin:0 0 10px 0; padding-left:1.2em; '
-        f'text-indent:-1.2em; line-height:1.5;">'
+        f'<p class="biblio">'
         f"{_esc(_METHODOLOGY_REFERENCES[key])}</p>"
         for key in reference_keys
         if key in _METHODOLOGY_REFERENCES
     )
     return f"""
   <section class="section">
-    <h2 style="color:#C9A84C;">Annexe C — Références méthodologiques</h2>
+    <h2>Annexe C — Références méthodologiques</h2>
     {items}
   </section>
 """
@@ -856,8 +883,8 @@ def _html_python_annex(python_script: str) -> str:
     """Annexe D — Script Python (Colab)."""
     return f"""
   <section class="section">
-    <h2 style="color:#C9A84C;">Annexe D — Script Python</h2>
-    <p style="color:#9A9AA8; font-size:12px; font-style:italic; margin-bottom:12px;">
+    <h2>Annexe D — Script Python</h2>
+    <p class="lede">
       Script généré automatiquement — exécutable dans Google Colab (upload du fichier requis).
     </p>
     <pre class="code">{_esc(python_script)}</pre>
@@ -892,8 +919,8 @@ def _html_audit_trail(audit_trail: list[Any]) -> str:
         return ""
     return f"""
   <section class="section">
-    <h2 style="color:#C9A84C;">Annexe E — Journal d'audit</h2>
-    <p style="color:#9A9AA8; font-size:12px; font-style:italic; margin-bottom:12px;">
+    <h2>Annexe E — Journal d'audit</h2>
+    <p class="lede">
       Chronologie des étapes d'analyse (horodatage UTC).
     </p>
     <table class="audit-trail">
@@ -995,16 +1022,10 @@ def _html_hypotheses(
         return ""
 
     return f"""
-    <div style="background:#1C1C26; border-radius:8px; padding:12px 16px; margin:12px 0;">
-      <p style="color:#9A9AA8; font-size:11px; letter-spacing:0.06em; margin:0 0 6px 0;">
-        HYPOTHÈSES
-      </p>
-      <p style="color:#E8E8E8; font-size:12px; font-family:Georgia,serif; margin:2px 0;">
-        <strong>H₀ :</strong> {_esc(h0)}
-      </p>
-      <p style="color:#E8E8E8; font-size:12px; font-family:Georgia,serif; margin:2px 0;">
-        <strong>H₁ :</strong> {_esc(h1)}
-      </p>
+    <div class="hyp-box">
+      <p class="hyp-label">Hypothèses</p>
+      <p><strong>H₀ :</strong> {_esc(h0)}</p>
+      <p><strong>H₁ :</strong> {_esc(h1)}</p>
     </div>
     """
 
@@ -1485,144 +1506,275 @@ def _conditions_application(analysis: dict[str, Any]) -> list[tuple[str, str, st
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _css(theme: str = "dark") -> str:
+    """
+    Design system du rapport — deux directions d'art :
+
+    dark  « ARTIFACT » : nuit profonde, or dégradé, cyan instrument,
+          typographie Orbitron (apparat) + Cormorant (éditorial) + Jost.
+    light « ACADEMIC » : papier ivoire encre profonde, oxyde d'or,
+          azur patiné — l'élégance d'une publication scientifique.
+    """
     if theme == "light":
-        c_bg = "#FFFFFF"
-        c_bg_card = "#F4F4F6"
-        c_bg_code = "#F4F4F6"
-        c_text = "#1C1C22"
-        c_muted = "#6B6B76"
-        c_muted2 = "#55555F"
-        c_gold = "#96751E"
-        c_cyan = "#0077A8"
-        c_red = "#B23B3B"
-        c_border = "rgba(0,0,0,0.10)"
-        c_border_soft = "rgba(0,0,0,0.06)"
-        c_border_mid = "rgba(0,0,0,0.08)"
-        c_border_strong = "rgba(0,0,0,0.14)"
-        c_border_solid = "#33333A"
-    else:  # dark (défaut, comportement actuel inchangé)
-        c_bg = "#0A0A0F"
-        c_bg_card = "#13131A"
-        c_bg_code = "#0D0D0D"
-        c_text = "#E8E8E8"
-        c_muted = "#8A8A96"
-        c_muted2 = "#9A9AA8"
-        c_gold = "#C9A84C"
-        c_cyan = "#00D4FF"
-        c_red = "#E8A0A0"
-        c_border = "rgba(255,255,255,0.08)"
+        c_bg = "#FAF8F3"
+        c_bg_card = "#FFFFFF"
+        c_bg_code = "#F1EEE6"
+        c_text = "#1F1B16"
+        c_muted = "#7A7366"
+        c_muted2 = "#5F584C"
+        c_gold = "#8C6A1F"
+        c_gold_soft = "#B99244"
+        c_cyan = "#16688E"
+        c_red = "#9E3A33"
+        c_border = "rgba(31,27,22,0.16)"
+        c_border_soft = "rgba(31,27,22,0.08)"
+        c_border_mid = "rgba(31,27,22,0.11)"
+        c_border_strong = "rgba(31,27,22,0.22)"
+        c_border_solid = "#1F1B16"
+        c_shadow = "0 0.6pt 1.8pt rgba(31,27,22,0.10)"
+        c_grad_card = "linear-gradient(135deg, #FFFFFF 0%, #F5F0E4 100%)"
+        c_rule = "linear-gradient(90deg, transparent, #8C6A1F 50%, transparent)"
+    else:  # dark « ARTIFACT »
+        c_bg = "#07070C"
+        c_bg_card = "#10101A"
+        c_bg_code = "#0B0B13"
+        c_text = "#E9E7E0"
+        c_muted = "#8B8A96"
+        c_muted2 = "#A2A0AC"
+        c_gold = "#D6B761"
+        c_gold_soft = "#EAD9A8"
+        c_cyan = "#5BD9EC"
+        c_red = "#F0A6A6"
+        c_border = "rgba(214,183,97,0.16)"
         c_border_soft = "rgba(255,255,255,0.05)"
-        c_border_mid = "rgba(255,255,255,0.06)"
-        c_border_strong = "rgba(255,255,255,0.12)"
-        c_border_solid = "#E8E8E8"
-    
+        c_border_mid = "rgba(255,255,255,0.07)"
+        c_border_strong = "rgba(214,183,97,0.34)"
+        c_border_solid = "#E9E7E0"
+        c_shadow = "0 0.6pt 2.2pt rgba(0,0,0,0.55)"
+        c_grad_card = "linear-gradient(135deg, #13131E 0%, #0C0C14 100%)"
+        c_rule = "linear-gradient(90deg, transparent, #D6B761 50%, transparent)"
+
+    fontface_css = get_fontface_css()
+    signature_bg = quanta_signature_page_background(48)
+    page_paper = "#07070C" if theme != "light" else c_bg
+
     return f"""
+    {fontface_css}
+
+    /* ————— Géométrie de page ————— */
+    /* Signature QUANTA en bas à droite : background de @page — rendu
+       natif sur chaque page, y compris en génération chunked.
+       (background-color et background-image séparés : le shorthand
+       multi-couches n'est pas fiable dans WeasyPrint.) Le fond de la
+       page PHYSIQUE est peint sur @page lui-même — jamais sur body —
+       sinon les marges restent blanches : en dark, le papier A4 entier
+       est noir. */
     @page {{
       size: A4;
-      margin: 1.8cm 1.6cm 2.0cm 1.6cm;
+      margin: 1.9cm 1.7cm 2.3cm 1.7cm;
+      background-color: {page_paper};
+      background-image: {signature_bg};
+      background-repeat: no-repeat;
+      background-position: right 0.95cm bottom 0.85cm;
+      background-size: 48px 48px;
       @bottom-center {{
         content: "QUANTA — Rapport d'analyse statistique · page " counter(page);
-        font-family: Arial, Helvetica, sans-serif;
-        font-size: 8pt;
+        font-family: 'Jost', Arial, sans-serif;
+        font-size: 7.5pt;
+        letter-spacing: 0.06em;
         color: {c_muted};
       }}
     }}
-    @page :first {{
+    /* Page de garde : page nommée — ni signature ni footer. (Une page
+       nommée plutôt que :first : en génération chunked, chaque section
+       est un document séparé et :first supprimerait la signature de la
+       première page de chaque chunk.) Le papier reste peint (noir en
+       dark, ivoire en light) — seule la signature et le footer disparaissent. */
+    @page cover {{
+      background-color: {page_paper};
+      background-image: none;
       @bottom-center {{ content: none; }}
     }}
+
     * {{ box-sizing: border-box; }}
+
     html, body {{
       margin: 0;
       padding: 0;
       background: {c_bg};
       color: {c_text};
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: 'Jost', Arial, Helvetica, sans-serif;
       font-size: 10.5pt;
       line-height: 1.55;
       height: 100%;
     }}
-    h1, h2, h3 {{
-      font-family: Georgia, "Times New Roman", serif;
+
+    /* ————— Hiérarchie typographique ————— */
+    h1 {{
+      font-family: 'Orbitron', 'Jost', Arial, sans-serif;
       font-weight: normal;
-      color: {c_text};
-      margin: 0 0 0.6em 0;
-    }}
-    h1 {{ font-size: 28pt; letter-spacing: 0.12em; color: {c_gold}; }}
-    h2 {{
-      font-size: 14pt;
+      font-size: 34pt;
+      letter-spacing: 0.34em;
+      margin-right: -0.34em; /* compense la letter-spacing finale */
       color: {c_gold};
-      border-bottom: 1px solid {c_border};
-      padding-bottom: 0.35em;
-      margin-top: 0;
-      margin-bottom: 1em;
+      margin: 0 0 0.4em 0;
+    }}
+    h2 {{
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-weight: normal;
+      font-size: 20pt;
+      line-height: 1.15;
+      color: {c_text};
+      border-bottom: none;
+      padding-bottom: 0.3em;
+      margin: 0 0 0.7em 0;
     }}
     h3 {{
-      font-size: 11.5pt;
-      color: {c_cyan};
-      margin-top: 1.2em;
-      margin-bottom: 0.4em;
+      font-family: 'Jost SemiBold', 'Jost', Arial, sans-serif;
+      font-weight: normal;
+      font-size: 10.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: {c_gold};
+      margin: 1.4em 0 0.5em 0;
     }}
     p {{ margin: 0 0 0.75em 0; }}
     .muted {{ color: {c_muted}; }}
     .gold {{ color: {c_gold}; }}
     .cyan {{ color: {c_cyan}; }}
     .mono {{
-      font-family: "Courier New", Courier, monospace;
-      font-size: 9.5pt;
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 9pt;
+      letter-spacing: -0.01em;
     }}
+
+    /* ————— Filet or — met à jour l'héritage h2 des sections ————— */
+    .section h2, .acm-section h2, .acp-section h2 {{
+      display: block;
+      position: relative;
+      border-bottom: none;
+      padding-bottom: 0.45em;
+      margin-bottom: 1em;
+    }}
+    .section h2::after, .acm-section h2::after, .acp-section h2::after {{
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 100%;
+      height: 1px;
+      background: {c_rule};
+    }}
+
+    /* ————— Page de garde ————— */
     .cover {{
-      height: 259mm;
+      page: cover;
+      height: 254mm;
       page-break-after: always;
       text-align: center;
     }}
     .cover-inner {{
-      padding-top: 70mm;
+      height: 100%;
+      display: table;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+    }}
+    .cover-middle {{
+      display: table-cell;
+      vertical-align: middle;
+      height: 100%;
+    }}
+    .cover-logo {{ margin-bottom: 5.5mm; }}
+    .cover .kicker {{
+      font-family: 'Jost Medium', 'Jost', Arial, sans-serif;
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.42em;
+      margin-right: -0.42em;
+      color: {c_muted2};
+      margin: 0 0 7mm 0;
     }}
     .cover .subtitle {{
-      font-family: Georgia, "Times New Roman", serif;
-      font-size: 14pt;
-      color: {c_text};
-      margin: 0.4em 0 2.2em 0;
-      letter-spacing: 0.04em;
+      font-family: 'Cormorant Garamond Italic', 'Cormorant Garamond', Georgia, serif;
+      font-weight: normal;
+      font-style: italic;
+      font-size: 19pt;
+      color: {c_gold_soft};
+      margin: 3.5mm 0 9mm 0;
+      letter-spacing: 0.03em;
+    }}
+    .cover .rule {{
+      width: 38mm;
+      height: 1px;
+      margin: 0 auto 9mm auto;
+      background: {c_rule};
     }}
     .cover-meta {{
-      width: 78%;
+      width: 92mm;
+      margin: 0 auto;
       border-top: 1px solid {c_border};
       border-bottom: 1px solid {c_border};
-      padding: 1.4em 0;
-      margin-top: 1em;
+      padding: 4.5mm 1mm;
+      margin-top: 0;
+      margin-bottom: 8mm;
     }}
-    .cover-meta p {{ margin: 0.45em 0; font-size: 11pt; }}
+    .cover-meta p {{ margin: 2.2mm 0; font-size: 10.5pt; }}
+    .cover-meta .label {{
+      font-family: 'Jost Medium', 'Jost', Arial, sans-serif;
+      font-size: 7pt;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: {c_muted};
+    }}
+    .cover-meta .mono {{ font-size: 8.5pt; color: {c_muted2}; }}
     .score-badge {{
-      margin-top: 2em;
-      background: {c_bg_card};
-      border: 1px solid {c_border};
-      padding: 0.9em 1.4em;
-      display: inline-block;
+      margin: 0 auto 3mm auto;
+      width: 58mm;
+      background: {c_grad_card};
+      border: 1px solid {c_border_strong};
+      box-shadow: {c_shadow};
+      padding: 3.4mm 4mm 3.8mm 4mm;
+      display: block;
     }}
     .score-badge .label {{
-      font-size: 8.5pt;
-      color: {c_muted};
+      font-family: 'Jost Medium', 'Jost', Arial, sans-serif;
+      font-size: 7pt;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 0.25em;
+      letter-spacing: 0.2em;
+      color: {c_muted};
+      margin-bottom: 0.6mm;
     }}
     .score-badge .value {{
-      font-family: Georgia, "Times New Roman", serif;
-      font-size: 16pt;
+      font-family: 'Orbitron SemiBold', 'Orbitron', 'Jost', Arial, sans-serif;
+      font-size: 19pt;
+      line-height: 1.2;
       color: {c_gold};
     }}
+    .cover .disclaimer {{
+      width: 105mm;
+      margin: 4mm auto 0 auto;
+      font-family: 'Jost Italic', 'Jost', Georgia, serif;
+      font-style: italic;
+      font-size: 8.5pt;
+      line-height: 1.5;
+      color: {c_muted};
+    }}
+
+    /* ————— Sections ————— */
     .section {{ page-break-before: always; }}
     .section.first-content {{ page-break-before: auto; }}
     .card {{
-      background: {c_bg_card};
-      border: 1px solid {c_border};
-      padding: 0.9em 1.1em;
+      background: {c_grad_card};
+      border: 1px solid {c_border_soft};
+      border-left: 2pt solid {c_gold};
+      box-shadow: {c_shadow};
+      padding: 1em 1.15em;
       margin: 0.8em 0 1.1em 0;
+      page-break-inside: avoid;
     }}
     .kv {{ width: 100%; border-collapse: collapse; margin: 0.4em 0 1em 0; }}
     .kv td {{
-      padding: 0.35em 0.5em;
+      padding: 0.42em 0.5em;
       vertical-align: top;
       border-bottom: 1px solid {c_border_soft};
     }}
@@ -1635,10 +1787,10 @@ def _css(theme: str = "dark") -> str:
       width: 100%;
       border-collapse: collapse;
       margin: 0.8em 0 1.2em 0;
-      font-size: 10pt;
+      font-size: 9.5pt;
     }}
     .apa th, .apa td {{
-      padding: 0.45em 0.55em;
+      padding: 0.5em 0.55em;
       border-left: none;
       border-right: none;
       border-top: none;
@@ -1646,22 +1798,29 @@ def _css(theme: str = "dark") -> str:
       text-align: left;
     }}
     .apa thead th {{
-      font-family: Georgia, "Times New Roman", serif;
+      font-family: 'Jost SemiBold', 'Jost', Arial, sans-serif;
       font-weight: normal;
+      font-size: 8.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
       color: {c_gold};
-      border-top: 1.5pt solid {c_border_solid};
-      border-bottom: 1pt solid {c_border_solid};
+      border-top: 1.4pt solid {c_border_solid};
+      border-bottom: 0.8pt solid {c_border_solid};
+      background: {c_bg_card};
     }}
     .apa tbody td {{
       border-bottom: none;
     }}
+    .apa tbody tr:nth-child(even) td {{
+      background: {c_bg_card};
+    }}
     .apa tbody tr:last-child td {{
-      border-bottom: 1.5pt solid {c_border_solid};
+      border-bottom: 1.4pt solid {c_border_solid};
     }}
     .apa td.num, .apa th.num {{
       text-align: center;
-      font-family: "Courier New", Courier, monospace;
-      font-size: 9.5pt;
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 8.5pt;
     }}
     ul.plain {{
       margin: 0.3em 0 1em 1.1em;
@@ -1674,11 +1833,12 @@ def _css(theme: str = "dark") -> str:
     .status-na {{ color: {c_muted}; }}
     pre.code {{
       background: {c_bg_code};
-      border: 1px solid {c_border};
+      border: 1px solid {c_border_soft};
+      border-left: 2pt solid {c_cyan};
       padding: 0.9em 1em;
-      font-family: "Courier New", Courier, monospace;
-      font-size: 8pt;
-      line-height: 1.4;
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 7.6pt;
+      line-height: 1.45;
       white-space: pre-wrap;
       word-wrap: break-word;
       color: {c_text};
@@ -1688,8 +1848,8 @@ def _css(theme: str = "dark") -> str:
       width: 100%;
       border-collapse: collapse;
       margin: 0.8em 0 1.2em 0;
-      font-family: "Courier New", Courier, monospace;
-      font-size: 8.5pt;
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 8pt;
       background: {c_bg_code};
       color: {c_muted2};
     }}
@@ -1700,6 +1860,10 @@ def _css(theme: str = "dark") -> str:
       vertical-align: top;
     }}
     .audit-trail thead th {{
+      font-family: 'Jost SemiBold', 'Jost', Arial, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      font-size: 7.5pt;
       color: {c_gold};
       font-weight: normal;
       border-bottom: 1pt solid {c_border_strong};
@@ -1708,6 +1872,86 @@ def _css(theme: str = "dark") -> str:
       font-size: 8.5pt;
       color: {c_muted};
       margin-top: 1.5em;
+    }}
+
+    /* ————— Composants ————— */
+    .tbl-caption {{
+      font-family: 'Jost SemiBold', 'Jost', Arial, sans-serif;
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: {c_gold};
+      margin: 1.1em 0 0.3em 0;
+    }}
+    .lede {{
+      font-family: 'Jost Italic', 'Jost', Georgia, serif;
+      font-style: italic;
+      font-size: 10pt;
+      color: {c_muted2};
+      margin: 0 0 1em 0;
+    }}
+    .note-lede {{
+      font-family: 'Jost Italic', 'Jost', Georgia, serif;
+      font-style: italic;
+      font-size: 9.5pt;
+      color: {c_muted};
+      margin: 0.3em 0 1.1em 0;
+    }}
+    .biblio {{
+      font-size: 9.5pt;
+      line-height: 1.5;
+      margin: 0 0 0.7em 0;
+      padding-left: 1.2em;
+      text-indent: -1.2em;
+      color: {c_muted2};
+    }}
+    .hyp-box {{
+      background: {c_grad_card};
+      border: 1px solid {c_border_soft};
+      border-left: 2pt solid {c_cyan};
+      box-shadow: {c_shadow};
+      padding: 0.85em 1.1em;
+      margin: 0.9em 0 1.1em 0;
+      page-break-inside: avoid;
+    }}
+    .hyp-box .hyp-label {{
+      font-family: 'Jost Medium', 'Jost', Arial, sans-serif;
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: {c_muted};
+      margin: 0 0 0.4em 0;
+    }}
+    .skeptic {{
+      background: {c_grad_card};
+      border: 1px solid {c_border_mid};
+      border-left: 2.5pt solid {c_red};
+      box-shadow: {c_shadow};
+      padding: 0.9em 1.1em;
+      margin: 1.1em 0;
+      page-break-inside: avoid;
+    }}
+    .skeptic .skeptic-label {{
+      font-family: 'Jost SemiBold', 'Jost', Arial, sans-serif;
+      font-size: 8.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: {c_red};
+      margin: 0 0 0.4em 0;
+    }}
+    .skeptic .skeptic-msg {{
+      font-size: 10pt;
+      line-height: 1.55;
+      color: {c_muted2};
+      margin: 0;
+    }}
+    .sha {{
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 7.5pt;
+      text-align: center;
+      word-break: break-all;
+      color: {c_muted};
+      margin: 0.4em 0 0 0;
     }}
     """
 
@@ -2392,9 +2636,8 @@ def _html_scientific_defense(
     blocks = blocks[:6]
     return f"""
   <section class="section">
-    <h2 style="color:#C9A84C;">Défense Scientifique</h2>
-    <p style="color:#9A9AA8; font-size:12px;
-       font-style:italic; margin-bottom:16px;">
+    <h2>Défense Scientifique</h2>
+    <p class="lede">
       Anticipation des objections méthodologiques les plus fréquentes face à ces résultats.
     </p>
     {''.join(blocks)}
@@ -2467,8 +2710,7 @@ _CHART_SECTION_TITLES: dict[str, str] = {
 }
 
 _HEATMAP_FEW_VARS_NOTE = (
-    '<p style="color:#555563; font-size:11px; font-style:italic; '
-    'margin:4px 0 16px 0;">'
+    '<p class="note-lede">'
     "Note : la matrice de corrélation est plus informative "
     "avec 4 variables numériques ou plus."
     "</p>"
@@ -3065,8 +3307,8 @@ def _resume_bullet_from_test(
         )
     )
 
-    check = '<span style="color:#C9A84C;">✓</span>'
-    cross = '<span style="color:#555563;">✗</span>'
+    check = '<span class="status-partial">✓</span>'
+    cross = '<span class="status-na">✗</span>'
 
     if is_corr:
         v1 = data.get("col1") or target or "variable 1"
@@ -3746,13 +3988,9 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
             "vérification recommandée."
         )
         skeptic_alert_html = f"""
-    <div style="background:#1C1C26; border-left:3px solid #F39C12; padding:16px; border-radius:8px; margin:16px 0;">
-      <p style="color:#F39C12; font-size:11px; letter-spacing:0.08em; margin:0 0 8px 0; font-weight:600;">
-        ⚠ SKEPTIC ENGINE — VÉRIFICATION RECOMMANDÉE
-      </p>
-      <p style="color:#9A9AA8; font-size:12px; line-height:1.6; margin:0;">
-        {_esc(skeptic_msg)}
-      </p>
+    <div class="skeptic">
+      <p class="skeptic-label">⚠ SKEPTIC ENGINE — Vérification recommandée</p>
+      <p class="skeptic-msg">{_esc(skeptic_msg)}</p>
     </div>
 """
 
@@ -3792,9 +4030,7 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
     file_hash_html = ""
     if file_hash:
         file_hash_html = f"""
-    <p style="color:#555563; font-size:9px; font-family:Courier New; text-align:center; margin-top:4px; word-break:break-all;">
-      SHA256 : {_esc(file_hash)}
-    </p>"""
+    <p class="sha">SHA256 : {_esc(file_hash)}</p>"""
 
     html_document = f"""<!DOCTYPE html>
 <html lang="fr">
@@ -3808,24 +4044,27 @@ def _build_html(analysis_result: dict[str, Any], theme: str = "dark") -> str:
   <!-- PAGE DE GARDE -->
   <section class="cover">
     <div class="cover-inner">
-      <h1>QUANTA</h1>
-      <p class="subtitle">Rapport d'Analyse Statistique</p>
-      <div class="cover-meta">
-        <p><span class="muted">Fichier analysé</span><br/><strong>{_esc(filename)}</strong></p>
-        <p><span class="muted">Date de génération</span><br/>{_esc(generated_at)}</p>
-        <p style="color:#555563; font-size:10px; font-family:Courier New; text-align:center; margin-top:4px;">
-          {_esc(engine_versions)}
+      <div class="cover-middle">
+        <div class="cover-logo">{quanta_signature_svg(64)}</div>
+        <p class="kicker">Rapport d'analyse statistique</p>
+        <h1>QUANTA</h1>
+        <p class="subtitle">L'intelligence statistique, signée.</p>
+        <div class="rule"></div>
+        <div class="cover-meta">
+          <p><span class="label">Fichier analysé</span><br/><strong>{_esc(filename)}</strong></p>
+          <p><span class="label">Date de génération</span><br/>{_esc(generated_at)}</p>
+          <p><span class="label">Moteur</span><br/><span class="mono">{_esc(engine_versions)}</span></p>
+          {file_hash_html}
+        </div>
+        <div class="score-badge">
+          <div class="label">Score de confiance</div>
+          <div class="value">{score_display}</div>
+        </div>
+        <p class="disclaimer">
+          Le score reflète les propriétés statistiques mesurables. Il n'évalue pas
+          la qualité du design d'étude ni la validité externe.
         </p>
-        {file_hash_html}
       </div>
-      <div class="score-badge">
-        <div class="label">Score de confiance</div>
-        <div class="value">{score_display}</div>
-      </div>
-      <p style="color:#555563; font-size:10px; font-style:italic; text-align:center; margin-top:8px;">
-        Le score reflète les propriétés statistiques mesurables. Il n'évalue pas la qualité du
-        design d'étude ni la validité externe.
-      </p>
     </div>
   </section>
 

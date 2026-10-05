@@ -1,10 +1,38 @@
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk } from "next/font/google";
+import {
+  Cormorant_Garamond,
+  Jost,
+  Orbitron,
+  Space_Grotesk,
+} from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/app/context/AuthContext";
-import "@fontsource/space-grotesk";
 import "@fontsource/jetbrains-mono";
-import "@fontsource/unbounded";
+
+/* ── Typographie QUANTA — aucune police générique ─────────────
+   Orbitron          : wordmark & titres d'apparat (géométrique futuriste,
+                       écho direct du logo anneau + vecteur)
+   Cormorant Garamond: accents élégants & petites écritures (italique)
+   Jost              : corps de texte, labels HUD (géométrique humaniste)
+   Space Grotesk     : titres d'interface (display)                     */
+const orbitron = Orbitron({
+  subsets: ["latin"],
+  variable: "--font-orbitron",
+  weight: ["400", "500", "600", "700", "800", "900"],
+});
+
+const cormorant = Cormorant_Garamond({
+  subsets: ["latin"],
+  variable: "--font-cormorant",
+  style: ["normal", "italic"],
+  weight: ["400", "500", "600"],
+});
+
+const jost = Jost({
+  subsets: ["latin"],
+  variable: "--font-jost",
+  weight: ["300", "400", "500", "600"],
+});
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -46,7 +74,7 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <body
-        className={`${spaceGrotesk.variable} font-sans bg-quanta-void text-quanta-primary antialiased`}
+        className={`${orbitron.variable} ${cormorant.variable} ${jost.variable} ${spaceGrotesk.variable} font-sans bg-quanta-void text-quanta-primary antialiased`}
       >
         <AuthProvider>{children}</AuthProvider>
       </body>
