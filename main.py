@@ -67,6 +67,7 @@ from app import projects  # Pilier 1 : Projet de recherche persistant (module is
 from app import conversation  # Pilier 2 : sessions conversationnelles (module isolé)
 from app import repro_pack  # Pilier 3 : Repro Pack ZIP auditable (module isolé)
 from app import defense  # Pilier 4 : Mode Soutenance (module isolé, déterministe)
+from app import public_pages  # A3 : pages publiques statiques (/methodologie)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -233,6 +234,8 @@ app.include_router(conversation.router)
 app.include_router(repro_pack.router)
 # Pilier 4 : Mode Soutenance (déterministe, sans LLM ni recalcul).
 app.include_router(defense.router)
+# A3 : page publique /methodologie (statique, déterministe, sans DB).
+app.include_router(public_pages.router)
 
 # A4 (durcissement) : monitoring Sentry OPTIONNEL — activé UNIQUEMENT si
 # SENTRY_DSN est défini dans l'environnement : sans DSN, zéro import, zéro
