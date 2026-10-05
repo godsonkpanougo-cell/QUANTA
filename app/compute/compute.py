@@ -951,6 +951,42 @@ def ols_regression(
     except Exception:
         pass
 
+    # A4 (durcissement) : si hétéroscédasticité détectée (Breusch-Pagan OU
+    # White, p<0.05), refit avec erreurs-types robustes HC3. Les estimations
+    # ponctuelles sont identiques ; seuls écarts-types/IC/p-values changent.
+    # Le payload CLASSIQUE ("coefficients") reste inchangé : la version
+    # robuste est exposée à côté ("coefficients_robust") pour comparaison.
+    het_detected = bool(
+        (het_bp.get("p_value", 1.0) < 0.05) or (het_w.get("p_value", 1.0) < 0.05)
+    )
+    coefficients_robust: dict[str, Any] = {}
+    cov_type_used = "nonrobust"
+    if het_detected:
+        try:
+            model_r = sm.OLS(Y, X).fit(cov_type="HC3")
+            cov_type_used = "HC3"
+            for var in model_r.params.index:
+                coefficients_robust[var] = {
+                    "coefficient":       round(float(model_r.params[var]), 6),
+                    "std_err_robust":    round(float(model_r.bse[var]), 6),
+                    "t_stat_robust":     round(float(model_r.tvalues[var]), 4),
+                    "p_value_robust":    round(float(model_r.pvalues[var]), 5),
+                    "ci_lower_robust":   round(float(model_r.conf_int().loc[var, 0]), 6),
+                    "ci_upper_robust":   round(float(model_r.conf_int().loc[var, 1]), 6),
+                    "significant_robust": bool(model_r.pvalues[var] < 0.05),
+                }
+        except Exception:
+            coefficients_robust = {}
+            cov_type_used = "nonrobust"
+
+    robust_note = (
+        "Hétéroscédasticité détectée (Breusch-Pagan/White p<0.05) -> erreurs-"
+        "types robustes HC3 fournies dans 'coefficients_robust' ; les "
+        "estimations classiques sont conservées en comparaison."
+        if het_detected
+        else "Homoscédasticité (tests p>=0.05) -> erreurs-types classiques."
+    )
+
     # Graphique résidus
     _apply_mpl_theme(theme)
     if theme == "light":
@@ -1018,6 +1054,10 @@ def ols_regression(
         ),
         "breusch_pagan": het_bp,
         "white_test":    het_w,
+        "heteroscedasticity_detected": het_detected,
+        "cov_type_used": cov_type_used,
+        "coefficients_robust": coefficients_robust,
+        "robust_note": robust_note,
         "charts":        charts,
     }
 
@@ -1567,7 +1607,14 @@ def run_base_compute_pipeline(file_bytes: bytes, filename: str,
         corr_light = correlation_analysis(df, numeric_cols, norm_light.get("normality", {}), theme="light")
         
         desc = {k: v for k, v in desc_dark.items() if k != "charts"}
-        norm = norm_dark.get("normality", {})
+        # BUG FIX (05/10/2026) : norm doit rester le resultat COMPLET de
+        # normality_tests (avec la cle interne "normality"), comme dans la
+        # branche mono-theme -- le return final fait norm.get("normality")
+        # et produisait un dict VIDE quand theme="both". Consequence prouvee :
+        # en prod (theme="both" par defaut), le selector recevait une
+        # normalite vide -> _normality_ok False -> TOUS les tests basculaient
+        # en non-parametrique (Mann-Whitney au lieu de Student/Welch).
+        norm = norm_dark
         corr = {k: v for k, v in corr_dark.items() if k != "charts"}
         reg  = ols_regression(df, numeric_cols, target_col, theme="dark")
         reg_light = ols_regression(df, numeric_cols, target_col, theme="light")

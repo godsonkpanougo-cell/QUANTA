@@ -18,6 +18,30 @@ TEST_USER_BASE = {
 # Variable globale pour stocker le user_id actuel
 CURRENT_TEST_USER_ID = None
 
+# NOTE (05/10/2026) : deux causes réelles d'échec historique —
+#  1) le rate-limiter slowapi (5/minute) renvoyait 429 dès la 6e requête
+#     HTTP, AVANT que le quota 15 ne soit testé -> on le désactive ici via
+#     le toggle runtime slowapi (limiter.enabled), exactement pour isoler
+#     ce que le test veut mesurer (le QUOTA, pas le rate-limit) ;
+#  2) les 15 analyses identiques (même fichier + même query) tombent dans
+#     le cache d'analyses (by design : cache-hit ne consomme PAS de quota)
+#     -> on varie la requête pour déclencher 15 vrais consommations.
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limiter_for_quota_tests(monkeypatch):
+    """Isole le QUOTA des mécanismes voisins : slowapi (429 dès la 6e
+    requête) désactivé via son toggle runtime, et worker d'analyse neutralisé
+    (avec requêtes uniques, chaque /analyze déclencherait une VRAIE analyse
+    pipeline+LLM de plusieurs minutes — le test mesure le comptage de quota,
+    pas le contenu statistique). Les analyses restent 'pending', ce qui
+    suffit : le quota est compté à la création, pas au résultat."""
+    previous = getattr(main.limiter, "enabled", True)
+    main.limiter.enabled = False
+    monkeypatch.setattr(main, "_run_analysis_background", lambda *a, **k: None)
+    yield
+    main.limiter.enabled = previous
+
 
 def override_get_current_user():
     """Override pour simuler un utilisateur authentifié."""
@@ -69,11 +93,12 @@ def test_quota_15_analyses_then_403():
         assert upload_response.status_code == 200
         file_id = upload_response.json()["file_id"]
         
-        # Lancer 15 analyses - toutes doivent réussir
+        # Lancer 15 analyses - toutes doivent réussir (requêtes UNIQUES :
+        # un cache-hit ne consomme pas de quota by design)
         for i in range(15):
             analyze_response = client.post(
                 "/analyze",
-                json={"file_id": file_id, "query": "Test analysis"}
+                json={"file_id": file_id, "query": f"Test analysis {i+1}"}
             )
             print(f"  Analyse {i+1}: {analyze_response.status_code}")
             assert analyze_response.status_code == 200, f"Analyse {i+1} devrait réussir"

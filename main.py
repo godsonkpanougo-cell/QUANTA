@@ -234,6 +234,27 @@ app.include_router(repro_pack.router)
 # Pilier 4 : Mode Soutenance (déterministe, sans LLM ni recalcul).
 app.include_router(defense.router)
 
+# A4 (durcissement) : monitoring Sentry OPTIONNEL — activé UNIQUEMENT si
+# SENTRY_DSN est défini dans l'environnement : sans DSN, zéro import, zéro
+# réseau, comportement identique à avant (aucune dépendance requise).
+_SENTRY_DSN = os.environ.get("SENTRY_DSN")
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+            traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            integrations=[FastApiIntegration()],
+        )
+        logger.info("Sentry monitoring activé (SENTRY_DSN présent).")
+    except ImportError:
+        logger.warning(
+            "SENTRY_DSN défini mais sentry-sdk non installé — monitoring "
+            "désactivé. Ajoutez 'sentry-sdk[fastapi]' à requirements.txt."
+        )
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STOCKAGE DES FICHIERS PHYSIQUES (les métadonnées sont en base via db.py)
