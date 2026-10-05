@@ -6,7 +6,7 @@ import {
   Space_Grotesk,
 } from "next/font/google";
 import "./globals.css";
-import { GoldDust } from "@/app/components/GoldDust";
+import { CursorTrail } from "@/app/components/CursorTrail";
 import { SymbolRain } from "@/app/components/SymbolRain";
 import { AuthProvider } from "@/app/context/AuthContext";
 import "@fontsource/jetbrains-mono";
@@ -86,8 +86,8 @@ export default function RootLayout({
         </AuthProvider>
         {/* Pluie de symboles mathématiques — décorative, toutes les pages. */}
         <SymbolRain />
-        {/* Poussière d'or au curseur — décoratif, toutes les pages. */}
-        <GoldDust />
+        {/* Ligne dorée fine traînant derrière le curseur — décoratif. */}
+        <CursorTrail />
       </body>
     </html>
   );
