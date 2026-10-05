@@ -22,11 +22,20 @@ export function Magnetic({
   className,
 }: MagneticProps) {
   const ref = useRef<HTMLDivElement>(null);
+  /* Une seule animation vivante à la fois : on annule la précédente
+     avant d'en lancer une nouvelle — sinon les animations WAAPI
+     s'accumulent en mémoire pendant une glisse prolongée. */
+  const animRef = useRef<Animation | null>(null);
   const reduceMotion = useReducedMotion();
 
   if (reduceMotion) {
     return <div className={className}>{children}</div>;
   }
+
+  const play = (keyframes: Keyframe[], options: KeyframeAnimationOptions) => {
+    animRef.current?.cancel();
+    animRef.current = ref.current?.animate(keyframes, options) ?? null;
+  };
 
   return (
     <motion.div
@@ -40,7 +49,7 @@ export function Magnetic({
         const rect = el.getBoundingClientRect();
         const dx = event.clientX - (rect.left + rect.width / 2);
         const dy = event.clientY - (rect.top + rect.height / 2);
-        void el.animate(
+        play(
           [
             { transform: "translate3d(0,0,0)" },
             {
@@ -53,21 +62,14 @@ export function Magnetic({
         );
       }}
       onPointerLeave={() => {
-        const el = ref.current;
-        if (!el) {
+        if (!ref.current) {
           return;
         }
-        void el.animate(
-          [
-            { transform: el.style.transform || "translate3d(0,0,0)" },
-            { transform: "translate3d(0,0,0)" },
-          ],
-          {
-            duration: 420,
-            easing: "cubic-bezier(0.34, 1.56, 0.64, 1)",
-            fill: "forwards",
-          },
-        );
+        play([{ transform: "translate3d(0,0,0)" }], {
+          duration: 420,
+          easing: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+          fill: "forwards",
+        });
       }}
     >
       {children}
