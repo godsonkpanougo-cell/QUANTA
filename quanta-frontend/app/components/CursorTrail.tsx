@@ -3,39 +3,37 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Traînée du curseur — étoile filante v4 « ruban continu, embrasée par
- * la vitesse ».
+ * Traînée du curseur — étoile filante v5 « ruban homogène ».
  *
- * La v2 dessinait la queue en segments successifs : si fluides soient
- * les échantillons, chaque raccord restait visible (bandes, perles) dès
- * que le geste forçait des virages serrés. La v3 change de méthode :
+ * La fluidité rigoureuse repose sur quatre garde-fous, chacun corrige
+ * un défaut précis : les « sommets » (débords de spline), les
+ * « coupures » de lumière et la rugosité de bord.
  *
- * - Échantillonnage TEMPOREL : la tête poursuit le curseur en ressort
- *   amorti et un point d'historique est ajouté à chaque frame — densité
- *   constante, même dans les mouvements brusques.
- * - Lissage Catmull-Rom (centripète) : le centre du ruban est une
- *   courbe unique dérivée des points bruts ; les virages deviennent des
- *   arcs, jamais des coudes.
- * - La SILHOUETTE du ruban est construite en un seul polygone : pour
- *   chaque échantillon de la courbe, deux points décalés
- *   perpendiculairement à l'axe, épaisseur croissante vers la tête,
- *   puis remplissage d'un trait — un seul draw call, donc
- *   mathématiquement aucun segment ni raccord visible.
- * - Couleur : dégradé or → champagne projeté le long de l'axe du
- *   ruban (axes principaux), recalculé par frame.
- * - Blending additif + halo radial doux sur la tête.
- * - RÉACTIVITÉ À LA VITESSE : la vitesse du geste pilote un facteur
- *   d'embrasement (attaque rapide, extinction lente — comme un métal
- *   chauffé). Il allonge la queue (12 → 46 points), augmente la
- *   luminosité du dégradé, l'épaisseur du ruban et le rayon du halo :
- *   geste vif = étoile filante éblouissante, geste posé = lueur discrète.
+ * 1. POINTS ÉQUIDISTANTS : l'historique est rééchantillonné à longueur
+ *    d'arc constante (6px) avant tout calcul. Une spline nourrie de
+ *    points irréguliers produit des ondulations parasites — les
+ *    « sommets ».uniformément espacés, elle est géométriquement
+ *    stable.
+ * 2. LISSAGE CHAIKIN (borné) : deux passes de coupe d'angles donnent
+ *    une courbe qui reste PAR DÉFINITION dans l'enveloppe des points
+ *    d'entrée — aucune pointe ne peut dépasser la trajectoire
+ *    physique, contrairement à Catmull-Rom sur nœuds denses.
+ * 3. DÉGRADÉ ORIENTÉ : les extrémités sont attachées QUEUE → TÊTE
+ *    (le dégradé suit le corps, jamais inversé par le sens du
+ *    mouvement — la « coupure » de lumière disparaît).
+ * 4. BORDS ANTIALIASÉS : la silhouette est une surface fermée par une
+ *    pointe conique, dessinée sans contour additionnel (le liseré
+ *    additif créait un double bord irrégulier).
  *
- * Mort douce : le curseur posé, la queue se rétracte (~0,8 s) par
- * décalage d'historique. Tactile et prefers-reduced-motion : rien.
+ * + Tête à ressort amorti (framerate-indépendant), échantillonnage
+ *   temporel, réactivité à la vitesse (queue 12→46 pts, luminosité,
+ *   épaisseur, halo), mort douce ~0,8 s, blending additif, désactivée
+ *   sur tactile / prefers-reduced-motion.
  */
 
 const HISTORY_MAX = 46; // points bruts conservés (≈ 0,38 s de vol)
-const CURVE_SUBDIV = 5; // subdivisions Catmull-Rom entre deux points
+const SPACING = 6; // px — distance constante entre points rééchantillonnés
+const SMOOTH_PASSES = 2; // passes Chaikin
 const WIDTH_HEAD = 1.6; // px — demi-épaisseur au niveau de la tête
 const WIDTH_TAIL = 0.25; // px — demi-épaisseur au bout de la queue
 const RETRACT_STEP = 0.018; // s par point retiré à la mort → ~0,8 s
@@ -103,37 +101,72 @@ export function CursorTrail() {
       wake();
     };
 
-    /** Spline Catmull-Rom centripète : retourne `subdiv` points entre
-     *  p1 et p2 (p0, p3 = voisines), jamais de rebond. */
-    const catmullRom = (
-      p0: { x: number; y: number },
-      p1: { x: number; y: number },
-      p2: { x: number; y: number },
-      p3: { x: number; y: number },
-      subdiv: number,
+    /**
+     * Rééchantillonnage à longueur d'arc constante : marche le long de
+     * la polyligne et dépose un point tous les `spacing` px. Résultat :
+     * des nœuds équidistants quelle que soit la densité d'échan‎tillons
+     * d'entrée (dense aux inversions, lâche en ligne droite).
+     */
+    const resample = (
+      pts: { x: number; y: number }[],
+      spacing: number,
     ): { x: number; y: number }[] => {
-      const out: { x: number; y: number }[] = [];
-      for (let i = 0; i < subdiv; i += 1) {
-        const t = i / subdiv;
-        const t2 = t * t;
-        const t3 = t2 * t;
-        out.push({
-          x:
-            0.5 *
-            (2 * p1.x +
-              (-p0.x + p2.x) * t +
-              (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
-              (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
-          y:
-            0.5 *
-            (2 * p1.y +
-              (-p0.y + p2.y) * t +
-              (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
-              (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
-        });
+      const out: { x: number; y: number }[] = [pts[0]];
+      let acc = 0;
+      for (let i = 1; i < pts.length; i += 1) {
+        let ax = pts[i - 1].x;
+        let ay = pts[i - 1].y;
+        const bx = pts[i].x;
+        const by = pts[i].y;
+        let segLen = Math.hypot(bx - ax, by - ay);
+        while (acc + segLen >= spacing) {
+          const k = (spacing - acc) / segLen;
+          const px = ax + (bx - ax) * k;
+          const py = ay + (by - ay) * k;
+          out.push({ x: px, y: py });
+          ax = px;
+          ay = py;
+          segLen = Math.hypot(bx - ax, by - ay);
+          acc = 0;
+        }
+        acc += segLen;
       }
+      out.push(pts[pts.length - 1]);
       return out;
     };
+
+    /**
+     * Lissage Chaïkin : coupe chaque coin (0,25 / 0,75) et insère les
+     * deux nouveaux points. Courbe GARANTIE dans l'enveloppe convexe
+     * des entrées — le ruban ne peut ni déborder ni produire de
+     * sommets, quel que soit l'enchevêtrement de la trajectoire.
+     */
+    const chaikin = (
+      pts: { x: number; y: number }[],
+    ): { x: number; y: number }[] => {
+      if (pts.length < 3) {
+        return pts;
+      }
+      const out: { x: number; y: number }[] = [pts[0]];
+      for (let i = 0; i < pts.length - 1; i += 1) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        out.push({
+          x: a.x * 0.75 + b.x * 0.25,
+          y: a.y * 0.75 + b.y * 0.25,
+        });
+        out.push({
+          x: a.x * 0.25 + b.x * 0.75,
+          y: a.y * 0.25 + b.y * 0.75,
+        });
+      }
+      out.push(pts[pts.length - 1]);
+      return out;
+    };
+
+    const smoothWork: { x: number; y: number }[] = [];
+    const leftWork: { x: number; y: number }[] = [];
+    const rightWork: { x: number; y: number }[] = [];
 
     const tick = (now: number) => {
       let dt = (now - lastTime) / 1000;
@@ -153,8 +186,7 @@ export function CursorTrail() {
       head.y += headV.y * dt;
 
       /* 1bis — Vitesse du geste (la main, pas le ressort) : embrase
-         vite, s'éteint lentement. Les téléportations du pointeur sont
-         plafonnées pour ne pas créer de pic artificiel. */
+         vite, s'éteint lentement. Téléportations plafonnées. */
       const gestSpeed = Math.min(
         Math.hypot(target.x - prevTargetX, target.y - prevTargetY) / dt,
         4000,
@@ -162,7 +194,6 @@ export function CursorTrail() {
       prevTargetX = target.x;
       prevTargetY = target.y;
       const raw = Math.min(gestSpeed / SPEED_FULL, 1);
-      /* Attaque rapide (montée), extinction lente (descente). */
       const rate = raw > speedFactor ? ATTACK : DECAY;
       speedFactor += (raw - speedFactor) * Math.min(1, dt * rate);
       speedFactor = Math.min(1, Math.max(0, speedFactor));
@@ -178,29 +209,32 @@ export function CursorTrail() {
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      /* 3 — Courbe unique Catmull-Rom. La vitesse de l'embrasement
-         allonge la queue : on ne donne à la spline que les
-         `tailCount` points les plus récents de l'historique. */
-      const curve: { x: number; y: number }[] = [];
+      /* 3 — La vitesse allonge la queue : sous-ensemble récent. */
       const tailCount = Math.round(
         TAIL_MIN + (HISTORY_MAX - TAIL_MIN) * speedFactor,
       );
       const used = history.slice(Math.max(0, history.length - tailCount));
-      const n = used.length;
-      if (n >= 2) {
-        curve.push(used[n - 1]); // la tête fait partie de la courbe
-        for (let i = 0; i < n - 1; i += 1) {
-          const p1 = used[n - 1 - i];
-          const p2 = used[n - 2 - i];
-          const p0 = used[Math.max(0, n - i - 3)];
-          const p3 = n - i - 4 >= 0 ? used[n - i - 4] : p2;
-          curve.push(...catmullRom(p0, p1, p2, p3, CURVE_SUBDIV));
-        }
 
-        /* 4 — Silhouette : un seul polygone épaisseur variable. */
-        const left: { x: number; y: number }[] = [];
-        const right: { x: number; y: number }[] = [];
+      if (used.length >= 2) {
+        /* 3a — Équidistance puis lissage Chaïkin : la géométrie
+           ne peut plus créer de sommets. */
+        const even = resample(used, SPACING);
+        smoothWork.length = 0;
+        smoothWork.push(...even);
+        for (let pass = 0; pass < SMOOTH_PASSES; pass += 1) {
+          const smoothed = chaikin(smoothWork);
+          smoothWork.length = 0;
+          smoothWork.push(...smoothed);
+        }
+        const curve = smoothWork;
+
+        /* 3b — Silhouette : un seul polygone épaisseur variable. */
         const m = curve.length;
+        leftWork.length = 0;
+        rightWork.length = 0;
+        /* Plan de la queue (t=1) pour attacher le dégradé du bon côté. */
+        const tailPt = curve[m - 1];
+        const headPt = curve[0];
         for (let i = 0; i < m; i += 1) {
           const p = curve[i];
           const prev = curve[Math.max(0, i - 1)];
@@ -214,89 +248,57 @@ export function CursorTrail() {
           const t = i / (m - 1); // 0 tête → 1 queue
           /* L'embrasement gonfle légèrement le ruban (jusqu'à +35 %). */
           const widthScale = 1 + 0.35 * speedFactor;
+          /* Effilement : constant sur le dernier tiers, plus de
+             bord plat — la pointe se ferme en aiguille. */
+          const shave = Math.pow(1 - t, 1.6);
           const half =
-            (WIDTH_TAIL + (WIDTH_HEAD - WIDTH_TAIL) * Math.pow(1 - t, 1.6)) *
-            widthScale *
+            (WIDTH_HEAD *
+              widthScale *
+              (WIDTH_TAIL / WIDTH_HEAD +
+                (1 - WIDTH_TAIL / WIDTH_HEAD) *
+                shave)) *
             dpr;
-          left.push({ x: p.x + nx * half, y: p.y + ny * half });
-          right.push({ x: p.x - nx * half, y: p.y - ny * half });
+          leftWork.push({ x: p.x + nx * half, y: p.y + ny * half });
+          rightWork.push({ x: p.x - nx * half, y: p.y - ny * half });
         }
+        const left = leftWork;
+        const right = rightWork;
 
-        /* Dégradé or → champagne le long de l'axe du ruban. */
-        let minX = Infinity;
-        let minY = Infinity;
-        let maxX = -Infinity;
-        let maxY = -Infinity;
-        for (const p of curve) {
-          minX = Math.min(minX, p.x);
-          minY = Math.min(minY, p.y);
-          maxX = Math.max(maxX, p.x);
-          maxY = Math.max(maxY, p.y);
-        }
-        const cx = (minX + maxX) / 2;
-        const cy = (minY + maxY) / 2;
-        let sxx = 0;
-        let syy = 0;
-        let sxy = 0;
-        for (const p of curve) {
-          const dx = p.x - cx;
-          const dy = p.y - cy;
-          sxx += dx * dx;
-          syy += dy * dy;
-          sxy += dx * dy;
-        }
-        const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
-        const axisX = Math.cos(angle);
-        const axisY = Math.sin(angle);
-        let dotMin = Infinity;
-        let dotMax = -Infinity;
-        for (const p of curve) {
-          const d = (p.x - cx) * axisX + (p.y - cy) * axisY;
-          dotMin = Math.min(dotMin, d);
-          dotMax = Math.max(dotMax, d);
-        }
-
-        /* L'embrasement augmente la luminosité aux deux premiers stops. */
-        const headAlpha = 0.75 + 0.25 * speedFactor;
+        /* 3c — Dégradé du bon côté : de la QUEUE (or, transparent)
+           vers la TÊTE (champagne, lumineux). Les coins du
+           rectangle d'axe tiennent compte de l'inclinaison. */
+        const headAlpha = 0.78 + 0.22 * speedFactor;
         const midAlpha = 0.55 + 0.3 * speedFactor;
         const grad = ctx.createLinearGradient(
-          (cx + axisX * dotMin) * dpr,
-          (cy + axisY * dotMin) * dpr,
-          (cx + axisX * dotMax) * dpr,
-          (cy + axisY * dotMax) * dpr,
+          tailPt.x * dpr,
+          tailPt.y * dpr,
+          headPt.x * dpr,
+          headPt.y * dpr,
         );
-        grad.addColorStop(
-          0,
-          `rgba(${CHAMPAGNE.r}, ${CHAMPAGNE.g}, ${CHAMPAGNE.b}, ${headAlpha})`,
-        );
-        grad.addColorStop(
-          0.45,
-          `rgba(${GOLD.r}, ${GOLD.g}, ${GOLD.b}, ${midAlpha})`,
-        );
-        grad.addColorStop(1, `rgba(${GOLD.r}, ${GOLD.g}, ${GOLD.b}, 0)`);
+        grad.addColorStop(0, `rgba(${GOLD.r}, ${GOLD.g}, ${GOLD.b}, 0)`);
+        grad.addColorStop(0.55, `rgba(${GOLD.r}, ${GOLD.g}, ${GOLD.b}, ${midAlpha})`);
+        grad.addColorStop(1, `rgba(${CHAMPAGNE.r}, ${CHAMPAGNE.g}, ${CHAMPAGNE.b}, ${headAlpha})`);
 
         ctx.globalCompositeOperation = "lighter";
+        /* Surface unique : côté gauche aller, retour côté droit,
+           pointe de queue FERMÉE en rejoignant le dernier point
+           central (aiguille), aucun contour additionnel. */
         ctx.beginPath();
         ctx.moveTo(left[0].x * dpr, left[0].y * dpr);
-        for (let i = 1; i < left.length; i += 1) {
+        for (let i = 1; i < m; i += 1) {
           ctx.lineTo(left[i].x * dpr, left[i].y * dpr);
         }
-        for (let i = right.length - 1; i >= 0; i -= 1) {
+        for (let i = m - 1; i >= 0; i -= 1) {
           ctx.lineTo(right[i].x * dpr, right[i].y * dpr);
         }
         ctx.closePath();
         ctx.fillStyle = grad;
         ctx.fill();
-        /* Liseré : même dessin en trait, résout l'antialiasing de bord. */
-        ctx.strokeStyle = grad;
-        ctx.lineWidth = 0.6 * dpr;
-        ctx.stroke();
 
         /* Halo de la tête — l'étoile de l'étoile filante. Il grandit
            et s'éblouit avec l'embrasement. */
-        const h = curve[0];
-        const hx = h.x * dpr;
-        const hy = h.y * dpr;
+        const hx = headPt.x * dpr;
+        const hy = headPt.y * dpr;
         const glowR = (14 + 10 * speedFactor) * dpr;
         const glowA = 0.38 + 0.3 * speedFactor;
         const glow = ctx.createRadialGradient(hx, hy, 0, hx, hy, glowR);
@@ -313,7 +315,7 @@ export function CursorTrail() {
         ctx.globalCompositeOperation = "source-over";
       }
 
-      /* 5 — Mort douce : curseur posé → la queue se rétracte. */
+      /* 4 — Mort douce : curseur posé → la queue se rétracte. */
       const settled =
         Math.hypot(target.x - head.x, target.y - head.y) < 0.5 &&
         Math.hypot(headV.x, headV.y) < 5;
