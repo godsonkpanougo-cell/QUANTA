@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   motion,
   useMotionValueEvent,
@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AuthButton } from "@/app/components/AuthButton";
+import { Magnetic } from "@/app/components/Magnetic";
 import { LogoQ } from "@/app/components/LogoQ";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +59,38 @@ export function SiteHeader() {
   const { scrollY } = useScroll();
   const reduceMotion = useReducedMotion();
   const [hidden, setHidden] = useState(false);
+  const logoRef = useRef<HTMLSpanElement>(null);
+  const [nearCursor, setNearCursor] = useState(false);
+
+  /* Constellation : le logo Q s'éclaire quand le curseur passe près.
+     Hystérésis (84px entrée / 120px sortie) et mise à jour seulement
+     au franchissement : zéro re-render pendant la glisse. */
+  useEffect(() => {
+    if (reduceMotion) {
+      return;
+    }
+    let near = false;
+    const onMove = (event: PointerEvent) => {
+      const el = logoRef.current;
+      if (!el || event.pointerType !== "mouse") {
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      const dist = Math.hypot(
+        event.clientX - (rect.left + rect.width / 2),
+        event.clientY - (rect.top + rect.height / 2),
+      );
+      if (!near && dist < 84) {
+        near = true;
+        setNearCursor(true);
+      } else if (near && dist > 120) {
+        near = false;
+        setNearCursor(false);
+      }
+    };
+    window.addEventListener("pointermove", onMove, { passive: true });
+    return () => window.removeEventListener("pointermove", onMove);
+  }, [reduceMotion]);
 
   useMotionValueEvent(scrollY, "change", (y) => {
     const previous = scrollY.getPrevious() ?? 0;
@@ -82,16 +115,46 @@ export function SiteHeader() {
       className="glass fixed inset-x-0 top-0 z-50 border-x-0 border-t-0"
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
-        {/* Wordmark compact */}
+        {/* Wordmark compact — constellation au passage du curseur */}
         <Link
           href="/"
           aria-label="QUANTA — accueil"
           className="group flex shrink-0 items-center gap-3"
         >
-          <LogoQ
-            size={30}
-            className="transition-transform duration-300 group-hover:rotate-[8deg]"
-          />
+          <span ref={logoRef} className="relative flex items-center justify-center">
+            {/* Halo or : la pluie « réagit » à l'identité QUANTA. */}
+            <motion.span
+              aria-hidden
+              className="absolute inset-0 rounded-full"
+              style={{
+                background:
+                  "radial-gradient(circle, rgba(243,231,198,0.5) 0%, rgba(232,213,163,0.22) 45%, transparent 72%)",
+                filter: "blur(5px)",
+              }}
+              animate={{
+                opacity: nearCursor ? 1 : 0,
+                scale: nearCursor ? 1.25 : 0.7,
+              }}
+              transition={{
+                duration: 0.5,
+                ease: [0.16, 1, 0.3, 1],
+              }}
+            />
+            <motion.span
+              className="relative block"
+              animate={{ scale: nearCursor ? 1.08 : 1 }}
+              transition={{
+                type: "spring",
+                stiffness: 260,
+                damping: 18,
+              }}
+            >
+              <LogoQ
+                size={30}
+                className="transition-transform duration-300 group-hover:rotate-[8deg]"
+              />
+            </motion.span>
+          </span>
           <span className="whitespace-nowrap font-brand text-base font-extralight tracking-[0.22em] text-quanta-primary transition-colors duration-200 group-hover:text-quanta-gold-2">
             QUANTA
           </span>
@@ -152,7 +215,9 @@ export function SiteHeader() {
           </nav>
 
           <div className="shrink-0">
-            <AuthButton compact />
+            <Magnetic strength={5}>
+              <AuthButton compact />
+            </Magnetic>
           </div>
         </div>
       </div>

@@ -7,6 +7,7 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import { CursorTrail } from "@/app/components/CursorTrail";
+import { ScrollProgress } from "@/app/components/ScrollProgress";
 import { SymbolRain } from "@/app/components/SymbolRain";
 import { AuthProvider } from "@/app/context/AuthContext";
 import "@fontsource/jetbrains-mono";
@@ -86,7 +87,9 @@ export default function RootLayout({
         </AuthProvider>
         {/* Pluie de symboles mathématiques — décorative, toutes les pages. */}
         <SymbolRain />
-        {/* Ligne dorée fine traînant derrière le curseur — décoratif. */}
+        {/* Progression de lecture — fine ligne or en haut. */}
+        <ScrollProgress />
+        {/* Étoile filante traînant derrière le curseur — décoratif. */}
         <CursorTrail />
       </body>
     </html>

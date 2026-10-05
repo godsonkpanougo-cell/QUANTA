@@ -17,6 +17,7 @@ import { AnalysisResults } from "@/app/components/AnalysisResults";
 import { UploadZone } from "@/app/components/UploadZone";
 import { AuthButton } from "@/app/components/AuthButton";
 import { LogoQ } from "@/app/components/LogoQ";
+import { Magnetic } from "@/app/components/Magnetic";
 import { SiteHeader } from "@/app/components/SiteHeader";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SplashScreen } from "@/app/components/SplashScreen";
@@ -485,6 +486,7 @@ function HomePageContent() {
                   {/* 03 — Exécution */}
                   <Reveal delay={3.05}>
                   <div className="flex justify-center pt-2">
+                    <Magnetic strength={9}>
                     <button
                       type="button"
                       disabled={!canAnalyze || isUploading}
@@ -514,8 +516,9 @@ function HomePageContent() {
                             aria-hidden
                           />
                         </>
-                      )}
+                      )                      }
                     </button>
+                    </Magnetic>
                   </div>
                   </Reveal>
                 </>
