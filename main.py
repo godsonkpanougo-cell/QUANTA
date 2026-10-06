@@ -48,7 +48,7 @@ print("=" * 60)
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from fastapi import Cookie, Depends
 from pydantic import BaseModel, StringConstraints, field_validator
 from slowapi import Limiter
@@ -767,11 +767,14 @@ def cancel_analysis(
 def get_report(
     analysis_id: str,
     theme: str = "dark",
+    force: bool = False,
     current_user: dict = Depends(auth.get_current_user)
 ) -> Response:
     """
     Télécharge le rapport PDF d'une analyse terminée.
-    Query param optionnel : theme=dark|light (défaut dark).
+    Query params optionnels :
+      - theme=dark|light (défaut dark)
+      - force=true : régénère le PDF même s'il existe déjà en cache disque.
     Exemple : /report/{id}?theme=light
     """
     analysis = db.get_analysis(analysis_id, current_user["user_id"])
@@ -810,10 +813,21 @@ def get_report(
     # Chercher PDF déjà généré
     pdf_path = os.path.join(upload_dir, f"report_{analysis_id}_{theme_norm}.pdf")
 
-    # Supprimer PDF existant pour forcer régénération avec PDF Worker
-    if os.path.exists(pdf_path):
-        logger.debug("Deleting existing PDF", pdf_path=pdf_path)
-        os.unlink(pdf_path)
+    # A3 : réutiliser le PDF en cache disque s'il existe (le worker PDF coûte
+    # 30-60 s par demande et le fichier était supprimé à chaque clic).
+    # force=true permet une régénération explicite ; le nettoyage des PDFs
+    # > 24 h (voir la tâche de fond) borne déjà l'occupation disque.
+    if os.path.exists(pdf_path) and not force:
+        logger.info("PDF Report cache hit", analysis_id=analysis_id, pdf_path=pdf_path)
+        suffix = "academique" if theme_norm == "light" else "dark"
+        filename = f"rapport_quanta_{suffix}_{analysis_id[:8]}.pdf"
+        return FileResponse(
+            path=pdf_path,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+            },
+        )
 
     logger.debug("Launching PDF Worker")
 
