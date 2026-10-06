@@ -157,6 +157,7 @@ export function AnalysisResults({
   const [downloadingTheme, setDownloadingTheme] = useState<
     "dark" | "light" | null
   >(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const handleDownloadPdf = useCallback(
     async (theme: "dark" | "light") => {
@@ -170,6 +171,7 @@ export function AnalysisResults({
       }
 
       setDownloadingTheme(theme);
+      setDownloadError(null);
       try {
         const response = await fetch(
           `${baseUrl}/report/${analysisId}?theme=${theme}`,
@@ -192,7 +194,11 @@ export function AnalysisResults({
         a.click();
         URL.revokeObjectURL(url);
       } catch {
-        // Le bouton se réactive dans finally ; pas de toast dédié en V1.
+        /* La première génération PDF lance un worker (~30-60 s) ; un échec
+           réseau/HTTP ne doit plus rester muet — message inline affiché. */
+        setDownloadError(
+          "Le rapport n'a pas pu être téléchargé. La première génération peut prendre 30 à 60 secondes — réessayez dans un instant.",
+        );
       } finally {
         setDownloadingTheme(null);
       }
@@ -387,6 +393,15 @@ export function AnalysisResults({
                 : "Rapport dark"}
             </button>
           </div>
+
+          {downloadError ? (
+            <p
+              role="alert"
+              className="max-w-md rounded-card border border-quanta-border-subtle bg-quanta-elevated px-4 py-3 text-center font-sans text-sm text-quanta-error"
+            >
+              {downloadError}
+            </p>
+          ) : null}
 
           <button
             type="button"

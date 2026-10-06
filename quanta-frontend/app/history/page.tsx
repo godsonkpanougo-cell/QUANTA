@@ -106,6 +106,7 @@ export default function HistoryPage() {
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
   const [isLoadingAnalyses, setIsLoadingAnalyses] = useState(true);
   const [downloadingTheme, setDownloadingTheme] = useState<"dark" | "light" | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | Analysis["status"]>("all");
@@ -172,6 +173,7 @@ export default function HistoryPage() {
   const handleDownloadPdf = async (analysisId: string, theme: "dark" | "light") => {
     try {
       setDownloadingTheme(theme);
+      setDownloadError(null);
       const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/report/${analysisId}?theme=${theme}`, {
         credentials: "include",
@@ -192,6 +194,9 @@ export default function HistoryPage() {
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error("Erreur téléchargement PDF:", e);
+      setDownloadError(
+        "Le rapport n'a pas pu être téléchargé. La première génération peut prendre 30 à 60 secondes — réessayez dans un instant.",
+      );
     } finally {
       setDownloadingTheme(null);
     }
@@ -318,6 +323,14 @@ export default function HistoryPage() {
             >
               Réinitialiser
             </button>
+          </div>
+        ) : null}
+
+        {downloadError ? (
+          <div className="mb-4 rounded-card border border-quanta-border-subtle bg-quanta-surface px-6 py-4">
+            <p className="font-sans text-sm text-quanta-error" role="alert">
+              {downloadError}
+            </p>
           </div>
         ) : null}
 

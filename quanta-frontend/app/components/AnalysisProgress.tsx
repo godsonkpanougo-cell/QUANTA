@@ -10,6 +10,9 @@ import { useAnalysisSteps, StepVisualState } from "@/app/hooks/useAnalysisSteps"
 const POLL_INTERVAL_MS = 2000;
 const COMPLETE_DELAY_MS = 500;
 const POLL_TIMEOUT_MS = 300000; // 5 minutes (300 secondes)
+const MAX_CONSECUTIVE_POLL_FAILURES = 3; // tolère une micro-coupure réseau avant d'abandonner
+const TRANSIENT_ERROR_GRACE_MS = 8000; // fenêtre worker→fallback : "error" peut repasser à "running"
+const POLL_BACKOFF_FACTOR = 2; // double l'intervalle après chaque échec réseau
 
 /* Chargé en lazy : three.js n'arrive dans le bundle que quand une analyse démarre */
 const MorphBlob = dynamic(
@@ -31,6 +34,23 @@ interface AnalysisStatusResponse {
   status: "pending" | "running" | "done" | "error" | "cancelled";
   result?: unknown;
   error?: string;
+}
+
+/* Erreur définitive (session expirée) : inutile de retenter le poll. */
+class AuthError extends Error {}
+
+/* Le backend renvoie parfois un traceback Python brut dans `error` ;
+   on ne l'affiche jamais tel quel à l'utilisateur. */
+function sanitizeStatusError(raw: string | undefined): string {
+  if (!raw) {
+    return "Une erreur est survenue pendant l'analyse.";
+  }
+  const looksLikeTraceback =
+    /Traceback|KeyError|raise |File "/.test(raw) || raw.includes("\n");
+  if (looksLikeTraceback || raw.length > 300) {
+    return "L'analyse a échoué côté serveur. Le service génératif est peut-être momentanément indisponible — réessayez dans quelques instants.";
+  }
+  return raw;
 }
 
 export interface AnalysisProgressProps {
@@ -66,7 +86,7 @@ async function fetchAnalysisStatus(
   });
 
   if (response.status === 401) {
-    throw new Error("Connectez-vous pour continuer.");
+    throw new AuthError("Connectez-vous pour continuer.");
   }
   if (!response.ok) {
     throw new Error(
@@ -187,6 +207,9 @@ export function AnalysisProgress({
     setStatus("running");
 
     let completeTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    let consecutivePollFailures = 0;
+    let transientError: { message: string; firstSeenAt: number } | null = null;
+    let nextDelayMs = POLL_INTERVAL_MS;
 
     const finishWithError = (message: string) => {
       if (finishedRef.current) {
@@ -220,15 +243,29 @@ export function AnalysisProgress({
           return;
         }
 
+        consecutivePollFailures = 0;
+        nextDelayMs = POLL_INTERVAL_MS;
+
         if (data.status === "done") {
           finishWithSuccess(data.result ?? null);
           return;
         }
 
         if (data.status === "error") {
-          finishWithError(
-            data.error ?? "Une erreur est survenue pendant l'analyse.",
-          );
+          /* Fenêtre transitoire worker→fallback (~1-5 s) : le statut peut
+             repasser à "running" quand le fallback in-memory prend le relais.
+             On ne fige l'erreur qu'après un délai de grâce. */
+          if (transientError === null) {
+            transientError = {
+              message: sanitizeStatusError(data.error),
+              firstSeenAt: Date.now(),
+            };
+          } else if (
+            Date.now() - transientError.firstSeenAt >=
+            TRANSIENT_ERROR_GRACE_MS
+          ) {
+            finishWithError(transientError.message);
+          }
           return;
         }
 
@@ -236,12 +273,27 @@ export function AnalysisProgress({
           finishWithError("Analyse annulée par l'utilisateur.");
           return;
         }
+
+        /* Statut redevenu pending/running : la panne transitoire est passée. */
+        transientError = null;
       } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Impossible de contacter le serveur d'analyse.";
-        finishWithError(message);
+        if (error instanceof AuthError) {
+          finishWithError(error.message);
+          return;
+        }
+
+        /* Tolérance réseau : N échecs consécutifs avant d'abandonner le poll. */
+        consecutivePollFailures += 1;
+        nextDelayMs = POLL_INTERVAL_MS * POLL_BACKOFF_FACTOR;
+        if (consecutivePollFailures >= MAX_CONSECUTIVE_POLL_FAILURES) {
+          const cause =
+            error instanceof Error
+              ? error.message
+              : "Impossible de contacter le serveur d'analyse.";
+          finishWithError(
+            `Connexion au serveur perdue après ${MAX_CONSECUTIVE_POLL_FAILURES} tentatives (${cause}). Vérifiez votre connexion puis relancez l'analyse.`,
+          );
+        }
       }
     };
 
@@ -255,7 +307,7 @@ export function AnalysisProgress({
           return;
         }
         
-        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+        await new Promise(resolve => setTimeout(resolve, nextDelayMs));
       }
       
       if (!finishedRef.current) {
