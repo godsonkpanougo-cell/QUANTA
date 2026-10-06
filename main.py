@@ -139,7 +139,7 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
-def _run_with_timeout(func, args=(), kwargs={}, timeout=300):
+def _run_with_timeout(func, args=(), kwargs={}, timeout=480):
     """
     Exécute une fonction avec un timeout portable (Windows + Linux).
     Utilise threading pour éviter les limitations de signal sur Windows.
@@ -544,8 +544,13 @@ def _run_analysis_background(analysis_id: str, user_id: str, file_id: str, query
     l'analyse, consultable via /status.
     """
     try:
-        # Exécuter l'analyse avec un timeout de 5 minutes (300 secondes)
-        _run_with_timeout(_run_analysis_dispatch, args=(analysis_id, user_id, file_id, query), timeout=300)
+        # Exécuter l'analyse avec un budget global de 8 minutes (480 secondes).
+        # Incident 06/10 (L2_tobit) : worker 260 s + fallback in-memory qui
+        # réussit à 433 s → le budget 300 s étiquetait l'analyse en error et
+        # remboursait le quota PENDANT que le fallback réussissait encore.
+        # 480 s couvre le pire cas observé avec marge ; le poll frontend
+        # (540 s) reste au-dessus pour toujours voir le verdict final.
+        _run_with_timeout(_run_analysis_dispatch, args=(analysis_id, user_id, file_id, query), timeout=480)
     except TimeoutError as e:
         db.update_analysis(
             analysis_id, status="error",
