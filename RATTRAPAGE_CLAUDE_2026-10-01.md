@@ -260,3 +260,91 @@ marge reste faible → (b) à chiffrer sérieusement.
 4. **Files d'attente** : consignes Windsurf « couverture statistique » et « audit
    accessibilité réel » à rédiger ; docs de direction committés sur feature/freebuff-docs ;
    QUANTA_STATE.md à rafraîchir ; paywall gelé (décision Stripe/juridique Godson).
+
+---
+
+# MISE À JOUR 2026-10-06 — Godson donne la main à Freebuff (Claude indisponible)
+
+## 0. MANDAT EXPLICITE DE GODSON (à lire avant tout audit)
+
+**C'est Godson lui-même qui a donné la main à Freebuff (Buffy) le 2026-10-06**, Claude étant
+indisponible (fenêtre h24 sans accès). C'est la raison pour laquelle ce travail a été fait
+sans Claude : aucune initiative non mandatée, décision posée par Godson pour ne pas bloquer
+le chantier. **Claude reste le directeur et devra auditer ce travail post-hoc** — tout est
+ci-dessous : journal horodaté, preuves brutes, et motifs de chaque choix.
+
+Instructions données par Godson :
+- régler l'analyse qui échoue, le « failed to fetch » et le rapport qui ne se télécharge pas
+  (= appliquer A2/A3/A4 du plan d'incident du 06/10, voir §3) ;
+- protéger le code : rigueur maximale sur git (pas de mélange de branches — référence à la
+  période de désordre antérieure), commits séparés et réversibles, jamais de force push ;
+- documenter précisément l'état et l'utilité des 4 piliers mergés (§2) ;
+- tenir CE document à jour à chaque action posée (quoi, pourquoi posée, pourquoi cette
+  méthode) pour permettre l'audit de Claude.
+
+## 1. CLARIFICATION NOMENCLATURE (éviter toute confusion d'audit)
+
+Deux séries « A » coexistent :
+- **Piliers A1-A4 mergés (05/10)** → voir §2, rapports dans `RAPPORTS_PILIERS/`.
+- **Plan d'incident du 06/10 (KeyError 'choices' / failed to fetch / PDF)** : A1 = garde
+  `choices` dans `call_llm` (COMMITTÉ le 06/10 02:21 par commit `a6a5e10`, testé 5/5) ;
+  A2 = frontend tolérant ; A3 = réutilisation PDF ; A4 = smoke test. NE PAS confondre.
+
+## 2. ÉTAT ET UTILITÉ DES 4 PILIERS MERGÉS (au 2026-10-06)
+
+Mergés sur `main` (base `f61a566`, déployée en prod), rapports datés 05/10/2026 :
+
+| Pilier | État | Utilité précise | Preuve de vie |
+|---|---|---|---|
+| **A1 — Re-test prod & verdict incident 260 s** (`RAPPORT_A1_RETEST_PROD.md`) | ✅ Mergé, déployé, incident CLOS formellement | Preuve chiffrée que l'incident de timeout est résolu : pipeline 19,1 s vs 198,7 s (−90,4 %), LLM borné à 18,5 s par deadline/retries, pire cas ≈ 38 s contre 260 s avant | Rejeu exhaustif local sur L2_tobit réel ; §4 du rapport vérifie le build déployé et les endpoints protégés |
+| **A2 — Frontend des 4 piliers P1-P4** (`RAPPORT_A2_FRONTEND_PILIERS.md`) | ✅ Mergé, déployé | Écrans consommateurs des piliers : `/workspace` (projet persistant + Replay A/B), `/conversation` (chat, mode dégradé honnête), `/audit/[id]` (Repro Pack ZIP), `/defense` (soutenance imprimable) + onglets SiteHeader | `npx tsc --noEmit` 0 erreur, ESLint 0 sur les 6 fichiers, 9/9 tests Python liés |
+| **A3 — Page Méthodologie publique** (`RAPPORT_A3_METHODOLOGIE.md`, commit `c5e6458` mergé via `3806169`) | ✅ Mergé, **vérifié en prod** (200) | Page publique sans auth pour les encadreurs (UAC/UL/INSAE) : comparatif honnête 4 outils, « Ce que QUANTA ne fait pas », déterminisme octet par octet — l'honnêteté comme argument de vente | `tests/test_public_pages.py` 4/4 ; grep prod : Benjamini-Hochberg, comparatif présents |
+| **A4 — Durcissement méthodologique** (`RAPPORT_A4_DURCISSEMENT.md`) | ✅ Mergé | Bug P0 corrigé (`theme="both"` → normalité vide → Mann-Whitney systématique, faussait la méthodologie du payload), 2 exclusions de tests réparées (126 passed sans exclusions), contrat Pydantic, HC3 automatique, Sentry optionnel | Suite complète 126/126 ; test_orchestrator_compare_groups réintégré et vert |
+
+Statut de vie au 06/10 : /methodologie répond 200 en ~0,7 s (smoke test A4-Nouveau) ;
+endpoints piliers (`/projects`, `/conversations`, `/repro_pack`, `/defense`) inchangés,
+aucun des diffs du 06/10 ne les touche.
+
+## 3. JOURNAL HORODATÉ DES ACTIONS DU 06/10 (quoi / pourquoi / pourquoi cette méthode)
+
+| # | Heure | Action posée | Pourquoi posée | Pourquoi cette méthode | Résultat/preuve |
+|---|---|---|---|---|---|
+| 1 | matin | Relecture lecture seule du code (état des A1-A4 du plan d'incident) | Godson demande ce qui a changé depuis l'enquête | Lecture seule = zéro risque, respect du STOP tant que non confirmé | Rapport en chat : A1 fait (a6a5e10), A2/A3/A4 absents |
+| 2 | matin | Préparation des diffs A2/A3 + brouillon A4 SANS commit | Godson : « préparer les diffs exacts… sans les commiter » | Application au working tree non commitée = review via git diff, réversible à 100 % (`git checkout --`) | 4 fichiers modifiés 111+/17−, scripts/smoke_test.py untracked ; tsc 0 erreur, pytest ciblés 23/23, smoke réel 2 OK |
+| 3 | soir | Verrouillage d'état avant tout commit (Godson transmet le protocole Claude à 7 étapes) | Protocole Claude : vérifier status/diff-stat/pytest complet/import main AVANT commit | Ordre imposé par le directeur Claude, non modifié | git status : exactement 4 M + 6 untracked ; diff --stat = 111/17 ; HEAD = origin/main = a6a5e10 (aucune divergence) |
+| 4 | soir | Lancement suite pytest COMPLÈTE `python -m pytest tests/ -v` en arrière-plan, log intégral dans `pytest_full_run_2026-10-06.log` | Claude exige le total complet (131 attendus) et la sortie brute intégrale | Background = pas de blocage pendant l'écriture du doc ; log fichier = preuve conservable | **131 passed, 0 failed, exit 0 en 4 min 35 s** (12 warnings dépréciation uniquement) — total EXACT attendu, aucun écart |
+| 5 | soir | `python -c "import main"` sur l'état final | Règle d'or du projet avant tout push | Vérification canonique, exit code capturé explicitement | IMPORT_MAIN_EXIT=0 |
+| 6 | soir | Commit A2 `aba723e` : les 3 fichiers frontend EXPLICITEMENT nommés dans `git add` (jamais `add -A`) | Ordre et message imposés par le protocole Claude | Chemins explicites = impossibilité d'entraîner un fichier hors périmètre (les untracked sont restés hors des commits) | `aba723e fix(frontend): polling tolérant + messages d'erreur propres (A2)` — 3 files, 91+/11− |
+| 7 | soir | Commit A3 `d250892` : main.py seul | Idem | Idem | `d250892 fix(backend): réutilisation du PDF existant + param force (A3)` — 1 file, 20+/6− |
+| 8 | soir | Commit A4 `d6e26e3` : scripts/smoke_test.py seul | Idem | Idem | `d6e26e3 chore: script de smoke test rejouable (A4)` — 1 file, +341 |
+| 9 | soir | `git fetch origin` AVANT push : origin/main toujours à `a6a5e10` | Protection anti-divergence demandée par Godson (traumatisme des mélanges de branches) | Vérifier que personne (Windsurf/Cursor) n'a poussé entre-temps ; push uniquement en fast-forward | Confirmé : origin/main = a6a5e10, push fast-forward `a6a5e10..d6e26e3` |
+| 10 | soir | Push `origin main` | Protocole Claude étape 6 | **ÉCART lettre/intention à noter honnêtement** : `git push` a livré les 3 commits en UNE transaction réseau (`a6a5e10..d6e26e3`) au lieu de 3 pushes séparés. L'INTENTION de Claude (3 commits distincts, non squasheés, revertibles un à un) est respectée : l'historique distant contient bien 3 commits séparés, `git revert aba723e` / `d250892` / `d6e26e3` fonctionnent individuellement. Refaire l'inverse (réécrire l'historique distant) aurait été pire (force push interdit) | origin/main = d6e26e3 |
+| 11 | soir | Vérification CI via API GitHub (check-runs du SHA d6e26e3) | Protocole Claude étape 7 | API publique (repo public), preuve non authentifiée | 2 check-runs déclenchés ; verdict collé en §4 |
+
+## 4. RÉSULTATS DU PROTOCOLE (rempli séquentiellement)
+
+- [x] pytest complet : **131 passed, 0 failed, exit 0 en 4 min 35 s** (total exact attendu par Claude ; log brut intégral conservé dans `pytest_full_run_2026-10-06.log` à la racine du repo, non commité — artefact local)
+- [x] `python -c "import main"` : **exit 0** (état final, après tous les diffs)
+- [x] commits séparés : `aba723e` (A2 frontend) → `d250892` (A3 main.py) → `d6e26e3` (A4 smoke test) — un commit par tâche, messages exacts du protocole, chemins explicites
+- [x] push : fast-forward `a6a5e10..d6e26e3` après fetch anti-divergence (voir note honnête #10 : une transaction réseau, 3 commits distincts revertibles)
+- [x] CI verte : **`accessibility: completed / success` + `syntax-and-fast-tests: completed / success`** sur `d6e26e3` (preuve API GitHub check-runs, 06/10 ~18h45 UTC)
+
+**PROTOCOLE CLAUDE INTÉGRALEMENT SATISFAIT** — aucune étape sautée, aucun échec nouveau, aucun fichier hors périmètre dans les commits.
+
+### Échecs connus non réapparus / hors périmètre
+- Aucun échec nouveau dans la suite complète (131/131) — l'ancienne liste d'échecs préexistants
+  (`test_quota` ×2, `test_orchestrator_compare_groups`) avait déjà été RÉPARÉE par le pilier A4
+  (durcissement, 126 passed sans exclusions au 05/10) ; confirmé aujourd'hui.
+- ESLint : 15 erreurs + 2 warnings PRÉEXISTANTS dans 5 fichiers (react-hooks/refs,
+  set-state-in-effect) — prouvé préexistant par lint de la version HEAD comparée ligne à ligne ;
+  les diffs du 06/10 n'ajoutent AUCUNE violation. Hors périmètre, à traiter en tâche séparée.
+
+### Commit du présent document
+Ce document est committé séparément (`docs:`) et poussé APRÈS les 3 commits de code, pour que
+Claude puisse l'auditer depuis le repo. Commit séparé = réversible sans toucher au code.
+
+**Consigne transmise à Windsurf au 06/10** : ne rien faire avec les 5 fichiers untracked qui
+ne sont pas `scripts/smoke_test.py` (lighthouse-report-home.*, quanta_pdf_preview.html,
+rapports quanta/preview/, scripts/investigate_bootstrap_eta2.py) — ni .gitignore, ni
+suppression : ce sont des artefacts locaux de Godson, hors périmètre, et les commits sont
+ciblés par chemins explicites (jamais `git add -A`), donc leur présence est sans effet.
