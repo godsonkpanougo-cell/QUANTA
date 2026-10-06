@@ -325,6 +325,7 @@ aucun des diffs du 06/10 ne les touche.
 | 14 | soir | Budget backend 300 → 480 s (`_run_analysis_background`) | Le label error + refund partait à 300 s PENDANT que le fallback réussissait (433 s) | Une seule constante + commentaire d'incident ; worker 260 s et worker PDF 300 s NON touchés (périmètres distincts) | import main exit 0 ; commit dédié |
 | 15 | soir | Poll frontend 300 → 540 s (AnalysisProgress) | Le frontend doit toujours survivre au backend pour voir le verdict final | Strictement au-dessus de 480 s ; message auto-mis à jour (template) | tsc --noEmit exit 0 ; commit dédié |
 | 16 | soir | Support .xls : `xlrd==2.0.1` (requirements) + `.xls` dans le sélecteur frontend (UploadZone) + test verrou `tests/test_upload_formats.py` | Godson : « quanta ne prend pas en charge les .xls » — double blocage prouvé (moteur absent + picker sans .xls) | La whitelist backend et load_and_diagnose acceptaient déjà .xls — seule la dépendance et le picker manquaient ; test verrou anti-régression de dépendance | pytest ciblés 7/7 ; suite complète EN COURS (§4 mise à jour ci-dessous) ; commit dédié |
+| 17 | soir | Diagnostic déconnexions + quota reset à 15 (lecture seule, AUCUN commit code volontaire) | Godson : « le quota et la connexion ne sont pas solides » | Preuves d'abord : sessions (TTL 7 j base+cookie, purge expirées seulement), quota (lookup google_sub stable, reset uniquement à +30 j), puis DB_PATH/Dockerfile → /data sans volume dans conteneur éphémère | §6 : code sain, racine = effacement de la base à chaque déploiement/restart Render (13 pushes ce jour = 13 effacements) ; décision d'hébergement soumise à Godson (options A-D) |
 
 ## 4. RÉSULTATS DU PROTOCOLE (rempli séquentiellement)
 
@@ -423,6 +424,54 @@ l'utilisateur a quand même reçu un message d'échec ET un remboursement de quo
    lieu de ~50 s (overload Nvidia + keep-alive) — « avant » = upstream sain. La marge du
    système était nulle ; §5.3 rend l'échec affiché impossible avant 540 s, results-first
    l'élimine totalement.
+
+## 6. DÉCONNEXION SPONTANÉE + QUOTA RESET À 15 — MÊME RACINE : BASE ÉPHÉMÈRE
+
+### 6.1 Signalement Godson (soir 06/10)
+- Déconnexions d'utilisateurs « même sans redéploiement » ;
+- après déconnexion/reconnexion, le quota repart à 15 ; il diminue pourtant normalement
+  au fil d'une session.
+
+### 6.2 Le code est sain — vérifié fonction par fonction
+- Sessions : `create_session(ttl_hours=24*7)` + cookie `max_age=7 jours` alignés ;
+  `get_session` compare les ISO-Z correctement (test `test_session_timezone_bug.py` vert) ;
+  purge `cleanup_expired_sessions` toutes les 6 h = uniquement les réellement expirées.
+- Quota : `create_or_update_user` cherche par `google_sub` (identifiant Google STABLE) et
+  réutilise le user_id existant (COALESCE sur analyses_count, renewal_at conservé) ;
+  `check_and_increment_quota` ne remet à zéro QUE si now >= renewal_at (+30 jours).
+  **Aucune ligne de ce code ne peut produire un reset à 15 ni une déconnexion.**
+
+### 6.3 Cause racine prouvée : `/data` vit DANS le conteneur Render éphémère
+- `DB_PATH = QUANTA_DB_PATH sinon /data/quanta.db` (db.py:25) ; Dockerfile :
+  `RUN mkdir -p /data/uploads` — un simple mkdir, **aucun VOLUME, aucun disque Render**.
+- Conséquence mécanique : chaque **déploiement ou restart d'instance Render free** efface
+  users + sessions + analyses + uploads. Alors :
+  1. session inconnue en base → **401 → déconnexion forcée** ;
+  2. au login suivant, `create_or_update_user` ne trouve plus google_sub (table vide) →
+     **nouveau user, analyses_count=0 → quota 15** ;
+  3. l'historique d'analyses est aussi purgé > 24 h par le cleanup.
+- Corrélation directe avec le calendrier : **13 pushes le 06/10 = 13 redéploiements
+  automatiques Render** (auto-deploy) → autant d'effacements ; les « vagues de test » de
+  Godson se produisent précisément après nos déploiements. Les restarts d'instance Render
+  free (maintenance/spin) produisent le même effet « sans redéploiement visible ».
+- Le remboursement indu de l'incident §5 (error transitoire → done final) a de plus
+  décalé le compteur d'une unité — mineur face à l'effacement complet.
+
+### 6.4 Verdict directeur intérimaire
+**Aucun commit de code ne peut réparer cela** : tant que la base vit dans le conteneur,
+toute logique quota/session est vouée à l'effacement. C'est le scénario documenté depuis
+l'audit initial (« base SQLite + uploads perdus à chaque redéploiement ») — l'argument
+décisif pour la persistance. Trois options soumises à décision de Godson :
+- **A. Oracle Cloud Always Free** (plan Chantier B déjà spécifié : VM A1, volume
+  `./data → /data`, docker compose + Caddy) : définitif, gratuit, résout persistance +
+  cold start — recommandé ;
+- **B. Render Disk payant** : monter un disque sur /data (~7 $/mois starter + stockage) —
+  minimal techniquement, payant, cold start conservé ;
+- **C. Base managée gratuite (Turso/Neon)** : persistance quota/sessions, MAIS migration
+  SQLite→(libsql/Postgres) de moyen calibre et uploads toujours éphémères — demi-solution ;
+- **D. Statu quo assumé** : outil de démo, base éphémère documentée sur la page
+  /methodologie (honnêteté = règle du projet).
+Journal : action 17.
 
 **Consigne transmise à Windsurf au 06/10** : ne rien faire avec les 5 fichiers untracked qui
 ne sont pas `scripts/smoke_test.py` (lighthouse-report-home.*, quanta_pdf_preview.html,
