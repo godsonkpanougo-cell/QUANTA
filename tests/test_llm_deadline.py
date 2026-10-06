@@ -88,3 +88,32 @@ def test_call_llm_returns_content_when_fast(monkeypatch):
     monkeypatch.setenv("PRIMARY_API_KEY", "k")
 
     assert brain.call_llm("sys", "user") == "OK"
+
+
+def test_call_llm_200_with_error_key_retries_to_fallback(monkeypatch):
+    """Simule une réponse HTTP 200 avec corps {"error": {"message": "test"}}.
+    Vérifie que le provider suivant est tenté et que la fonction retourne None
+    si tous les providers échouent ainsi (pas d'exception KeyError)."""
+    calls: list[str] = []
+
+    def fake_post(url, headers=None, json=None, stream=False, timeout=None, **kwargs):
+        calls.append(url)
+        # Utiliser le module json importé, pas le paramètre json
+        import json as json_module
+        payload = json_module.dumps({"error": {"message": "test"}}).encode()
+
+        class _ErrorResponse(_FakeTrickleResponse):
+            def iter_content(self, chunk_size: int = 2048):
+                yield payload
+
+        return _ErrorResponse()
+
+    monkeypatch.setattr(brain.requests, "post", fake_post)
+    monkeypatch.setenv("PRIMARY_API_KEY", "k")
+    monkeypatch.setenv("FALLBACK_API_KEY", "k2")
+    monkeypatch.setattr(brain, "RETRY_BACKOFF_SECONDS", 0)
+
+    out = brain.call_llm("sys", "user")
+    assert out is None
+    # 2 providers × 2 retries chacun = 4 appels
+    assert len(calls) == 4

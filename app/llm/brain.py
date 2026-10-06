@@ -175,7 +175,17 @@ def call_llm(
                     body = _consume_with_deadline(response, provider_deadline, t_req_start)
                     t_req_end = time.monotonic()
                     print(f"TIMING - call_llm provider={provider_name} attempt={attempt+1} http=200 duration={t_req_end - t_req_start:.2f}s", flush=True)
-                    data = json.loads(body.decode("utf-8", errors="replace"))
+                    try:
+                        data = json.loads(body.decode("utf-8", errors="replace"))
+                    except json.JSONDecodeError:
+                        logger.error(f"LLM response from {provider_name} is not valid JSON (attempt {attempt + 1})")
+                        time.sleep(RETRY_BACKOFF_SECONDS)
+                        continue
+                    if "choices" not in data:
+                        error_msg = data.get("error", {}).get("message", "réponse inattendue")
+                        logger.error(f"LLM response from {provider_name} missing 'choices' key: {error_msg} (attempt {attempt + 1})")
+                        time.sleep(RETRY_BACKOFF_SECONDS)
+                        continue
                     logger.info(f"LLM call succeeded with provider {provider_name} on attempt {attempt + 1}")
                     return data["choices"][0]["message"]["content"]
 
