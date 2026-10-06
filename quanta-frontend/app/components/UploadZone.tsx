@@ -6,7 +6,7 @@ import { Check, FileSpreadsheet, UploadCloud } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-const ACCEPTED_EXTENSIONS = [".csv", ".xlsx", ".dta", ".sav"] as const;
+const ACCEPTED_EXTENSIONS = [".csv", ".xls", ".xlsx", ".dta", ".sav"] as const;
 
 type AcceptedExtension = (typeof ACCEPTED_EXTENSIONS)[number];
 
@@ -163,7 +163,7 @@ export function UploadZone({ onFileSelect, selectedFile = null }: UploadZoneProp
           ref={inputRef}
           id="file-input"
           type="file"
-          accept=".csv,.xlsx,.dta,.sav"
+          accept=".csv,.xls,.xlsx,.dta,.sav"
           className="hidden"
           onChange={handleInputChange}
         />
