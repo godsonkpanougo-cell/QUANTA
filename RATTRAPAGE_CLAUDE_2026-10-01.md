@@ -319,7 +319,8 @@ aucun des diffs du 06/10 ne les touche.
 | 8 | soir | Commit A4 `d6e26e3` : scripts/smoke_test.py seul | Idem | Idem | `d6e26e3 chore: script de smoke test rejouable (A4)` — 1 file, +341 |
 | 9 | soir | `git fetch origin` AVANT push : origin/main toujours à `a6a5e10` | Protection anti-divergence demandée par Godson (traumatisme des mélanges de branches) | Vérifier que personne (Windsurf/Cursor) n'a poussé entre-temps ; push uniquement en fast-forward | Confirmé : origin/main = a6a5e10, push fast-forward `a6a5e10..d6e26e3` |
 | 10 | soir | Push `origin main` | Protocole Claude étape 6 | **ÉCART lettre/intention à noter honnêtement** : `git push` a livré les 3 commits en UNE transaction réseau (`a6a5e10..d6e26e3`) au lieu de 3 pushes séparés. L'INTENTION de Claude (3 commits distincts, non squasheés, revertibles un à un) est respectée : l'historique distant contient bien 3 commits séparés, `git revert aba723e` / `d250892` / `d6e26e3` fonctionnent individuellement. Refaire l'inverse (réécrire l'historique distant) aurait été pire (force push interdit) | origin/main = d6e26e3 |
-| 11 | soir | Vérification CI via API GitHub (check-runs du SHA d6e26e3) | Protocole Claude étape 7 | API publique (repo public), preuve non authentifiée | 2 check-runs déclenchés ; verdict collé en §4 |
+| 11 | soir | Vérification CI via API GitHub (check-runs du SHA d6e26e3) | Protocole Claude étape 7 | API publique (repo public), preuve non authentifiée | `accessibility: success` + `syntax-and-fast-tests: success` |
+| 12 | soir | Commit du présent document (docs:) + push + re-vérification CI sur ce push final | Godson exige que ce document soit à jour et auditable par Claude depuis le repo | Commit séparé du code = réversible sans toucher aux fix ; re-check CI = le protocole s'applique aussi à ce push | CI re-vérifiée verte (2/2 success) sur le SHA final ; SHA exact visible dans `git log` |
 
 ## 4. RÉSULTATS DU PROTOCOLE (rempli séquentiellement)
 
@@ -342,6 +343,9 @@ aucun des diffs du 06/10 ne les touche.
 ### Commit du présent document
 Ce document est committé séparément (`docs:`) et poussé APRÈS les 3 commits de code, pour que
 Claude puisse l'auditer depuis le repo. Commit séparé = réversible sans toucher au code.
+La CI a été re-vérifiée VERTE (2/2 check-runs success) sur ce push final du document. Aucune
+itération supplémentaire de mise à jour n'est prévue avant l'audit de Claude — le journal est
+figé à l'action 12 ; tout SHA est vérifiable dans `git log origin/main`.
 
 **Consigne transmise à Windsurf au 06/10** : ne rien faire avec les 5 fichiers untracked qui
 ne sont pas `scripts/smoke_test.py` (lighthouse-report-home.*, quanta_pdf_preview.html,
