@@ -9,7 +9,7 @@ import { useAnalysisSteps, StepVisualState } from "@/app/hooks/useAnalysisSteps"
 
 const POLL_INTERVAL_MS = 2000;
 const COMPLETE_DELAY_MS = 500;
-const POLL_TIMEOUT_MS = 300000; // 5 minutes (300 secondes)
+const POLL_TIMEOUT_MS = 540000; // 9 minutes (540 s) — strictement au-dessus du budget backend (480 s) : le verdict final (done/error) est toujours vu avant abandon. Incident 06/10 : à 300 s le poll lâchait alors que l'analyse réussissait à 433 s.
 const MAX_CONSECUTIVE_POLL_FAILURES = 3; // tolère une micro-coupure réseau avant d'abandonner
 const TRANSIENT_ERROR_GRACE_MS = 8000; // fenêtre worker→fallback : "error" peut repasser à "running"
 const POLL_BACKOFF_FACTOR = 2; // double l'intervalle après chaque échec réseau
