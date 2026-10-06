@@ -326,6 +326,7 @@ aucun des diffs du 06/10 ne les touche.
 | 15 | soir | Poll frontend 300 → 540 s (AnalysisProgress) | Le frontend doit toujours survivre au backend pour voir le verdict final | Strictement au-dessus de 480 s ; message auto-mis à jour (template) | tsc --noEmit exit 0 ; commit dédié |
 | 16 | soir | Support .xls : `xlrd==2.0.1` (requirements) + `.xls` dans le sélecteur frontend (UploadZone) + test verrou `tests/test_upload_formats.py` | Godson : « quanta ne prend pas en charge les .xls » — double blocage prouvé (moteur absent + picker sans .xls) | La whitelist backend et load_and_diagnose acceptaient déjà .xls — seule la dépendance et le picker manquaient ; test verrou anti-régression de dépendance | pytest ciblés 7/7 ; suite complète EN COURS (§4 mise à jour ci-dessous) ; commit dédié |
 | 17 | soir | Diagnostic déconnexions + quota reset à 15 (lecture seule, AUCUN commit code volontaire) | Godson : « le quota et la connexion ne sont pas solides » | Preuves d'abord : sessions (TTL 7 j base+cookie, purge expirées seulement), quota (lookup google_sub stable, reset uniquement à +30 j), puis DB_PATH/Dockerfile → /data sans volume dans conteneur éphémère | §6 : code sain, racine = effacement de la base à chaque déploiement/restart Render (13 pushes ce jour = 13 effacements) ; décision d'hébergement soumise à Godson (options A-D) |
+| 18 | soir | Consignation de la décision Godson : PAS de migration maintenant, Oracle en intention (bloqué côté compte), statu quo éphémère assumé | Décision d'hébergement = prérogative de Godson ; le document doit refléter la raison du report | Citation consignée §6.5 + conséquences assumées + discipline de déploiement + Chantier B prêt à la déblocage | §6.5 ajouté ; AUCUN code modifié ; commit docs séparé |
 
 ## 4. RÉSULTATS DU PROTOCOLE (rempli séquentiellement)
 
@@ -472,6 +473,25 @@ décisif pour la persistance. Trois options soumises à décision de Godson :
 - **D. Statu quo assumé** : outil de démo, base éphémère documentée sur la page
   /methodologie (honnêteté = règle du projet).
 Journal : action 17.
+
+### 6.5 DÉCISION GODSON (soir 06/10) — consignée mot pour mot
+> « pour le moment on ne migre pas encore, documente ton initiative dans le document,
+> j'aurais choisi quand même Oracle Cloud, mais ça reste bloqué pour le moment »
+
+- **Décision** : statu quo (option D) — base éphémère assumée ; **intention ferme** :
+  Oracle Cloud (option A), bloqué par un obstacle externe côté compte/inscription.
+- **Conséquences assumées jusqu'à migration** : déconnexions et quota réinitialisé à
+  chaque déploiement/restart Render resteront NORMAUX — ce n'est plus un bug à signaler,
+  c'est une limite connue et documentée (distinguer de la rétention volontaire > 24 h,
+  qui est un choix de nettoyage, pas un accident).
+- **Discipline de déploiement recommandée d'ici là** : chaque push = effacement de base →
+  regrouper les commits, pousser en fin de vague de test, et prévenir Godson qu'un push
+  invalidera les sessions en cours.
+- **À la déblocage d'Oracle** : le Chantier B (B0-B5) est déjà spécifié et prêt —
+  reprise immédiate possible sans rediagnostic.
+- **Initiative Freebuff documentée** (conformément à la demande de Godson) : diagnostic
+  §6 complet, options chiffrées A-D, recommandation A, décision reportée par Godson.
+Journal : action 18.
 
 **Consigne transmise à Windsurf au 06/10** : ne rien faire avec les 5 fichiers untracked qui
 ne sont pas `scripts/smoke_test.py` (lighthouse-report-home.*, quanta_pdf_preview.html,
