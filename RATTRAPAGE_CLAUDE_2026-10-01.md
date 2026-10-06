@@ -321,6 +321,10 @@ aucun des diffs du 06/10 ne les touche.
 | 10 | soir | Push `origin main` | Protocole Claude étape 6 | **ÉCART lettre/intention à noter honnêtement** : `git push` a livré les 3 commits en UNE transaction réseau (`a6a5e10..d6e26e3`) au lieu de 3 pushes séparés. L'INTENTION de Claude (3 commits distincts, non squasheés, revertibles un à un) est respectée : l'historique distant contient bien 3 commits séparés, `git revert aba723e` / `d250892` / `d6e26e3` fonctionnent individuellement. Refaire l'inverse (réécrire l'historique distant) aurait été pire (force push interdit) | origin/main = d6e26e3 |
 | 11 | soir | Vérification CI via API GitHub (check-runs du SHA d6e26e3) | Protocole Claude étape 7 | API publique (repo public), preuve non authentifiée | `accessibility: success` + `syntax-and-fast-tests: success` |
 | 12 | soir | Commit du présent document (docs:) + push + re-vérification CI sur ce push final | Godson exige que ce document soit à jour et auditable par Claude depuis le repo | Commit séparé du code = réversible sans toucher aux fix ; re-check CI = le protocole s'applique aussi à ce push | CI re-vérifiée verte (2/2 success) sur le SHA final ; SHA exact visible dans `git log` |
+| 13 | soir | Diagnostic de l'incident L2_tobit signalé par Godson (« timeout 300 s » + logs Render collés) | « l'analyse échoue alors que ça passait avant » — il faut la cause exacte | Preuves brutes uniquement : lecture ligne à ligne des logs fournis + relecture des 3 maillons de délai dans le code | §5.1 : l'analyse a RÉUSSI à 17:32:47 (done + PDF en base) ; c'est le poll frontend (300 s) qui a lâché ~40 s avant ; garde A1 prouvée en prod (2× 200-sans-choices bien interceptées) ; §5.2 chaîne de délais incohérente |
+| 14 | soir | Budget backend 300 → 480 s (`_run_analysis_background`) | Le label error + refund partait à 300 s PENDANT que le fallback réussissait (433 s) | Une seule constante + commentaire d'incident ; worker 260 s et worker PDF 300 s NON touchés (périmètres distincts) | import main exit 0 ; commit dédié |
+| 15 | soir | Poll frontend 300 → 540 s (AnalysisProgress) | Le frontend doit toujours survivre au backend pour voir le verdict final | Strictement au-dessus de 480 s ; message auto-mis à jour (template) | tsc --noEmit exit 0 ; commit dédié |
+| 16 | soir | Support .xls : `xlrd==2.0.1` (requirements) + `.xls` dans le sélecteur frontend (UploadZone) + test verrou `tests/test_upload_formats.py` | Godson : « quanta ne prend pas en charge les .xls » — double blocage prouvé (moteur absent + picker sans .xls) | La whitelist backend et load_and_diagnose acceptaient déjà .xls — seule la dépendance et le picker manquaient ; test verrou anti-régression de dépendance | pytest ciblés 7/7 ; suite complète EN COURS (§4 mise à jour ci-dessous) ; commit dédié |
 
 ## 4. RÉSULTATS DU PROTOCOLE (rempli séquentiellement)
 
@@ -343,9 +347,82 @@ aucun des diffs du 06/10 ne les touche.
 ### Commit du présent document
 Ce document est committé séparément (`docs:`) et poussé APRÈS les 3 commits de code, pour que
 Claude puisse l'auditer depuis le repo. Commit séparé = réversible sans toucher au code.
-La CI a été re-vérifiée VERTE (2/2 check-runs success) sur ce push final du document. Aucune
-itération supplémentaire de mise à jour n'est prévue avant l'audit de Claude — le journal est
-figé à l'action 12 ; tout SHA est vérifiable dans `git log origin/main`.
+La CI a été re-vérifiée VERTE (2/2 check-runs success) sur ce push final du document.
+
+⚠️ Le journal a été réouvert le soir même (nouvel incident L2_tobit signalé par Godson,
+voir §5 ci-dessous) — les actions 13 à 16 y sont consignées. Tout SHA est vérifiable dans
+`git log origin/main`.
+
+## 5. INCIDENT DU SOIR 06/10 — L2_tobit « timeout 300 s » ALORS QUE L'ANALYSE A RÉUSSI
+
+### 5.1 Diagnostic prouvé par les logs Render fournis par Godson (analyse 8dc9ddb2)
+
+Chronologie exacte :
+1. Worker subprocess : pipeline 51,5 s + 7 intents jusqu'à 71,6 s cumulés — **le calcul tient**.
+2. Interprétation LLM : primary Timeout **102,54 s** (keep-alive réarme le read-timeout — le
+   bug P0 documenté en §MISE À JOUR 2026-10-01), budget 100 s épuisé → worker killé à 260 s.
+3. À ~300 s : `_run_with_timeout(timeout=300)` → **status=error + refund_quota** — mais un
+   thread Python ne se tue pas : le fallback in-memory démarre et RECALCULE tout
+   (51,9 s + intents 75,5 s cumulés).
+4. Interprétation : primary 2× **200-sans-choices « Upstream error from Nvidia: Service
+   temporarily overloaded »** → **la garde A1 fonctionne en prod (preuve directe)** —
+   repli sur fallback Lightning : 87,14 s → **done à 17:32:47, generate_interpretation: 94,64 s**.
+5. Le frontend : son chrono de poll (POLL_TIMEOUT_MS=300000) a expiré ~40 s avant la fin
+   backend → message « L'analyse a dépassé le délai maximum de 300 secondes »
+   (AnalysisProgress.tsx). Les GET /status visibles jusqu'à 17:30:32 le confirment.
+
+**Bilan** : l'analyse est **done en base avec PDF téléchargeable** (visible dans /history) ;
+l'utilisateur a quand même reçu un message d'échec ET un remboursement de quota indu
+(error transitoire → done final : double écriture contradictoire, bug d'état réel).
+
+### 5.2 Cause racine : chaîne de délais INCOHÉRENTE (aucun budget global cohérent)
+
+| Maillon | Valeur avant | Effet |
+|---|---|---|
+| worker subprocess | 260 s (kill) | conçu |
+| wrapper background `_run_with_timeout` | **300 s** | étiquette error + refund PENDANT que le thread continue |
+| poll frontend | **300 s** | abandon au même moment que le label backend |
+| LLM (budget 100 s/provider ×2) | ~200 s max | correct |
+| fallback in-memory | redémarre de zéro | + ~175 s observées |
+| Total possible | **~590 s** | > 300 s partout : le moindre grain de sable LLM = « échec » affiché |
+
+### 5.3 Correctifs appliqués (soir 06/10, actions 13-15)
+
+- **Budget backend 300 → 480 s** (main.py `_run_analysis_background`) : couvre le pire cas
+  observé 433 s avec marge ; le label error ne surviendra plus pendant un fallback qui réussit.
+- **Poll frontend 300 → 540 s** (AnalysisProgress) : strictement au-dessus du backend → le
+  verdict final est toujours vu avant abandon.
+- **Support .xls (P2)** : double blocage prouvé — (a) requirements.txt sans `xlrd`
+  (openpyxl ne lit que .xlsx ; pandas exige xlrd pour .xls) alors que la whitelist et
+  `load_and_diagnose` acceptaient déjà .xls → 400 « Missing optional dependency 'xlrd' » ;
+  (b) frontend UploadZone n'offrait pas .xls au sélecteur. Corrigé des deux côtés
+  (+ `tests/test_upload_formats.py` verrou).
+- Limites honnêtes consignées : au-delà de 480 s (dataset pathologique) l'incohérence
+  error-pendant-que-le-thread-court persiste — le vrai fix est results-first (§5.4) ;
+  le test .xls verrouille le moteur, pas une lecture E2E d'un binaire .xls réel
+  (pandas ne peut pas ÉCRIRE du .xls — un vrai fichier de Godson servira de preuve).
+
+### 5.4 Réponses aux questions Godson (plan soumis, NON implémenté sauf §5.3)
+
+1. **« Analyser toutes les bases sans jamais échouer »** : impossible mathématiquement sur
+   données arbitraires (honnêteté = règle du projet). Atteignable et suffisant : bornes
+   strictes partout (fait), filets génériques + remboursement (fait), **jamais de message
+   d'échec prématuré** (corrigé §5.3), et **fuzz/soak test** (P4) : script générant des
+   datasets adverses (1 ligne, tout-NaN, colonnes constantes, 100 % catégoriel, dates,
+   milliers de colonnes, caractères spéciaux) lancé en boucle localement — la seule méthode
+   honnête pour couvrir l'infini des bases sans les tester une à une.
+2. **« Accélérer l'interprétation »** (94,64 s ce run, 87,14 s de génération Lightning) :
+   (a) **results-first** = LE levier : persister le résultat calculé AVANT l'interprétation
+   (statut done en 2 phases, interprétation async qui met à jour l'enregistrement) →
+   latence perçue 433 s → ~72 s (−83 %) et une panne LLM ne fait plus jamais échouer une
+   analyse — c'est l'option (2) de l'arbitrage garde-fou du 2026-10-01 ; chantier
+   architectural à chiffrer, SOUMIS À DÉCISION (Claude/Godson) ; (b) max_tokens 2500 → 1000
+   (−40-60 % attendus sur la génération, décision produit) ; (c) brancher P1-bis
+   corrélation (`feature/freebuff-perf-corr`, −26 s sur le pipeline).
+3. **« L2_tobit timeout alors que ça passait avant »** : ce run le LLM a coûté ~200 s au
+   lieu de ~50 s (overload Nvidia + keep-alive) — « avant » = upstream sain. La marge du
+   système était nulle ; §5.3 rend l'échec affiché impossible avant 540 s, results-first
+   l'élimine totalement.
 
 **Consigne transmise à Windsurf au 06/10** : ne rien faire avec les 5 fichiers untracked qui
 ne sont pas `scripts/smoke_test.py` (lighthouse-report-home.*, quanta_pdf_preview.html,
