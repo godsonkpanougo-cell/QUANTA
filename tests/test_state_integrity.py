@@ -166,3 +166,116 @@ def test_analyze_upload_perime_retourne_404():
     assert resp.status_code == 404, f"404 attendu, obtenu {resp.status_code}"
     assert "expiré" in resp.json()["detail"]
     db.clear_all()
+
+
+# ─── Tâche 1 (renforts Phase 1) : aucun ajout de logique, tests uniquement ──
+
+
+def test_migration_concluded_a_chaud_sur_base_preexistante(tmp_path, monkeypatch):
+    """Base créée AVANT la migration (table analyses SANS colonne concluded,
+    avec des lignes déjà insérées) : _ensure_concluded_column() doit migrer à
+    chaud, préserver les lignes existantes, et la ligne legacy doit rester
+    écrivable via la machine à états."""
+    import sqlite3
+
+    old_db = tmp_path / "pre_migration.db"
+    conn = sqlite3.connect(old_db)
+    conn.execute(
+        """CREATE TABLE analyses (
+               analysis_id TEXT PRIMARY KEY,
+               user_id     TEXT NOT NULL,
+               file_id     TEXT NOT NULL,
+               query       TEXT NOT NULL,
+               status      TEXT NOT NULL,
+               result      TEXT,
+               error       TEXT,
+               created_at  TEXT NOT NULL,
+               updated_at  TEXT NOT NULL,
+               file_hash   TEXT
+           )"""
+    )
+    conn.execute(
+        "INSERT INTO analyses VALUES ('legacy-1','u1','f1','q','running',"
+        "NULL,NULL,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z','h')"
+    )
+    conn.commit()
+    conn.close()
+
+    # La table est volontairement dans son schéma d'AVANT migration :
+    cols = [r[1] for r in sqlite3.connect(old_db).execute(
+        "PRAGMA table_info(analyses)").fetchall()]
+    assert "concluded" not in cols, "le test doit partir d'un schéma pré-migration"
+
+    # Le module db pointe sur cette base, et l'indicateur de migration est
+    # réarmé comme si le process venait de démarrer sur un vieux schéma.
+    monkeypatch.setattr(db, "DB_PATH", str(old_db))
+    monkeypatch.setattr(db, "_concluded_column_checked", False)
+
+    # Migration à chaud + écriture sur la ligne préexistante :
+    assert db.update_analysis("legacy-1", status="done", result={"ok": 1},
+                             updated_at="2026-01-02T00:00:00Z", user_id="u1") is True
+    row = db.get_analysis("legacy-1", "u1")
+    assert row is not None
+    assert row["status"] == "done", "la ligne legacy doit avoir survécu à la migration"
+
+    cols_after = [r[1] for r in sqlite3.connect(old_db).execute(
+        "PRAGMA table_info(analyses)").fetchall()]
+    assert "concluded" in cols_after, "la colonne concluded doit être ajoutée à chaud"
+    concluded_val = sqlite3.connect(old_db).execute(
+        "SELECT concluded FROM analyses WHERE analysis_id='legacy-1'").fetchone()[0]
+    assert concluded_val == 0, "la ligne legacy doit hériter du DEFAULT 0"
+
+
+def test_conclude_analysis_appels_concurrents_un_seul_gagnant():
+    """Deux appels quasi simultanés à conclude_analysis() sur la même analyse :
+    exactement un doit réussir, l'autre doit retourner False proprement."""
+    import threading
+
+    db.clear_all()
+    aid = _new_analysis("state-concurrent-1")
+    assert db.update_analysis(aid, status="running", updated_at=_now(),
+                             user_id=TEST_USER) is True
+
+    results = []
+    barrier = threading.Barrier(2)
+
+    def _worker():
+        barrier.wait()  # départ simultané des deux threads
+        results.append(db.conclude_analysis(
+            aid, error="conclusion concurrente", updated_at=_now(),
+            user_id=TEST_USER))
+
+    threads = [threading.Thread(target=_worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert len(results) == 2, "les deux threads doivent se terminer"
+    assert sorted(results) == [False, True], (
+        f"exactement un seul gagnant attendu, obtenu {results}"
+    )
+    assert db.get_analysis(aid, TEST_USER)["status"] == "error"
+    db.clear_all()
+
+
+def test_zombie_chemin_subprocess_bloque_apres_conclusion():
+    """Cas zombie exact de l'incident 06/10, mais via le CHEMIN SUBPROCESS
+    (update_analysis_internal) : après conclude_analysis (concluded=1), une
+    écriture 'done' du worker doit être bloquée même si le worker vient de
+    finir correctement."""
+    db.clear_all()
+    aid = _new_analysis("state-zombie-sub-1")
+    # Le worker subprocess marque l'analyse en cours :
+    assert db.update_analysis_internal(aid, status="running",
+                                      updated_at=_now()) is True
+    # L'orchestrateur conclut (timeout du budget global) :
+    assert db.conclude_analysis(aid, error="Timeout: Operation timeout after 480s",
+                               updated_at=_now(), user_id=TEST_USER) is True
+    # Le worker zombie (toujours vivant) tente de terminer normalement :
+    assert db.update_analysis_internal(aid, status="done", result={"trop": "tard"},
+                                      updated_at=_now()) is False
+    final = db.get_analysis_internal(aid)
+    assert final["status"] == "error"
+    assert final["result"] is None, "aucun résultat zombie ne doit être stocké"
+    db.clear_all()
