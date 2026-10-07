@@ -213,9 +213,37 @@ app.add_middleware(
 )
 
 # SessionMiddleware pour OAuth (stockage du paramètre state CSRF)
+# V5 (audit §8.2) : refuser de démarrer sans SESSION_SECRET_KEY EN PRODUCTION.
+
+def _is_production_environment() -> bool:
+    """Détecte l'environnement de production pour le fail-fast V5.
+
+    Sources, dans l'ordre :
+      1. QUANTA_ENV / ENVIRONMENT / APP_ENV explicites (production/prod = oui,
+         development/dev/local/test = non) — décisif si présent ;
+      2. présence de RENDER / RENDER_SERVICE_NAME (signal plateforme Render) —
+         NON VÉRIFIÉ cette session (config Render inaccessible, §8.5) ;
+      3. sinon : développement (le poste de Godson ne doit jamais bloquer).
+    """
+    for var in ("QUANTA_ENV", "ENVIRONMENT", "APP_ENV"):
+        value = os.environ.get(var, "").strip().lower()
+        if value in ("production", "prod"):
+            return True
+        if value in ("development", "dev", "local", "test", "testing"):
+            return False
+    return bool(os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_NAME"))
+
+
 session_secret_key = os.environ.get("SESSION_SECRET_KEY", "")
 if not session_secret_key:
-    print("ATTENTION : SESSION_SECRET_KEY non defini - protection CSRF du flux OAuth affaiblie", flush=True)
+    if _is_production_environment():
+        raise RuntimeError(
+            "SESSION_SECRET_KEY absente en environnement de production : "
+            "démarrage refusé (V5, audit §8.2) — le cookie de session OAuth "
+            "serait signé avec une clé vide (CSRF forgeable). Définissez "
+            "SESSION_SECRET_KEY dans l'environnement de production."
+        )
+    print("ATTENTION : SESSION_SECRET_KEY non defini - protection CSRF du flux OAuth affaiblie (dev uniquement)", flush=True)
 app.add_middleware(
     SessionMiddleware,
     secret_key=session_secret_key,
