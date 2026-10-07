@@ -336,6 +336,7 @@ aucun des diffs du 06/10 ne les touche.
 | 19 | 07/10 | Constitution du bundle de preuves 1-5 demandé par Claude pour l'audit (git log/show --stat depuis a6a5e10, suite pytest COMPLÈTE re-jouée sur HEAD=006bfdf, git status, sondes Render + CI via API GitHub) et ajout du §7 | Claude a déclaré « rien de nouveau dans le document » : il faut trancher (doc à jour : 262→500 lignes, preuve chiffrée §7) ET fournir la matière brute, pas un résumé | Preuves brutes rejouables plutôt que affirmations ; pytest re-exécuté sur l'état exact de main plutôt que réutilisé d'un run antérieur ; anti-divergence par fetch avant push | 133 passed, 0 failed, exit 0 en 4 min 57 s ; CI success ; arbre propre ; §7 poussé dans ce commit même |
 | 20 | 07/10 | Réponses aux 4 questions d'audit de Claude (diffs intégraux sortis dans le transcript, reconstruction chiffrée 480/540, origine textuelle de la demande .xls, archive de la confirmation Godson en §6.5 + titres reformulés + règle de scope §0) | Claude a suspendu sa validation sur ces 4 points : répondre par preuves brutes, pas par argumentation ; le point 4 exigeait aussi l'admission d'un écart de cadre (soumission au lieu d'exécution directe pour les dépassements futurs) | git show intégral (pas le stat) ; l'origine .xls citée mot pour mot du message Godson ; la confirmation Godson transcrite VERBATIM dans le doc pour que Claude la re-lise au repo ; reformulation appliquée car Godson l'a acceptée et Claude l'avait recommandée | Réponse complète livrée à Godson le 07/10 (collable telle quelle à Claude) ; §6.5 (titre + confirmation verbatim), §7 (preuves brutes), §7.6 (attributions) ; budgets 480/300 NON retouchés — run réel de validation autorisé, en préparation |
 | 21 | 07/10 | Revue de méthode intégrale : admission des lignes forgées de l'audit précédent + règles R1-R6 permanentes ; audit sécurité LECTURE SEULE du code (§8.2 : V1-V8 repérées, AUCUNE corrigée) ; état QUANTA et limites « toute base » (§8.3) ; consolidé des inquiétudes de Claude (§8.4) ; registre des 13 commits avec preuves (§8.6) | Godson : « aucun dérapage n'est autorisé » — preuve véridique exigée pour chaque action, analyse et résultat ; audit de vulnérabilités SANS correction | Lecture seule totale (aucune ligne de code modifiée) ; chaque affirmation pourvue d'une preuve fichier:ligne vérifiée par grep cette session ; limites de l'audit déclarées explicitement (cœur statistique non relu ligne à ligne) au lieu d'être masquées | §8 complet dans ce document ; commit docs séparé ; `python -c "import main"` exit 0 avant push |
+| 22 | 07/10 | Élaboration du PLAN D'EXÉCUTION des corrections (§9) — soumission AVANT exécution, aucune ligne de code modifiée | Godson : « que comptes-tu faire pour corriger les limites restantes ? Mets en place le plan d'exécution d'abord » | Règle §0 respectée à la lettre : le plan est soumis et documenté avant toute modification ; priorités justifiées (V1/V3 = intégrité, V2 = seul crash serveur) ; chaque phase a ses critères d'acceptation et son rollback | §9 ajouté ; commit docs seul ; exécution conditionnée à la validation de Godson |
 
 ## 4. RÉSULTATS DU PROTOCOLE (rempli séquentiellement)
 
@@ -686,3 +687,51 @@ Ce qui reste à risque (preuves en §8.2) :
 Vérifications de la session du 07/10 (audit lecture seule) : pytest 133/133 exit 0 (log conservé), `python -c "import main"` exit 0, tsc 0 erreur, smoke 2 OK / 4 skip sans token, CI success sur toute la plage. Les 5 artefacts locaux non trackés (lighthouse-report-home.{html,json}, quanta_pdf_preview.html, « rapports quanta/preview/ », scripts/investigate_bootstrap_eta2.py) restent hors périmètre, intacts.
 
 Journal : action 21.
+
+### 9. PLAN D'EXÉCUTION DES CORRECTIONS (07/10 — action 22, SOUMIS AVANT EXÉCUTION)
+
+Principe (règle §0) : **ce plan est la soumission**. Aucune ligne de code ne sera modifiée avant validation de Godson. Discipline d'exécution : un commit par tâche, `python -c "import main"` + suite pytest complète avant chaque push, jamais de force push, journal mis à jour à chaque phase, sortie brute de chaque vérification collée dans le transcript.
+
+#### 9.1 Priorités et justification
+1. **V1 + V3 = intégrité** (état/quota incohérent, 500 utilisateur) — bugs réels atteignables aujourd'hui.
+2. **V2 = seul crash serveur identifié** (OOM) — le vrai obstacle à « toute base sans crasher ».
+3. **V5/V4 = sécurité** dépendante de la config Render ; **V6/V7/V8 = robustesse**.
+4. **Audit du cœur statistique** = préalable HONNÊTE à la promesse « toute base ».
+
+#### 9.2 Phase 1 — Intégrité d'état (V1) et péremption (V3)
+- **V1** : rendre les transitions d'état atomiques et unidirectionnelles dans `db.update_analysis` : UPDATE conditionnel (`WHERE status IN ('pending','running')`) pour toute écriture terminale (`done`/`error`/`cancelled`) — un thread zombie ne peut plus réécrire `error` → `done` ; le remboursement unique reste en place (main.py:570-578). Compatibilité worker subprocess conservée.
+- **V3** : `open(upload_info["path"])` protégé dans /analyze (FileNotFoundError → 404 « fichier expiré (> 24 h), re-téléversez ») + purge des lignes `uploads` orphelines dans `cleanup_old_files`.
+- **Fichiers** : db.py, main.py (+ tests dédiés : scénario double écriture error→done, upload périmé).
+- **Critères d'acceptation** : nouveaux tests verts + suite complète verte (base : 133/133) ; `tsc --noEmit` 0 erreur (non concerné mais vérifié) ; `import main` exit 0.
+- **Rollback** : `git revert` du commit dédié.
+
+#### 9.3 Phase 2 — Plafond mémoire/lignes AVANT parsing (V2) + fuzz upload (V7)
+- **V2** : pré-vérification structurelle par format avant tout chargement complet :
+  - .xlsx : taille NON compressée lue dans la central directory du ZIP + dimensions de feuille (openpyxl read_only) ; rejet si ratio > 100× ou taille non compressée > seuil ;
+  - .xls : nrows via métadonnées xlrd ; .dta/.sav : métadonnées (itérateur Stata / pyreadstat metadataonly) ;
+  - CSV : lecture avec `nrows = MAX_ROWS + 1` (rejet propre sans tout charger) ;
+  - objectif : **aucun chargement complet d'un fichier qui viole les bornes 25 Mo / 100 000 lignes / plafond mémoire**.
+- **V7** : détection du séparateur par parsing réel d'un échantillon (`csv.reader` sur candidats), plus par comptage brut.
+- **Fuzz** : `tests/test_upload_fuzz.py` — noms hostiles, fichiers tronqués/corrompus, mini zip-bomb contrôlé, CSV pathologiques → assertion : réponse 4xx propre, **jamais de 500, jamais de crash processus**.
+- **Critères d'acceptation** : fuzz vert, suite complète verte, mesure mémoire avant/après sur le dataset réel L2_tobit (preuve chiffrée).
+- **Rollback** : `git revert`.
+
+#### 9.4 Phase 3 — Durcissements (V5, V6, V8) et V4 selon config Render
+- **V5** : refuser le démarrage si `SESSION_SECRET_KEY` absente en production (fallback dev explicite et bruyant).
+- **V6** : sortie du sous-processus bornée (redirection fichier temporaire + troncature) — main.py:502-522.
+- **V8** : `datetime` aware partout, comparaisons par objets datetime (plus de chaînes ISO), purge des anciennes sessions à la reconnexion.
+- **V4** : après vérification du start command Render (dashboard Godson) : `--proxy-headers` + clé de rate limit sur l'en-tête de proxy de confiance.
+- **Critères d'acceptation** : suite verte + test démarrage sans SESSION_SECRET_KEY (comportement attendu selon environnement).
+- **Rollback** : `git revert`.
+
+#### 9.5 Phase 4 — Audit LECTURE SEULE du cœur statistique
+- `app/compute`, `app/compute/test_selector`, `app/orchestrator.py`, `app/llm/brain.py` relus ligne à ligne (méthode §8.2 : preuves fichier:ligne) → rapport V9+ dans ce document. **Aucune correction sans soumission** (§0). Livrable : ce qu'il manque pour promettre « toute base sans crash ».
+
+#### 9.6 Phase 5 — Run E2E 480/540 + audit CVE
+- Script `scripts/e2e_budget_test.py` : upload dataset dense → /analyze → poll horodaté jusqu'à `done` → rapport chiffré (durées worker/fallback/verdict). **Bloqué sur le session_token de Godson** (Google OAuth, 1 quota autorisé).
+- `pip-audit` sur requirements.txt → rapport de CVE joint au document.
+
+#### 9.7 Phase 6 — Rapport final pour Claude
+- Chaque phase consigne : diff intégral, sorties de tests brutes, verdict. Compilation finale opposable à l'audit.
+
+Journal : action 22.
