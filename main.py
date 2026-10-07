@@ -537,42 +537,71 @@ def _run_analysis_core(analysis_id: str, user_id: str, file_id: str, query: str)
         pass
 
 
+# V6 (audit §8.2) : sortie des sous-processus bornée en mémoire parent.
+# Pattern existant RÉUTILISÉ : on garde la FIN de la sortie (comme les
+# troncatures [-6000:]/[-3000:] déjà présentes dans les logs), mais la
+# LECTURE est bornée — capture_output=True accumulait toute la sortie en
+# mémoire parent AVANT troncature (gonflement non borné).
+SUBPROCESS_OUTPUT_TAIL_BYTES = 64 * 1024  # 64 Ko de queue lus, jamais plus
+
+
+def _read_output_tail(fileobj, max_bytes: int = SUBPROCESS_OUTPUT_TAIL_BYTES) -> str:
+    """Retourne la queue (derniers max_bytes octets) d'un flux de sous-processus.
+
+    fileobj : fichier temporaire binaire passé en stdout/stderr au
+    sous-processus. Lit AU PLUS max_bytes octets : la mémoire du parent reste
+    bornée quelle que soit la taille de la sortie du worker.
+    """
+    fileobj.flush()
+    fileobj.seek(0, io.SEEK_END)
+    size = fileobj.tell()
+    fileobj.seek(max(0, size - max_bytes))
+    return fileobj.read().decode("utf-8", errors="replace")
+
+
 def _run_analysis_dispatch(analysis_id: str, user_id: str, file_id: str, query: str) -> None:
     """
     Tente d'abord l'exécution via le sous-processus analyze_worker.py.
     En cas d'échec (timeout, erreur, ou statut pas "done" en base),
     retombe sur l'exécution en mémoire via _run_analysis_core.
     """
-    try:
-        proc = subprocess.run(
-            [sys.executable, "app/analyze_worker.py", analysis_id, file_id, query],
-            capture_output=True, text=True, timeout=260,
-        )
-        print(f"ANALYZE Worker - Returncode: {proc.returncode}", flush=True)
-        if proc.stdout:
-            print(f"ANALYZE Worker - Stdout: {proc.stdout[-6000:]}", flush=True)
-        if proc.stderr:
-            print(f"ANALYZE Worker - Stderr: {proc.stderr[-6000:]}", flush=True)
+    # V6 : flux redirigés vers des fichiers temporaires (sortie jamais
+    # accumulée en mémoire), seule la queue est lue ensuite.
+    with tempfile.TemporaryFile() as out_file, tempfile.TemporaryFile() as err_file:
+        try:
+            proc = subprocess.run(
+                [sys.executable, "app/analyze_worker.py", analysis_id, file_id, query],
+                stdout=out_file, stderr=err_file, timeout=260,
+            )
+            stdout_tail = _read_output_tail(out_file)
+            stderr_tail = _read_output_tail(err_file)
+            print(f"ANALYZE Worker - Returncode: {proc.returncode}", flush=True)
+            if stdout_tail:
+                print(f"ANALYZE Worker - Stdout: {stdout_tail[-6000:]}", flush=True)
+            if stderr_tail:
+                print(f"ANALYZE Worker - Stderr: {stderr_tail[-6000:]}", flush=True)
 
-        # Vérifier le statut en base pour confirmer le succès réel
-        analysis = db.get_analysis(analysis_id, user_id)
-        if proc.returncode == 0 and analysis and analysis.get("status") == "done":
-            print("ANALYZE Worker - Succès via sous-processus", flush=True)
-            return
-        else:
-            print("ANALYZE Worker - Échec (returncode non nul ou statut pas 'done' en base), fallback vers exécution en mémoire", flush=True)
+            # Vérifier le statut en base pour confirmer le succès réel
+            analysis = db.get_analysis(analysis_id, user_id)
+            if proc.returncode == 0 and analysis and analysis.get("status") == "done":
+                print("ANALYZE Worker - Succès via sous-processus", flush=True)
+                return
+            else:
+                print("ANALYZE Worker - Échec (returncode non nul ou statut pas 'done' en base), fallback vers exécution en mémoire", flush=True)
+                _run_analysis_core(analysis_id, user_id, file_id, query)
+        except subprocess.TimeoutExpired:
+            stdout_tail = _read_output_tail(out_file)
+            stderr_tail = _read_output_tail(err_file)
+            print(f"ANALYZE Worker - Timeout après 260s", flush=True)
+            if stdout_tail:
+                print(f"ANALYZE Worker - Stdout partiel avant timeout: {stdout_tail[-3000:]}", flush=True)
+            if stderr_tail:
+                print(f"ANALYZE Worker - Stderr partiel avant timeout: {stderr_tail[-3000:]}", flush=True)
+            print("ANALYZE Worker - Fallback vers exécution en mémoire", flush=True)
             _run_analysis_core(analysis_id, user_id, file_id, query)
-    except subprocess.TimeoutExpired as e:
-        print(f"ANALYZE Worker - Timeout après 260s", flush=True)
-        if e.stdout:
-            print(f"ANALYZE Worker - Stdout partiel avant timeout: {e.stdout[-3000:]}", flush=True)
-        if e.stderr:
-            print(f"ANALYZE Worker - Stderr partiel avant timeout: {e.stderr[-3000:]}", flush=True)
-        print("ANALYZE Worker - Fallback vers exécution en mémoire", flush=True)
-        _run_analysis_core(analysis_id, user_id, file_id, query)
-    except Exception as e:
-        print(f"ANALYZE Worker - Erreur lors de l'exécution du sous-processus : {e}, fallback vers exécution en mémoire", flush=True)
-        _run_analysis_core(analysis_id, user_id, file_id, query)
+        except Exception as e:
+            print(f"ANALYZE Worker - Erreur lors de l'exécution du sous-processus : {e}, fallback vers exécution en mémoire", flush=True)
+            _run_analysis_core(analysis_id, user_id, file_id, query)
 
 
 def _run_analysis_background(analysis_id: str, user_id: str, file_id: str, query: str) -> None:
