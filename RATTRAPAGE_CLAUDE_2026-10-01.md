@@ -338,6 +338,12 @@ aucun des diffs du 06/10 ne les touche.
 | 21 | 07/10 | Revue de méthode intégrale : admission des lignes forgées de l'audit précédent + règles R1-R6 permanentes ; audit sécurité LECTURE SEULE du code (§8.2 : V1-V8 repérées, AUCUNE corrigée) ; état QUANTA et limites « toute base » (§8.3) ; consolidé des inquiétudes de Claude (§8.4) ; registre des 13 commits avec preuves (§8.6) | Godson : « aucun dérapage n'est autorisé » — preuve véridique exigée pour chaque action, analyse et résultat ; audit de vulnérabilités SANS correction | Lecture seule totale (aucune ligne de code modifiée) ; chaque affirmation pourvue d'une preuve fichier:ligne vérifiée par grep cette session ; limites de l'audit déclarées explicitement (cœur statistique non relu ligne à ligne) au lieu d'être masquées | §8 complet dans ce document ; commit docs séparé ; `python -c "import main"` exit 0 avant push |
 | 22 | 07/10 | Élaboration du PLAN D'EXÉCUTION des corrections (§9) — soumission AVANT exécution, aucune ligne de code modifiée | Godson : « que comptes-tu faire pour corriger les limites restantes ? Mets en place le plan d'exécution d'abord » | Règle §0 respectée à la lettre : le plan est soumis et documenté avant toute modification ; priorités justifiées (V1/V3 = intégrité, V2 = seul crash serveur) ; chaque phase a ses critères d'acceptation et son rollback | §9 ajouté ; commit docs seul ; exécution conditionnée à la validation de Godson |
 | 23 | 07/10 | EXÉCUTION de la PHASE 1 (validée Godson « Phase 1 seule ») : V1 machine à états des analyses + V3 upload périmé — commit `92c3625` | V1 = le mécanisme exact de l'incident 06/10 (double écriture error→done au-delà du budget) ; V3 = 500 prouvée §8.2 sur upload > 24 h | Écart du plan initial détecté et corrigé AVANT implémentation : `error → done` devait rester possible (secours du fallback testé) — seule l'écriture APRÈS CONCLUSION de l'orchestrateur est toxique ; migration `concluded` paresseuse pour les chemins hors init_db (échec `no such column` détecté par le 1er run de tests, cause racine corrigée) ; 7 nouveaux tests verrous dont le scénario zombie exact | **140 passed, 0 failed, exit 0** (133 + 7) en 2 min 31 s, log `pytest_full_run_2026-10-07_phase1.log` ; import main exit 0 ; tsc 0 erreur ; Phase 2 non lancée (non validée) |
+| 24 | 07/10 | T1 : renforts de tests de la machine à états (tests/test_state_integrity.py, 3 tests — AUCUNE logique touchée) | Règles Claude : consolider V1 sans nouveau risque ; 3 cas limite non couverts identifiés | Migration `concluded` à chaud sur base préexistante ; double appel concurrent à conclude_analysis (un seul gagnant) ; cas zombie exact via chemin subprocess | 143 passed, 0 failed, exit 0 ; commit `ed85187` ; diff collé brut au transcript |
+| 25 | 07/10 | T2 : V5 fail-fast SESSION_SECRET_KEY en production (main.py) + tests par sous-processus | Cookie CSRF signé avec clé vide si clé absente en prod ; le dev ne doit JAMAIS bloquer | Détection documentée (QUANTA_ENV/ENVIRONMENT/APP_ENV ; signal Render NON VÉRIFIÉ) ; tests sur le vrai chemin d'import ; échec du 1er run expliqué ET prouvé (`SESSION_SECRET_KEY present in .env: True` + load_dotenv main.py:119) — harnais corrigé, assertions inchangées | 146 passed, 0 failed, exit 0 ; commit `129e41d` |
+| 26 | 07/10 | T3 : V6 sortie du worker bornée (queue 64 Ko via fichiers temporaires) | `capture_output=True` accumulait TOUTE la sortie en mémoire parent avant troncature | Pattern existant [-6000:]/[-3000:] conservé à l'identique (logs inchangés) ; site PDF worker (main.py:912) hors V6 telle qu'auditée → laissé intact, signalé pour arbitrage | 150 passed, 0 failed, exit 0 ; commit `d757ef2` |
+| 27 | 07/10 | T4 : V8 datetimes sessions sans utcnow() déprécié (db.py:906/938/966) | Dépréciation Python ; remplacement mécanique demandé | Format de stockage historique (ISO naïf + Z) conservé byte-identique → comparaisons de chaînes ISO intactes (prouvé : sorties identiques) ; fragilité de la comparaison en chaîne SIGNALÉE séparément, non corrigée (sujet à part) | 150 passed, 0 failed, exit 0 ; warnings dépréciation 12→6 ; commit `dae37de` |
+| 28 | 07/10 | T5 : audit LECTURE SEULE du cœur statistique (compute/test_selector/orchestrator/brain) — rapport §10, ZÉRO écriture | Préalable manquant à la promesse « toute base sans crasher » | fichier:ligne pour chaque affirmation ; découpage prouvé/suspecté ; découvertes vérifiées par micro-exécutions (NaN scipy/pandas, rejet NaN par JSONResponse) | §10 ; découverte V9 (NaN → 500 /status) prouvée de bout en bout ; aucun code modifié |
+| 29 | 07/10 | T6 : pip-audit sur requirements.txt (lecture seule) | État des CVE des dépendances actuelles | Sortie brute conservée (`pip_audit_2026-10-07.log`, 131 lignes) ; aucune version modifiée sans validation | 128 CVE connues dans 6 paquets : pypdf 4.3.1 (85), pillow (25), python-multipart 0.0.20 (12), anyio 4.13.0 (2), requests (2), weasyprint (2) ; exit 1 |
 
 ## 4. RÉSULTATS DU PROTOCOLE (rempli séquentiellement)
 
@@ -736,3 +742,59 @@ Principe (règle §0) : **ce plan est la soumission**. Aucune ligne de code ne s
 - Chaque phase consigne : diff intégral, sorties de tests brutes, verdict. Compilation finale opposable à l'audit.
 
 Journal : action 22.
+
+### 10. AUDIT CŒUR STATISTIQUE (T5) + CVE DÉPENDANCES (T6) — 07/10
+
+#### 10.1 Périmètre couvert (déclaré, volontairement partiel — budget 1h)
+Couvert par lecture ligne à ligne ou ciblée : `app/compute/compute.py` (stats
+descriptives ~485-529, puissance ~1330-1364, garde variance ~2070),
+`app/compute/test_selector.py` (2 groupes ~230-289, effect sizes ~415-504,
+formatage ~748-786, Cramér/bootstrap ~875-939), `app/orchestrator.py`
+(structure : zéro try/except, prouvé par grep), `app/llm/brain.py` (collecte
+des p-values ~785-834). **NON couvert** : code des plots, `report_generator.py`
+(4300+ lignes), `pdf_worker.py`, chemins OLS/logistique détaillés, ACP/ACM
+sur données extrêmes.
+
+#### 10.2 Prouvé par lecture (+ micro-exécutions du 07/10)
+- **V9 (majeur) — NaN/±inf dans les résultats → 500 sur GET /status** :
+  - `test_selector.py:766-767` : `statistic`/`p_value` passent par `round(float(...))`
+    SANS garde NaN ; `:772` : `effect_size` stocké brut ; `compute.py:498-505` :
+    `std`/`skewness`/`kurtosis` = NaN pour une colonne n=1 (garde `s.empty` seule) ;
+  - micro-exécution : `ttest_ind([1,1,1],[1,1,1])` → `stat: nan | p: nan` ;
+    `Series([5.0]).std()` → `nan` ; `round(float('nan'), 6)` → `nan` (survit) ;
+    `ttest_ind([1,1,1],[2,2,2])` → `stat: -inf` (rejeté aussi par JSON) ;
+  - stockage : `json.dumps` (db.py) accepte NaN → ligne en base ;
+  - sortie HTTP : `JSONResponse(content={'a': nan})` → **ValueError « Out of range
+    float values are not JSON compliant »** (exécuté) → GET /status renvoie 500
+    pour une analyse pourtant `done` → le poll frontend casse. **Chaîne complète
+    prouvée de bout en bout.**
+- **Skeptic Engine neutralisée par NaN** : `brain.py:792-797` (`_add` accepte
+  `float(nan)`), dédup `:818-822` conserve NaN, `all(p > 0.05)` / `all(p < 0.05)`
+  `:871-872` → faux des deux côtés avec NaN → garde de scepticisme inopérante.
+- **Code mort** : `test_selector.py:268-270` calcule `effect_size` Mann-Whitney
+  puis l'écrase ligne 275 (`_rank_biserial_with_ci`) — inoffensif, trompeur.
+- **orchestrator.py : aucun try/except** (grep = 0) : toute exception remonte à
+  `analysis_core.run_analysis` → `main.py:558+` `conclude_analysis` (serveur sain,
+  analyse `error` + remboursement) ; côté worker : `analyze_worker.py:103-119`
+  → exit 1 → fallback re-calcule tout (double coût, pas de crash).
+- **Protections confirmées** (fichier:ligne) : `_safe_float` (compute.py:1331-1339),
+  `_power_cohen_f_from_eta2` (1342-1346, garde η²≥1), `_cramers_v` (test_selector.py:
+  882-889, gardes n==0/denom==0), `_bootstrap_percentile_ci` (440-463, filtre NaN,
+  retour (nan,nan) si vide), CI NaN omis (779-782) et None (351-352, 372-373,
+  396-397), Levene NaN→None (265-266), bootstrap vectorisé à rng local (447-460).
+
+#### 10.3 Suspecté, à vérifier par test (NON prouvé)
+- Le routage utilisateur : une colonne constante atteint-elle réellement
+  `compare_groups` via une requête libre (filtre en amont non vérifié) ?
+- `_cohens_d` (test_selector.py:428-432) : groupes de taille 1 → NaN silencieux
+  dans `effect_size` (même 500 potentiel que V9).
+- Chemins OLS/logistique : matrices singulières, résidus nuls — non relus.
+- `brain._extract_p_value` (:483) comportement avec NaN — non relu.
+
+#### 10.4 CVE des dépendances (T6) — sortie brute conservée
+`pip_audit_2026-10-07.log` (131 lignes, artefact local) : « Found 128 known
+vulnerabilities in 6 packages » — pypdf 4.3.1 (85), pillow (25), python-multipart
+0.0.20 (12), anyio 4.13.0 (2), requests (2), weasyprint (2) ; exit 1.
+Aucune version modifiée sans validation explicite (lecture seule).
+
+Journal : actions 24 à 29.
