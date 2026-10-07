@@ -900,10 +900,14 @@ def create_session(user_id: str, ttl_hours: int = 24 * 7) -> str:
     Crée une session, retourne le session_token (secrets.token_urlsafe(32)).
     """
     import secrets
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     session_token = secrets.token_urlsafe(32)
-    now = datetime.utcnow()
+    # V8 (audit §8.2) : utcnow() déprécié → calcul via datetime AWARE.
+    # Le format de stockage historique (ISO naïf + "Z") est conservé à
+    # l'identique : les comparaisons de chaînes ISO (expires_at < now) et
+    # les anciennes lignes en base utilisent ce format.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     created_at = now.isoformat() + "Z"
     expires_at = (now + timedelta(hours=ttl_hours)).isoformat() + "Z"
 
@@ -923,7 +927,7 @@ def get_session(session_token: str) -> dict[str, Any] | None:
     Récupère une session par son token. Retourne None si le token
     n'existe pas OU si expires_at est dépassé.
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     with _get_conn() as conn:
         row = conn.execute(
@@ -935,7 +939,8 @@ def get_session(session_token: str) -> dict[str, Any] | None:
 
     # Vérifier expiration
     expires_at = row["expires_at"]
-    now = datetime.utcnow().isoformat() + "Z"
+    # V8 : utcnow() déprécié — format historique (ISO naïf + "Z") conservé.
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
 
     if expires_at < now:
         # Session expirée, la supprimer et retourner None
@@ -961,9 +966,10 @@ def cleanup_expired_sessions() -> int:
     Supprime toutes les sessions expirées, retourne le nombre
     supprimé (utile pour un nettoyage périodique).
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
 
-    now = datetime.utcnow().isoformat() + "Z"
+    # V8 : utcnow() déprécié — format historique (ISO naïf + "Z") conservé.
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
 
     with _get_conn() as conn:
         cursor = conn.execute(
