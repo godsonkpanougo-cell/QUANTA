@@ -55,6 +55,29 @@ def _get_conn():
             conn.close()
 
 
+_concluded_column_checked = False
+
+
+def _ensure_concluded_column() -> None:
+    """Migration V1 (audit §8.2) — garantit la colonne analyses.concluded.
+
+    Appelée par init_db() ET paresseusement par les fonctions d'écriture :
+    certains chemins (scripts de test, imports directs de db sans init_db)
+    utilisent la base sur un schéma antérieur ; sans cette garantie, la
+    machine à états échouerait sur 'no such column: concluded'.
+    """
+    global _concluded_column_checked
+    if _concluded_column_checked:
+        return
+    try:
+        with _get_conn() as conn:
+            conn.execute("ALTER TABLE analyses ADD COLUMN concluded INTEGER DEFAULT 0")
+            conn.commit()
+    except Exception:
+        pass  # colonne déjà présente (ou table absente : créée par init_db)
+    _concluded_column_checked = True
+
+
 def init_db() -> None:
     """Crée les tables si elles n'existent pas. Appelée au démarrage de main.py."""
     # Utiliser une connexion directe pour la migration (pas de context manager pour éviter le double commit)
@@ -143,6 +166,10 @@ def init_db() -> None:
             conn.commit()
         except:
             pass  # La colonne existe déjà
+        # Migration V1 (audit §8.2) : colonne 'concluded' (machine à états anti
+        # double écriture error→done) — implémentation unique dans
+        # _ensure_concluded_column(), partagée avec les chemins hors init_db.
+        _ensure_concluded_column()
             
         # Créer les autres tables
         conn.execute("""
@@ -182,6 +209,7 @@ def init_db() -> None:
                 created_at  TEXT NOT NULL,
                 updated_at  TEXT NOT NULL,
                 file_hash   TEXT,
+                concluded   INTEGER DEFAULT 0,
                 FOREIGN KEY (file_id) REFERENCES uploads(file_id),
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
             )
@@ -254,6 +282,20 @@ def upload_exists(file_id: str, user_id: str) -> bool:
     return row is not None
 
 
+def purge_expired_uploads(cutoff_iso: str) -> int:
+    """Supprime les lignes uploads antérieures au cutoff (V3, audit §8.2).
+
+    Les fichiers physiques sont purgés à 24 h (cleanup_old_files) mais les
+    lignes uploads persistaient : /analyze retrouvait alors une ligne valide
+    pour un fichier disparu. Retourne le nombre de lignes supprimées.
+    """
+    with _get_conn() as conn:
+        cursor = conn.execute(
+            "DELETE FROM uploads WHERE uploaded_at < ?", (cutoff_iso,)
+        )
+        return cursor.rowcount
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ANALYSES
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -278,11 +320,23 @@ def update_analysis(
     user_id: str = "",
     file_hash: str | None = None,
 ) -> bool:
-    """Met à jour une analyse si l'utilisateur est le propriétaire."""
+    """Met à jour une analyse si l'utilisateur est le propriétaire.
+
+    Machine à états (V1, audit §8.2) — une écriture n'est acceptée que si :
+      - le statut courant n'est PAS terminal ('done' / 'cancelled' sont
+        définitifs : aucune réécriture possible) ;
+      - l'analyse n'a pas été « conclue » par l'orchestrateur (concluded=1,
+        posé par conclude_analysis() au timeout / erreur inattendue).
+    En revanche, 'error' NON concluant reste transitionnable vers 'done' :
+    c'est le mécanisme de secours du fallback (worker échoue → exécution
+    in-memory réussit), verrouillé par tests/test_state_integrity.py.
+    """
+    _ensure_concluded_column()
     with _get_conn() as conn:
         cursor = conn.execute(
             "UPDATE analyses SET status = ?, result = ?, error = ?, updated_at = ?, file_hash = ? "
-            "WHERE analysis_id = ? AND user_id = ? AND status != 'done'",
+            "WHERE analysis_id = ? AND user_id = ? "
+            "AND status NOT IN ('done', 'cancelled') AND COALESCE(concluded, 0) = 0",
             (
                 status,
                 json.dumps(result, ensure_ascii=False) if result is not None else None,
@@ -296,8 +350,8 @@ def update_analysis(
         if cursor.rowcount == 0:
             print(
                 f"DB - update_analysis IGNORÉ pour {analysis_id} : "
-                f"statut déjà 'done' (définitif) OU utilisateur non propriétaire, "
-                f"tentative d'écriture '{status}' bloquée.",
+                f"statut terminal ('done'/'cancelled'), analyse conclue OU "
+                f"utilisateur non propriétaire — tentative d'écriture '{status}' bloquée.",
                 flush=True,
             )
             return False
@@ -340,15 +394,18 @@ def update_analysis_internal(
 
     Réservée aux workers de confiance (analyze_worker.py) qui doivent pouvoir
     écrire un statut terminal (done/error/cancelled) même lorsque le user_id
-    n'est pas disponible dans leur contexte d'erreur. La clause
-    "status != 'done'" protège toujours le statut terminal.
+    n'est pas disponible dans leur contexte d'erreur. La machine à états (V1,
+    audit §8.2) s'applique aussi ici : 'done'/'cancelled' sont définitifs et
+    toute écriture est bloquée après conclusion (concluded=1).
 
     NE PAS utiliser dans les endpoints publics HTTP.
     """
+    _ensure_concluded_column()
     with _get_conn() as conn:
         cursor = conn.execute(
             "UPDATE analyses SET status = ?, result = ?, error = ?, updated_at = ?, file_hash = COALESCE(?, file_hash) "
-            "WHERE analysis_id = ? AND status != 'done'",
+            "WHERE analysis_id = ? "
+            "AND status NOT IN ('done', 'cancelled') AND COALESCE(concluded, 0) = 0",
             (
                 status,
                 json.dumps(result, ensure_ascii=False) if result is not None else None,
@@ -361,8 +418,40 @@ def update_analysis_internal(
         if cursor.rowcount == 0:
             print(
                 f"DB - update_analysis_internal IGNORÉ pour {analysis_id} : "
-                f"statut déjà 'done' (définitif) OU analyse introuvable, "
-                f"tentative d'écriture '{status}' bloquée.",
+                f"statut terminal ('done'/'cancelled'), analyse conclue OU "
+                f"analyse introuvable — tentative d'écriture '{status}' bloquée.",
+                flush=True,
+            )
+            return False
+        return True
+
+
+def conclude_analysis(
+    analysis_id: str,
+    error: str,
+    updated_at: str = "",
+    user_id: str = "",
+) -> bool:
+    """Pose l'erreur CONCLUANTE de l'orchestrateur (V1, audit §8.2).
+
+    Réservée aux handlers de conclusion de _run_analysis_background (timeout
+    ou erreur inattendue) : pose status='error' ET concluded=1 en une seule
+    écriture atomique. Dès lors, AUCUNE écriture ultérieure n'est possible —
+    un thread zombie qui terminerait après le budget ne peut plus réécrire
+    'done' (l'incident 06/10 : double écriture error→done + quota remboursé).
+    """
+    _ensure_concluded_column()
+    with _get_conn() as conn:
+        cursor = conn.execute(
+            "UPDATE analyses SET status = 'error', error = ?, updated_at = ?, concluded = 1 "
+            "WHERE analysis_id = ? AND user_id = ? "
+            "AND status NOT IN ('done', 'cancelled') AND COALESCE(concluded, 0) = 0",
+            (error, updated_at, analysis_id, user_id),
+        )
+        if cursor.rowcount == 0:
+            print(
+                f"DB - conclude_analysis IGNORÉ pour {analysis_id} : statut terminal, "
+                f"déjà conclue, ou utilisateur non propriétaire.",
                 flush=True,
             )
             return False

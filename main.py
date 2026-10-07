@@ -324,6 +324,16 @@ def cleanup_old_files() -> None:
         if deleted_count > 0:
             logger.info("Deleted old analyses from database", count=deleted_count)
 
+        # Purger les lignes uploads expirées (V3, audit §8.2) : sans cela, une
+        # ligne orpheline survit au fichier purgé et /analyze tombait sur un
+        # fichier disparu. La purge est alignée sur le même cutoff de 24 h.
+        try:
+            purged_uploads = db.purge_expired_uploads(cutoff_time.isoformat())
+            if purged_uploads > 0:
+                logger.info("Deleted expired upload rows", count=purged_uploads)
+        except Exception as e:
+            logger.warning("Upload purge failed", error=str(e))
+
         # Purger les sessions expirées (sinon suppression uniquement lazy à
         # l'accès -> accumulation illimitée en base).
         try:
@@ -552,8 +562,11 @@ def _run_analysis_background(analysis_id: str, user_id: str, file_id: str, query
         # (540 s) reste au-dessus pour toujours voir le verdict final.
         _run_with_timeout(_run_analysis_dispatch, args=(analysis_id, user_id, file_id, query), timeout=480)
     except TimeoutError as e:
-        db.update_analysis(
-            analysis_id, status="error",
+        # Conclusion de l'orchestrateur (V1, audit §8.2) : concluded=1 atomique —
+        # un thread zombie qui terminerait après ce budget ne peut PLUS écrire
+        # 'done' (fin de la double écriture error→done de l'incident 06/10).
+        db.conclude_analysis(
+            analysis_id,
             error=f"Timeout: {str(e)}",
             updated_at=_now(),
             user_id=user_id,
@@ -561,8 +574,9 @@ def _run_analysis_background(analysis_id: str, user_id: str, file_id: str, query
     except Exception as e:
         # Filet de sécurité ultime : même une erreur totalement imprévue ne
         # doit jamais laisser l'analyse bloquée en "running" indéfiniment.
-        db.update_analysis(
-            analysis_id, status="error",
+        # Conclusion atomique idem (V1).
+        db.conclude_analysis(
+            analysis_id,
             error=f"Erreur inattendue pendant l'analyse : {e}",
             updated_at=_now(),
             user_id=user_id,
@@ -626,8 +640,17 @@ def analyze(
             detail=f"file_id '{analyze_request.file_id}' introuvable."
         )
     
-    with open(upload_info["path"], "rb") as f:
-        file_bytes = f.read()
+    try:
+        with open(upload_info["path"], "rb") as f:
+            file_bytes = f.read()
+    except FileNotFoundError:
+        # V3 (audit §8.2) : le fichier physique a été purgé (> 24 h) alors que
+        # la ligne uploads existe encore — réponse propre plutôt qu'une 500.
+        raise HTTPException(
+            status_code=404,
+            detail="Fichier expiré (nettoyage automatique après 24 h). "
+                   "Veuillez le téléverser à nouveau.",
+        )
     file_hash = hashlib.sha256(file_bytes).hexdigest()
     
     # Chercher dans le cache (strictement par utilisateur)
