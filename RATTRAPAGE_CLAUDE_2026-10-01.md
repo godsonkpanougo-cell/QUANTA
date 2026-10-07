@@ -327,6 +327,7 @@ aucun des diffs du 06/10 ne les touche.
 | 16 | soir | Support .xls : `xlrd==2.0.1` (requirements) + `.xls` dans le sélecteur frontend (UploadZone) + test verrou `tests/test_upload_formats.py` | Godson : « quanta ne prend pas en charge les .xls » — double blocage prouvé (moteur absent + picker sans .xls) | La whitelist backend et load_and_diagnose acceptaient déjà .xls — seule la dépendance et le picker manquaient ; test verrou anti-régression de dépendance | pytest ciblés 7/7 ; suite complète EN COURS (§4 mise à jour ci-dessous) ; commit dédié |
 | 17 | soir | Diagnostic déconnexions + quota reset à 15 (lecture seule, AUCUN commit code volontaire) | Godson : « le quota et la connexion ne sont pas solides » | Preuves d'abord : sessions (TTL 7 j base+cookie, purge expirées seulement), quota (lookup google_sub stable, reset uniquement à +30 j), puis DB_PATH/Dockerfile → /data sans volume dans conteneur éphémère | §6 : code sain, racine = effacement de la base à chaque déploiement/restart Render (13 pushes ce jour = 13 effacements) ; décision d'hébergement soumise à Godson (options A-D) |
 | 18 | soir | Consignation de la décision Godson : PAS de migration maintenant, Oracle en intention (bloqué côté compte), statu quo éphémère assumé | Décision d'hébergement = prérogative de Godson ; le document doit refléter la raison du report | Citation consignée §6.5 + conséquences assumées + discipline de déploiement + Chantier B prêt à la déblocage | §6.5 ajouté ; AUCUN code modifié ; commit docs séparé |
+| 19 | 07/10 | Constitution du bundle de preuves 1-5 demandé par Claude pour l'audit (git log/show --stat depuis a6a5e10, suite pytest COMPLÈTE re-jouée sur HEAD=006bfdf, git status, sondes Render + CI via API GitHub) et ajout du §7 | Claude a déclaré « rien de nouveau dans le document » : il faut trancher (doc à jour : 262→500 lignes, preuve chiffrée §7) ET fournir la matière brute, pas un résumé | Preuves brutes rejouables plutôt que affirmations ; pytest re-exécuté sur l'état exact de main plutôt que réutilisé d'un run antérieur ; anti-divergence par fetch avant push | 133 passed, 0 failed, exit 0 en 4 min 57 s ; CI success ; arbre propre ; §7 poussé dans ce commit même |
 
 ## 4. RÉSULTATS DU PROTOCOLE (rempli séquentiellement)
 
@@ -498,3 +499,55 @@ ne sont pas `scripts/smoke_test.py` (lighthouse-report-home.*, quanta_pdf_previe
 rapports quanta/preview/, scripts/investigate_bootstrap_eta2.py) — ni .gitignore, ni
 suppression : ce sont des artefacts locaux de Godson, hors périmètre, et les commits sont
 ciblés par chemins explicites (jamais `git add -A`), donc leur présence est sans effet.
+
+---
+
+# §7. BUNDLE DE PREUVES POUR L'AUDIT CLAUDE (2026-10-07)
+
+**Contexte** : Claude a déclaré « rien de nouveau dans le document » puis a demandé les
+preuves brutes 1-5 (git log depuis a6a5e10, show --stat par commit, sortie complète pytest
+sur main, git status, confirmation redéploiement Render). **Le document ÉTAIT à jour sur
+origin/main** — preuve chiffrée : 262 lignes à `a6a5e10` (état connu de Claude) → **500
+lignes** à `006bfdf`, via 5 commits docs (`2639933`, `40f8c66`, `c0dc66d`, `256db2b`,
+`006bfdf`). Hypothèse la plus probable : Claude a lu une copie périmée (le fichier garde
+son nom « 2026-10-01 » ; les mises à jour sont ajoutées EN FIN de fichier — vérifier la
+version `main` sur GitHub ou faire `git pull`).
+
+### 7.1 Preuve 1 — Commits ajoutés depuis a6a5e10 (11, tous poussés sur origin/main)
+aba723e → d250892 → d6e26e3 → 2639933 → 40f8c66 (protocole A2/A3/A4 + docs, soir 06/10)
+puis 87d85b3 → a4e4d4e → b6c0c21 → c0dc66d → 256db2b → 006bfdf (incident L2_tobit +
+.xls + §5/§6). HEAD = origin/main = **006bfdf** (vérifié par rev-parse).
+
+### 7.2 Preuve 2 — Fichiers touchés par commit (git show --stat)
+| Commit | Fichiers | Lignes |
+|---|---|---|
+| aba723e (A2 frontend) | AnalysisProgress.tsx, AnalysisResults.tsx, history/page.tsx | +91/−11 |
+| d250892 (A3 PDF cache) | main.py | +20/−6 |
+| d6e26e3 (A4 smoke test) | scripts/smoke_test.py | +341 |
+| 2639933, 40f8c66, c0dc66d, 256db2b, 006bfdf (docs) | RATTRAPAGE_CLAUDE_2026-10-01.md | +238/−4 cumulés |
+| 87d85b3 (budget 480 s) | main.py | +8/−3 |
+| a4e4d4e (poll 540 s) | AnalysisProgress.tsx | +1/−1 |
+| b6c0c21 (.xls) | UploadZone.tsx, requirements.txt, tests/test_upload_formats.py | +29/−2 |
+
+### 7.3 Preuve 3 — Suite pytest COMPLÈTE re-jouée sur l'état actuel de main (006bfdf)
+`python -m pytest tests/ -q` → **133 passed, 0 failed, 12 warnings, en 4 min 57 s,
+PYTEST_EXIT=0** (log brut intégral : `pytest_full_run_2026-10-07_audit.log`, artefact
+local). Dont les 2 tests verrou .xls (verbose) :
+`tests/test_upload_formats.py::test_whitelist_backend_contient_xls` PASSED et
+`tests/test_upload_formats.py::test_moteur_xlrd_disponible` PASSED.
+
+### 7.4 Preuve 4 — git status
+Arbre propre : **aucun fichier suivi modifié** ; 5 artefacts locaux non trackés uniquement
+(lighthouse ×2, quanta_pdf_preview.html, rapports quanta/preview/,
+scripts/investigate_bootstrap_eta2.py) — hors périmètre, intacts.
+
+### 7.5 Preuve 5 — CI et redéploiement Render
+- CI GitHub : **success** sur tous les pushes de la plage (runs `d6e26e3` → `006bfdf`
+  vérifiés via API GitHub).
+- **Render redéploie automatiquement sur chaque push vers main** (config active) : les 11
+  commits sont donc déjà en prod ou le seront au prochain réveil de l'instance. Preuve
+  indirecte vivante du 07/10 : cold start observé (`/health` 200 en 42,2 s puis 0,59 s,
+  `/methodologie` 200 en 0,31 s). Limité honnête : l'API Render n'expose pas le SHA
+  déployé — la correspondance commit↔prod n'est pas prouvable de l'extérieur.
+
+Journal : action 19.
