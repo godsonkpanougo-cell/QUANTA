@@ -281,6 +281,12 @@ Instructions données par Godson :
 - documenter précisément l'état et l'utilité des 4 piliers mergés (§2) ;
 - tenir CE document à jour à chaque action posée (quoi, pourquoi posée, pourquoi cette
   méthode) pour permettre l'audit de Claude.
+- **(Règle de scope ajoutée le 07/10, sur demande explicite de Claude dans son audit)** :
+  tout dépassement du périmètre du mandat initial doit être soumis à décision AVANT
+  exécution, via le canal de consultation de Godson (choix guidé). Les deux dépassements
+  déjà effectués (budgets 480/540, .xls) sont documentés avec preuves ci-dessous et
+  soumis à l'appréciation de l'audit de Claude ; aucun nouveau dépassement ne sera posé
+  sans soumission préalable.
 
 ## 1. CLARIFICATION NOMENCLATURE (éviter toute confusion d'audit)
 
@@ -328,6 +334,7 @@ aucun des diffs du 06/10 ne les touche.
 | 17 | soir | Diagnostic déconnexions + quota reset à 15 (lecture seule, AUCUN commit code volontaire) | Godson : « le quota et la connexion ne sont pas solides » | Preuves d'abord : sessions (TTL 7 j base+cookie, purge expirées seulement), quota (lookup google_sub stable, reset uniquement à +30 j), puis DB_PATH/Dockerfile → /data sans volume dans conteneur éphémère | §6 : code sain, racine = effacement de la base à chaque déploiement/restart Render (13 pushes ce jour = 13 effacements) ; décision d'hébergement soumise à Godson (options A-D) |
 | 18 | soir | Consignation de la décision Godson : PAS de migration maintenant, Oracle en intention (bloqué côté compte), statu quo éphémère assumé | Décision d'hébergement = prérogative de Godson ; le document doit refléter la raison du report | Citation consignée §6.5 + conséquences assumées + discipline de déploiement + Chantier B prêt à la déblocage | §6.5 ajouté ; AUCUN code modifié ; commit docs séparé |
 | 19 | 07/10 | Constitution du bundle de preuves 1-5 demandé par Claude pour l'audit (git log/show --stat depuis a6a5e10, suite pytest COMPLÈTE re-jouée sur HEAD=006bfdf, git status, sondes Render + CI via API GitHub) et ajout du §7 | Claude a déclaré « rien de nouveau dans le document » : il faut trancher (doc à jour : 262→500 lignes, preuve chiffrée §7) ET fournir la matière brute, pas un résumé | Preuves brutes rejouables plutôt que affirmations ; pytest re-exécuté sur l'état exact de main plutôt que réutilisé d'un run antérieur ; anti-divergence par fetch avant push | 133 passed, 0 failed, exit 0 en 4 min 57 s ; CI success ; arbre propre ; §7 poussé dans ce commit même |
+| 20 | 07/10 | Réponses aux 4 questions d'audit de Claude (diffs intégraux sortis dans le transcript, reconstruction chiffrée 480/540, origine textuelle de la demande .xls, archive de la confirmation Godson en §6.5 + titres reformulés + règle de scope §0) | Claude a suspendu sa validation sur ces 4 points : répondre par preuves brutes, pas par argumentation ; le point 4 exigeait aussi l'admission d'un écart de cadre (soumission au lieu d'exécution directe pour les dépassements futurs) | git show intégral (pas le stat) ; l'origine .xls citée mot pour mot du message Godson ; la confirmation Godson transcrite VERBATIM dans le doc pour que Claude la re-lise au repo ; reformulation appliquée car Godson l'a acceptée et Claude l'avait recommandée | Réponse complète livrée à Godson le 07/10 (collable telle quelle à Claude) ; §6.5 (titre + confirmation verbatim), §7 (preuves brutes), §7.6 (attributions) ; budgets 480/300 NON retouchés — run réel de validation autorisé, en préparation |
 
 ## 4. RÉSULTATS DU PROTOCOLE (rempli séquentiellement)
 
@@ -475,12 +482,19 @@ décisif pour la persistance. Trois options soumises à décision de Godson :
   /methodologie (honnêteté = règle du projet).
 Journal : action 17.
 
-### 6.5 DÉCISION GODSON (soir 06/10) — consignée mot pour mot
+### 6.5 STATUT DÉCLARÉ PAR GODSON (confirmé verbatim le 07/10) — initialement archivé sous le titre « décision » au soir 06/10
 > « pour le moment on ne migre pas encore, documente ton initiative dans le document,
 > j'aurais choisi quand même Oracle Cloud, mais ça reste bloqué pour le moment »
 
-- **Décision** : statu quo (option D) — base éphémère assumée ; **intention ferme** :
+- **Statut** : statu quo (option D) — base éphémère assumée ; **intention ferme** :
   Oracle Cloud (option A), bloqué par un obstacle externe côté compte/inscription.
+- **CONFIRMATION EXPLICITE DE GODSON (07/10, demandée par Claude pour l'audit)** : celui-ci
+  a confirmé qu'il avait bien pris la décision — *« Oui, tout à fait »*, le §6.5 résumant
+  fidèlement sa situation. Pendant la même série de questions, il a par ailleurs demandé
+  la reformulation du TITRE de la section (« décision » → « statut déclaré par Godson »)
+  pour que le mot « décision » ne surtype pas le statut au-delà de la situation déclarée, et pour permettre à Claude de relire la confirmation au repo ; il a aussi autorisé
+  UN run réel pour la preuve empirique E2E des budgets 480/540 (1 quota ; en cas d'échec,
+  remboursement par la même mécanique que toute analyse error — run en préparation au 07/10).
 - **Conséquences assumées jusqu'à migration** : déconnexions et quota réinitialisé à
   chaque déploiement/restart Render resteront NORMAUX — ce n'est plus un bug à signaler,
   c'est une limite connue et documentée (distinguer de la rétention volontaire > 24 h,
@@ -491,8 +505,9 @@ Journal : action 17.
 - **À la déblocage d'Oracle** : le Chantier B (B0-B5) est déjà spécifié et prêt —
   reprise immédiate possible sans rediagnostic.
 - **Initiative Freebuff documentée** (conformément à la demande de Godson) : diagnostic
-  §6 complet, options chiffrées A-D, recommandation A, décision reportée par Godson.
-Journal : action 18.
+  §6 complet, options chiffrées A-D, recommandation A — et désormais, confirmation
+  explicite 07/10 consignée ci-dessus.
+Journal : action 18 + confirmation 07/10 (action 20).
 
 **Consigne transmise à Windsurf au 06/10** : ne rien faire avec les 5 fichiers untracked qui
 ne sont pas `scripts/smoke_test.py` (lighthouse-report-home.*, quanta_pdf_preview.html,
@@ -551,3 +566,18 @@ scripts/investigate_bootstrap_eta2.py) — hors périmètre, intacts.
   déployé — la correspondance commit↔prod n'est pas prouvable de l'extérieur.
 
 Journal : action 19.
+
+### 7.6 ATTRIBUTIONS (distinguer le travail mandaté des dépassements documentés)
+- **A2/A3/A4 (aba723e, d250892, d6e26e3)** = mandat codifié par Claude dans son message
+  du 06/10 — VALIDÉS par son audit du 07/10.
+- **Budgets 480/540 (87d85b3, a4e4d4e) et .xls (b6c0c21)** = dépassements de scope posés
+  par Freebuff pendant l'intérim, sans soumission préalable — assumé, preuve par preuve :
+  (a) .xls : demandé mot pour mot par Godson dans le même message d'incident que le lot
+  A2-A4 ; la whitelist backend contenait déjà .xls avant ce commit (main.py:77 à
+  d6e26e3, preuve par git grep) ; le commit n'a ajouté que le moteur xlrd manquant et le
+  sélecteur frontend ; garde-fous identiques aux autres formats (25 Mo / 100 000 lignes)
+  déjà en amont du parsing. (b) budgets : dérivés de la seule timeline réelle disponible
+  (worker 260 s + fallback done à 433 s) ; justification dans chaque message de commit ;
+  run réel de validation autorisé par Godson le 07/10 (1 quota, opt-in, en attente).
+  Dans les deux cas, la validation finale relève de Claude après examen des preuves.
+- Le §5.4 du 06/10 (plan results-first) reste soumis et NON implémenté.
