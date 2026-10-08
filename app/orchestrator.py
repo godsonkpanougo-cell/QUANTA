@@ -19,6 +19,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+import db
 from app.compute import compute
 from app.compute import test_selector as ts
 
@@ -636,4 +637,4 @@ def run_full_analysis(
         "n_charts": pipeline["n_charts"],
     }
 
-    return _json_safe(response)
+    return db.sanitize_nonfinite(_json_safe(response))

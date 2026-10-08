@@ -15,12 +15,45 @@ répertoire de travail (configurable via QUANTA_DB_PATH).
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
 from typing import Any
+
+import numpy as np
+
+
+def sanitize_nonfinite(obj: Any) -> Any:
+    """
+    V9 — remplace récursivement les valeurs non finies (NaN, +inf, -inf) par
+    None, et convertit les scalaires numpy en types natifs JSON.
+
+    Motif : json.dumps accepte NaN par défaut (littéral `NaN` stocké, JSON non
+    strict) et tout sérialiseur strict (starlette allow_nan=False) lèverait
+    ValueError → 500. Appliqué à deux points de passage :
+      (a) sortie de orchestrator.run_full_analysis ;
+      (b) lecture db.get_analysis / db.get_analysis_internal /
+          db.find_cached_analysis (lignes héritées déjà stockées avec NaN).
+    """
+    if isinstance(obj, dict):
+        return {k: sanitize_nonfinite(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [sanitize_nonfinite(v) for v in obj]
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        obj = float(obj)
+    elif isinstance(obj, np.ndarray):
+        return sanitize_nonfinite(obj.tolist())
+    if isinstance(obj, float):
+        return None if not math.isfinite(obj) else obj
+    return obj
+
 
 DB_PATH = os.environ.get("QUANTA_DB_PATH", "/data/quanta.db")
 
@@ -373,7 +406,7 @@ def get_analysis(analysis_id: str, user_id: str) -> dict[str, Any] | None:
         "user_id": row["user_id"],
         "query": row["query"],
         "status": row["status"],
-        "result": json.loads(row["result"]) if row["result"] else None,
+        "result": sanitize_nonfinite(json.loads(row["result"])) if row["result"] else None,
         "error": row["error"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -481,7 +514,7 @@ def get_analysis_internal(analysis_id: str) -> dict[str, Any] | None:
         "user_id": row["user_id"],
         "query": row["query"],
         "status": row["status"],
-        "result": json.loads(row["result"]) if row["result"] else None,
+        "result": sanitize_nonfinite(json.loads(row["result"])) if row["result"] else None,
         "error": row["error"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -511,7 +544,7 @@ def find_cached_analysis(user_id: str, file_hash: str, query: str) -> dict[str, 
         "user_id": row["user_id"],
         "query": row["query"],
         "status": row["status"],
-        "result": json.loads(row["result"]) if row["result"] else None,
+        "result": sanitize_nonfinite(json.loads(row["result"])) if row["result"] else None,
         "error": row["error"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
