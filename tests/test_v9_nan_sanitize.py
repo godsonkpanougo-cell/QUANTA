@@ -16,7 +16,9 @@ mode="json") == {"x": None}). Une route SANS annotation rend en revanche
 bien 500 (json.dumps(allow_nan=False) de starlette lève ValueError). Le
 correctif de ce workstream supprime les NaN AVANT tout sérialiseur.
 
-Correctif (W1.2) : sanitize_nonfinite() (db.py) appliqué à deux points :
+Correctif (W1.2) : sanitize_nonfinite() — déplacé en A1 dans
+app/safe_json.py (stdlib seule, numpy par duck typing), importé par db.py —
+appliqué à deux points :
   (a) sortie de run_full_analysis (orchestrator) ;
   (b) lecture db.get_analysis / db.get_analysis_internal (lignes héritées).
 
@@ -24,10 +26,12 @@ W1.5 : p_value None → le Skeptic Engine n'émet AUCUNE alerte.
 """
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_ROOT)
 
 import numpy as np
 from fastapi.testclient import TestClient
@@ -216,3 +220,36 @@ def test_skeptic_engine_p_value_none_aucune_alerte():
     }
     out2 = validate_conclusions(interpretation_overclaim, result)
     assert "skeptic_engine_alert" not in out2
+
+
+# ─── A1 : db.py ne tire plus numpy — preuve par sous-processus ──────────────
+
+def test_import_db_ne_charge_pas_numpy():
+    """Un interpréteur neuf qui importe db ne doit PAS charger numpy dans
+    sys.modules (app/safe_json.py = stdlib seule, numpy par duck typing)."""
+    proc = subprocess.run(
+        [sys.executable, "-c", "import sys, db; print('numpy' in sys.modules)"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    assert proc.stdout.strip() == "False", (
+        "l'import de db ne doit pas charger numpy ; "
+        f"sortie : {proc.stdout.strip()!r} / stderr : {proc.stderr[-500:]!r}"
+    )
+
+
+def test_import_safe_json_ne_charge_pas_numpy():
+    """Même preuve pour app.safe_json seul, importé en tout premier."""
+    proc = subprocess.run(
+        [sys.executable, "-c",
+         "import sys, app.safe_json; print('numpy' in sys.modules)"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    assert proc.stdout.strip() == "False", proc.stdout.strip()
