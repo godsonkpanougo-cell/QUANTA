@@ -30,6 +30,8 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+import pytest
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)
 
@@ -55,6 +57,20 @@ CSV_CONST = (
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _raw_result_column(analysis_id: str):
+    """Colonne SQL brute `result` (jamais passée par json.loads)."""
+    with db._get_conn() as conn:
+        row = conn.execute(
+            "SELECT result FROM analyses WHERE analysis_id = ?", (analysis_id,)
+        ).fetchone()
+    return row["result"] if row is not None else None
+
+
+def _reject_json_constant(name: str):
+    """parse_constant=json.loads : lève si NaN/Infinity/-Infinity lus."""
+    raise AssertionError(f"constante JSON non-standard lue en base : {name}")
 
 
 def _run_constant_groups():
@@ -220,6 +236,83 @@ def test_skeptic_engine_p_value_none_aucune_alerte():
     }
     out2 = validate_conclusions(interpretation_overclaim, result)
     assert "skeptic_engine_alert" not in out2
+
+
+# ─── A2 : écriture DB — jamais de littéral NaN/Infinity en colonne ─────────
+
+def test_ecriture_update_analysis_sans_litteral_nan_sql():
+    """A2 : update_analysis sanitisé + allow_nan=False → la colonne SQL
+    brute ne contient AUCUN littéral NaN/Infinity/-Infinity."""
+    db.clear_all()
+    aid = "v9-a2-update-1"
+    now = _now()
+    result = {
+        "inference": {"result": {
+            "statistic": float("nan"),
+            "p_value": float("inf"),
+            "effect_size": float("-inf"),
+            "np_nan": np.float64("nan"),
+        }},
+        "liste": [float("nan"), 1.5],
+    }
+    db.create_analysis(aid, TEST_USER, "file-a2", "q", now, file_hash="h-a2")
+    assert db.update_analysis(aid, status="done", result=result,
+                             updated_at=now, user_id=TEST_USER) is True
+
+    raw = _raw_result_column(aid)
+    assert raw is not None
+    for litteral in ("NaN", "Infinity", "-Infinity"):
+        assert litteral not in raw, (
+            f"littéral {litteral!r} présent dans la colonne brute : {raw[:500]}"
+        )
+    # Relecture en JSON strict : aucune constante non-standard tolérée.
+    parsed = json.loads(raw, parse_constant=_reject_json_constant)
+    assert parsed["inference"]["result"]["statistic"] is None
+    assert parsed["inference"]["result"]["p_value"] is None
+    assert parsed["inference"]["result"]["effect_size"] is None
+    assert parsed["inference"]["result"]["np_nan"] is None
+    assert parsed["liste"] == [None, 1.5]
+
+
+def test_ecriture_update_analysis_internal_sans_litteral_nan_sql():
+    """A2 : même garantie sur update_analysis_internal (worker de confiance)."""
+    db.clear_all()
+    aid = "v9-a2-internal-1"
+    now = _now()
+    result = {"p": float("nan"), "q": [float("inf"), {"r": float("-inf")}]}
+    db.create_analysis(aid, TEST_USER, "file-a2b", "q", now, file_hash="h-a2b")
+    assert db.update_analysis_internal(aid, status="done", result=result,
+                                      updated_at=now) is True
+
+    raw = _raw_result_column(aid)
+    assert raw is not None
+    for litteral in ("NaN", "Infinity", "-Infinity"):
+        assert litteral not in raw, (
+            f"littéral {litteral!r} présent dans la colonne brute : {raw[:500]}"
+        )
+    parsed = json.loads(raw, parse_constant=_reject_json_constant)
+    assert parsed == {"p": None, "q": [None, {"r": None}]}
+
+
+def test_allow_nan_false_actif_si_sanitizer_contourne(monkeypatch):
+    """Ceinture A2 : si le sanitizer était contourné (bug, repli),
+    json.dumps(allow_nan=False) doit LEVER ValueError plutôt que d'écrire
+    un littéral NaN — et la ligne ne doit pas être modifiée."""
+    db.clear_all()
+    aid = "v9-a2-belt-1"
+    now = _now()
+    db.create_analysis(aid, TEST_USER, "file-a2c", "q", now, file_hash="h-a2c")
+
+    monkeypatch.setattr(db, "sanitize_nonfinite", lambda o: o)
+    with pytest.raises(ValueError):
+        db.update_analysis(aid, status="done", result={"p": float("nan")},
+                           updated_at=now, user_id=TEST_USER)
+    with pytest.raises(ValueError):
+        db.update_analysis_internal(aid, status="done", result={"p": float("nan")},
+                                    updated_at=now)
+
+    # Aucune écriture invalide : la colonne reste NULL.
+    assert _raw_result_column(aid) is None
 
 
 # ─── A1 : db.py ne tire plus numpy — preuve par sous-processus ──────────────

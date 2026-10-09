@@ -345,7 +345,7 @@ def update_analysis(
             "AND status NOT IN ('done', 'cancelled') AND COALESCE(concluded, 0) = 0",
             (
                 status,
-                json.dumps(result, ensure_ascii=False) if result is not None else None,
+                json.dumps(sanitize_nonfinite(result), ensure_ascii=False, allow_nan=False) if result is not None else None,
                 error,
                 updated_at,
                 file_hash,
@@ -414,7 +414,7 @@ def update_analysis_internal(
             "AND status NOT IN ('done', 'cancelled') AND COALESCE(concluded, 0) = 0",
             (
                 status,
-                json.dumps(result, ensure_ascii=False) if result is not None else None,
+                json.dumps(sanitize_nonfinite(result), ensure_ascii=False, allow_nan=False) if result is not None else None,
                 error,
                 updated_at,
                 file_hash,
