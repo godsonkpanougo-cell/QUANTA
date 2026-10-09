@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -792,9 +793,16 @@ def _collect_p_values_from_analysis(analysis_result: dict[str, Any]) -> list[flo
         if raw is None:
             return
         try:
-            values.append(float(raw))
+            value = float(raw)
         except (TypeError, ValueError):
             return
+        # A3 : une p-value non finie (NaN/±inf) provient d'un test indéfini
+        # (ex. groupes à variance nulle) — ce n'est pas une p-value : exclue
+        # du contrôle, sinon elle bascule la conclusion dans la branche
+        # « résultats mixtes » (fausse alerte Skeptic Engine).
+        if not math.isfinite(value):
+            return
+        values.append(value)
 
     inference = analysis_result.get("inference")
     if isinstance(inference, dict):

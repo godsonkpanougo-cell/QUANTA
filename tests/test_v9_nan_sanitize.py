@@ -238,6 +238,37 @@ def test_skeptic_engine_p_value_none_aucune_alerte():
     assert "skeptic_engine_alert" not in out2
 
 
+# ─── A3 : Skeptic Engine — p-value non finie ignorée par le collecteur ──────
+
+def test_skeptic_engine_p_nan_seul_aucune_alerte():
+    """A3 : une p_value NaN arrivée BRUTE (non sanitisée — ex. appel direct
+    de validate_conclusions avant écriture DB) ne doit déclencher AUCUNE
+    alerte. Sans le filtre math.isfinite de _collect_p_values_from_analysis,
+    elle tombait dans la branche « résultats mixtes » (fausse alerte)."""
+    interpretation = {
+        "llm_available": True,
+        "resume_executif": "Il y a aucune différence entre les groupes.",
+        "interpretation_principale": {},
+        "limites_et_reserves": [],
+        "conclusion_generale": "Aucune différence notable entre A et B.",
+    }
+    out = validate_conclusions(
+        interpretation,
+        {"inference": {"action_executed": "compare_groups_2",
+                       "result": {"p_value": float("nan")}}},
+    )
+    assert "skeptic_engine_alert" not in out
+
+    # Même garantie pour ±inf (math.isfinite les exclut aussi).
+    for p in (float("inf"), float("-inf")):
+        out_inf = validate_conclusions(
+            interpretation,
+            {"inference": {"action_executed": "compare_groups_2",
+                           "result": {"p_value": p}}},
+        )
+        assert "skeptic_engine_alert" not in out_inf
+
+
 # ─── A2 : écriture DB — jamais de littéral NaN/Infinity en colonne ─────────
 
 def test_ecriture_update_analysis_sans_litteral_nan_sql():
