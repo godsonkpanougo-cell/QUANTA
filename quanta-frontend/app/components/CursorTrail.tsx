@@ -34,8 +34,8 @@ import { useEffect, useRef } from "react";
 const HISTORY_MAX = 46; // points bruts conservés (≈ 0,38 s de vol)
 const SPACING = 6; // px — distance constante entre points rééchantillonnés
 const SMOOTH_PASSES = 2; // passes Chaikin
-const WIDTH_HEAD = 1.6; // px — demi-épaisseur au niveau de la tête
-const WIDTH_TAIL = 0.25; // px — demi-épaisseur au bout de la queue
+const WIDTH_HEAD = 1.0; // px — demi-épaisseur au niveau de la tête
+const WIDTH_TAIL = 0.15; // px — demi-épaisseur au bout de la queue
 const RETRACT_STEP = 0.018; // s par point retiré à la mort → ~0,8 s
 /* ── Embrasement : pilotage par la vitesse ── */
 const TAIL_MIN = 12; // points de queue au repos
@@ -246,8 +246,8 @@ export function CursorTrail() {
           const nx = -ty / len;
           const ny = tx / len;
           const t = i / (m - 1); // 0 tête → 1 queue
-          /* L'embrasement gonfle légèrement le ruban (jusqu'à +35 %). */
-          const widthScale = 1 + 0.35 * speedFactor;
+          /* L'embrasement gonfle légèrement le ruban (jusqu'à +25 %). */
+          const widthScale = 1 + 0.25 * speedFactor;
           /* Effilement : constant sur le dernier tiers, plus de
              bord plat — la pointe se ferme en aiguille. */
           const shave = Math.pow(1 - t, 1.6);
@@ -299,8 +299,8 @@ export function CursorTrail() {
            et s'éblouit avec l'embrasement. */
         const hx = headPt.x * dpr;
         const hy = headPt.y * dpr;
-        const glowR = (14 + 10 * speedFactor) * dpr;
-        const glowA = 0.38 + 0.3 * speedFactor;
+        const glowR = (9 + 6 * speedFactor) * dpr;
+        const glowA = 0.3 + 0.22 * speedFactor;
         const glow = ctx.createRadialGradient(hx, hy, 0, hx, hy, glowR);
         glow.addColorStop(0, `rgba(${HEADGLOW}, ${glowA})`);
         glow.addColorStop(
