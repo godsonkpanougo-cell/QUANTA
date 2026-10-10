@@ -1554,15 +1554,24 @@ def _css(theme: str = "dark") -> str:
         c_rule = "linear-gradient(90deg, transparent, #D6B761 50%, transparent)"
 
     fontface_css = get_fontface_css()
-    signature_bg = quanta_signature_page_background(48)
+    # Signature bas-droite : logo Q vectoriel (aplat, sans dégradé — un
+    # dégradé serait rastérisé 72 dpi par WeasyPrint) teinté aux ors du
+    # thème : #D6B761 sur noir (dark), oxyde #8C6A1F sur ivoire (light).
+    signature_bg = quanta_signature_page_background(
+        44, ring=c_gold, dot=c_gold_soft
+    )
     page_paper = "#07070C" if theme != "light" else c_bg
 
     return f"""
     {fontface_css}
 
     /* ————— Géométrie de page ————— */
-    /* Signature QUANTA en bas à droite : background de @page — rendu
-       natif sur chaque page, y compris en génération chunked.
+    /* Signature QUANTA en bas à droite : margin box @bottom-right —
+       logo Q vectoriel (background-image) + wordmark Orbitron, teintés
+       aux ors du thème. La marge est peinte PAR-DESSUS le fond du corps
+       de page : elle reste donc visible (le ancien background de @page
+       était recouvert par le fond opaque de html/body dans la zone de
+       contenu — tracés présents dans le PDF mais pixels noirs).
        (background-color et background-image séparés : le shorthand
        multi-couches n'est pas fiable dans WeasyPrint.) Le fond de la
        page PHYSIQUE est peint sur @page lui-même — jamais sur body —
@@ -1572,16 +1581,24 @@ def _css(theme: str = "dark") -> str:
       size: A4;
       margin: 1.9cm 1.7cm 2.3cm 1.7cm;
       background-color: {page_paper};
-      background-image: {signature_bg};
-      background-repeat: no-repeat;
-      background-position: right 0.95cm bottom 0.85cm;
-      background-size: 48px 48px;
       @bottom-center {{
         content: "QUANTA — Rapport d'analyse statistique · page " counter(page);
         font-family: 'Jost', Arial, sans-serif;
         font-size: 7.5pt;
         letter-spacing: 0.06em;
         color: {c_muted};
+      }}
+      @bottom-right {{
+        content: "QUANTA";
+        font-family: 'Orbitron', 'Jost', Arial, sans-serif;
+        font-size: 8.5pt;
+        letter-spacing: 0.2em;
+        color: {c_gold};
+        background-image: {signature_bg};
+        background-repeat: no-repeat;
+        background-position: left center;
+        background-size: 44px 44px;
+        padding-left: 42px;
       }}
     }}
     /* Page de garde : page nommée — ni signature ni footer. (Une page
@@ -1591,8 +1608,8 @@ def _css(theme: str = "dark") -> str:
        dark, ivoire en light) — seule la signature et le footer disparaissent. */
     @page cover {{
       background-color: {page_paper};
-      background-image: none;
       @bottom-center {{ content: none; }}
+      @bottom-right {{ content: none; background-image: none; }}
     }}
 
     * {{ box-sizing: border-box; }}

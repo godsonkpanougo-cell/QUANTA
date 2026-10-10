@@ -88,38 +88,51 @@ def get_fontface_css() -> str:
 # Signature logo (SVG inline, fidèle au composant LogoQ du frontend)
 # ---------------------------------------------------------------------------
 
-def quanta_signature_svg_flat(height: int = 48) -> str:
+def quanta_signature_svg_flat(
+    height: int = 48,
+    ring: str = "#D6B761",
+    dot: str = "#E8D5A3",
+) -> str:
     """
     Variante de la signature SANS dégradé : deux tons plats (or pour
-    l'anneau et le trait, crème pour le point). Indispensable pour le
-    background de @page : WeasyPrint transforme tout remplissage en
+    l'anneau et le trait, crème pour le point). Indispensable pour un
+    background SVG : WeasyPrint transforme tout remplissage en
     dégradé SVG en pattern rastérisé 72 dpi, alors qu'un remplissage
     uni est rendu en VECTEURS PDF purs — netteté parfaite à tout zoom
     et à l'impression.
+
+    `ring` / `dot` : couleurs plates paramétrables par thème — le gold
+    clair #D6B761 manque de contraste sur le papier ivoire du thème
+    light, qui utilise l'oxyde d'or #8C6A1F.
     """
     return (
         f'<svg width="{height}" height="{height}" viewBox="0 0 48 48" fill="none" '
         'xmlns="http://www.w3.org/2000/svg">'
-        '<path d="M 35.5 30 A 14 14 0 1 0 26.4 35.8" stroke="#D6B761" '
+        f'<path d="M 35.5 30 A 14 14 0 1 0 26.4 35.8" stroke="{ring}" '
         'stroke-width="2.6" stroke-linecap="round"/>'
-        '<line x1="26.2" y1="25.4" x2="36" y2="40.5" stroke="#D6B761" '
+        f'<line x1="26.2" y1="25.4" x2="36" y2="40.5" stroke="{ring}" '
         'stroke-width="2.6" stroke-linecap="round"/>'
-        '<circle cx="37.6" cy="42.8" r="1.9" fill="#E8D5A3"/>'
+        f'<circle cx="37.6" cy="42.8" r="1.9" fill="{dot}"/>'
         "</svg>"
     )
 
 
-def quanta_signature_page_background(display_px: int = 48) -> str:
+def quanta_signature_page_background(
+    display_px: int = 48,
+    ring: str = "#D6B761",
+    dot: str = "#E8D5A3",
+) -> str:
     """
     Fragment CSS `url("data:...")` du symbole QUANTA en SVG base64 —
-    utilisé en background de @page : présent sur chaque page produite,
-    y compris en génération chunked (un document WeasyPrint par section).
+    utilisé en background-image de la margin box @bottom-right du pied
+    de page : présent sur chaque page produite, y compris en génération
+    chunked (un document WeasyPrint par section).
 
     Utilise la variante FLAT (sans dégradé) : un dégradé SVG est aplati
     par WeasyPrint en pattern bitmap 72 dpi (baveux en impression), la
     version unie reste vectorielle — voir quanta_signature_svg_flat().
     """
-    svg = quanta_signature_svg_flat(display_px)
+    svg = quanta_signature_svg_flat(display_px, ring=ring, dot=dot)
     b64 = base64.b64encode(svg.encode("utf-8")).decode("ascii")
     return f'url("data:image/svg+xml;base64,{b64}")'
 
