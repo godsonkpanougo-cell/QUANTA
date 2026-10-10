@@ -895,6 +895,18 @@ def get_quota_info(user_id: str, monthly_limit: int = 15) -> dict[str, Any] | No
 # SESSIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _session_timestamp(dt_naive) -> str:
+    """Horodatage session au format ISO historique (naïf + "Z"), microsecondes
+    TOUJOURS présentes (timespec="microseconds").
+
+    W4 : `isoformat()` par défaut OMET les microsecondes quand elles valent 0,
+    ce qui donne un format VARIABLE ; dans une même seconde, l'ordre
+    lexicographique cesse d'être l'ordre chronologique ("Z" (0x5A) > ".")
+    alors que les comparaisons expires_at < now sont faites en chaînes.
+    """
+    return dt_naive.isoformat(timespec="microseconds") + "Z"
+
+
 def create_session(user_id: str, ttl_hours: int = 24 * 7) -> str:
     """
     Crée une session, retourne le session_token (secrets.token_urlsafe(32)).
@@ -908,8 +920,8 @@ def create_session(user_id: str, ttl_hours: int = 24 * 7) -> str:
     # l'identique : les comparaisons de chaînes ISO (expires_at < now) et
     # les anciennes lignes en base utilisent ce format.
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    created_at = now.isoformat() + "Z"
-    expires_at = (now + timedelta(hours=ttl_hours)).isoformat() + "Z"
+    created_at = _session_timestamp(now)
+    expires_at = _session_timestamp(now + timedelta(hours=ttl_hours))
 
     with _get_conn() as conn:
         conn.execute(
@@ -940,7 +952,8 @@ def get_session(session_token: str) -> dict[str, Any] | None:
     # Vérifier expiration
     expires_at = row["expires_at"]
     # V8 : utcnow() déprécié — format historique (ISO naïf + "Z") conservé.
-    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
+    # W4 : microsecondes toujours présentes -> ordre lexicographique stable.
+    now = _session_timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
 
     if expires_at < now:
         # Session expirée, la supprimer et retourner None
@@ -969,7 +982,8 @@ def cleanup_expired_sessions() -> int:
     from datetime import datetime, timezone
 
     # V8 : utcnow() déprécié — format historique (ISO naïf + "Z") conservé.
-    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
+    # W4 : microsecondes toujours présentes -> ordre lexicographique stable.
+    now = _session_timestamp(datetime.now(timezone.utc).replace(tzinfo=None))
 
     with _get_conn() as conn:
         cursor = conn.execute(

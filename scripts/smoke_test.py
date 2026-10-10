@@ -59,6 +59,22 @@ def timed_get(url: str, **kwargs) -> tuple[requests.Response, float]:
 # Étapes
 # ---------------------------------------------------------------------------
 
+def _origin_main_short() -> str | None:
+    """7 premiers caractères de origin/main dans le dépôt local (ou None)."""
+    import subprocess
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short=7", "origin/main"],
+            cwd=repo_root, capture_output=True, text=True, timeout=15,
+        )
+        if out.returncode == 0:
+            return out.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
 def step_health(base_url: str, timeout: float) -> None:
     try:
         r, dur = timed_get(f"{base_url}/health", timeout=timeout)
@@ -66,6 +82,18 @@ def step_health(base_url: str, timeout: float) -> None:
         if dur > 20:
             note = "(cold start probable)"
         if r.status_code == 200 and r.json().get("status") == "ok":
+            deployed = r.json().get("commit")
+            if deployed:
+                note = f"{note} commit {deployed}".strip()
+                local = _origin_main_short()
+                if local and local != deployed:
+                    # W4/G15 : Render doit déployer la seule branche main.
+                    record(
+                        "GET /health", FAIL, dur,
+                        f"commit déployé {deployed} != origin/main {local} — "
+                        "Render déploie une autre révision/branche",
+                    )
+                    return
             record("GET /health", OK, dur, note)
         else:
             record("GET /health", FAIL, dur, f"HTTP {r.status_code} {r.text[:120]}")

@@ -406,7 +406,14 @@ class AnalyzeRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "service": "quanta-api", "version": app.version}
+    payload = {"status": "ok", "service": "quanta-api", "version": app.version}
+    # W4 : exposer le commit déployé (env Render, 7 premiers caractères) ->
+    # le smoke test peut vérifier QUEL commit tourne réellement (G15).
+    # Hors Render (dev local), la clé est absente — comportement historique.
+    _commit = (os.environ.get("RENDER_GIT_COMMIT") or "").strip()
+    if _commit:
+        payload["commit"] = _commit[:7]
+    return payload
 
 
 @app.post("/upload")
@@ -933,6 +940,11 @@ def get_report(
 
     logger.debug("Entering subprocess try block")
 
+    # W4 : sortie du worker bornée vers des fichiers temporaires (façon V6
+    # analyze_worker, main.py:564-580) — capture_output=True accumulait toute
+    # la sortie subprocess en mémoire du processus serveur.
+    out_file = tempfile.TemporaryFile()
+    err_file = tempfile.TemporaryFile()
     try:
         # Lancer le subprocess PDF Worker
         # Timeout 300s (5 minutes)
@@ -941,16 +953,20 @@ def get_report(
         proc = subprocess.run(
             [sys.executable, "app/pdf_worker.py", input_path, pdf_path, theme_norm],
             timeout=300,
-            capture_output=True,
-            text=True
+            stdout=out_file,
+            stderr=err_file,
         )
         logger.debug("After subprocess.run", returncode=proc.returncode)
 
         logger.info("PDF Worker - Returncode", returncode=proc.returncode)
-        if proc.stdout:
-            logger.debug("PDF Worker - Stdout", stdout=proc.stdout[-6000:])
-        if proc.stderr:
-            logger.debug("PDF Worker - Stderr", stderr=proc.stderr[-6000:])
+        out_file.seek(0)
+        stdout_tail = out_file.read().decode("utf-8", errors="replace")[-6000:]
+        err_file.seek(0)
+        stderr_tail = err_file.read().decode("utf-8", errors="replace")[-6000:]
+        if stdout_tail:
+            logger.debug("PDF Worker - Stdout", stdout=stdout_tail)
+        if stderr_tail:
+            logger.debug("PDF Worker - Stderr", stderr=stderr_tail)
 
         if proc.returncode != 0:
             logger.error("PDF Worker failed, using fallback lightweight PDF")
@@ -994,6 +1010,9 @@ def get_report(
         raise
     
     finally:
+        # W4 : fermer les fichiers de sortie temporaires (auto-supprimés).
+        out_file.close()
+        err_file.close()
         # Nettoyer le fichier JSON temporaire
         try:
             os.unlink(input_path)
